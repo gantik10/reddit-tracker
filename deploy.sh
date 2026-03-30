@@ -6,23 +6,16 @@
 #
 # USAGE:
 # 1. SSH into your Hostinger VPS:
-#    ssh root@YOUR_VPS_IP
+#    ssh root@72.62.164.47
 #
-# 2. Upload project files:
-#    (from your Mac, run this BEFORE ssh-ing in)
-#    scp -r "/Users/kirillgontovoy/Downloads/Reddit Tracking" root@YOUR_VPS_IP:~/reddit-tracker
-#
-# 3. SSH in and run:
-#    ssh root@YOUR_VPS_IP
+# 2. Clone the repo and run deploy:
+#    git clone https://github.com/gantik10/reddit-tracker.git ~/reddit-tracker
 #    cd ~/reddit-tracker
 #    chmod +x deploy.sh
 #    ./deploy.sh
 #
-# 4. After script finishes, install Dolphin Anty manually:
-#    - Download: https://dolphin-anty.com/download (Linux version)
-#    - Install it on the VPS
-#    - Log in, set up your 3 USA proxy profiles
-#    - The app will run in the virtual display (invisible)
+# TO UPDATE LATER:
+#    cd ~/reddit-tracker && git pull && pm2 restart reddit-tracker
 #
 # ================================================
 
