@@ -1215,6 +1215,48 @@ function saveAhrefsUpdate() {
 }
 
 // ==========================================
+//  SERP PREVIEW
+// ==========================================
+function renderSerpPreview(mp, sub) {
+    if (!mp.url) return '';
+
+    // Build the Google SERP snippet as it would appear
+    const urlObj = (() => { try { return new URL(mp.url); } catch { return null; } })();
+    if (!urlObj) return '';
+
+    // Google breadcrumb: reddit.com › r › subreddit › comments › ...
+    const pathParts = urlObj.pathname.split('/').filter(Boolean);
+    const breadcrumb = urlObj.hostname + ' › ' + pathParts.slice(0, 4).join(' › ');
+
+    // Google title: "Post Title : r/subreddit - Reddit"
+    const serpTitle = `${mp.title} : r/${sub.name} - Reddit`;
+
+    // Google snippet: Reddit approximation
+    const commentCount = mp.comments || 0;
+    const dateStr = mp.history?.length ? fmtDateFull(mp.history[0].date) : '';
+    const snippet = `${dateStr ? dateStr + ' — ' : ''}${commentCount} comments · r/${sub.name}`;
+
+    return `<div class="serp-preview">
+        <div class="serp-preview-header">
+            <span class="serp-preview-label">Google SERP Preview</span>
+            <a class="serp-preview-search" href="https://www.google.com/search?q=${encodeURIComponent(mp.title + ' site:reddit.com')}&gl=us&hl=en" target="_blank" rel="noopener" onclick="event.stopPropagation()" title="Search Google for this post title">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                Search Google
+            </a>
+        </div>
+        <div class="serp-card">
+            <div class="serp-favicon">
+                <img src="https://www.google.com/s2/favicons?domain=reddit.com&sz=32" width="16" height="16" alt="">
+                <span class="serp-site">Reddit</span>
+                <span class="serp-breadcrumb">${esc(breadcrumb)}</span>
+            </div>
+            <div class="serp-title">${esc(serpTitle.length > 60 ? serpTitle.slice(0, 57) + '...' : serpTitle)}</div>
+            <div class="serp-snippet">${esc(snippet)}</div>
+        </div>
+    </div>`;
+}
+
+// ==========================================
 //  MONEY POSTS RENDERING
 // ==========================================
 function renderMoneyPosts(sub) {
@@ -1298,6 +1340,9 @@ function renderMoneyPosts(sub) {
                 </button>` : `<button class="btn-icon" onclick="updateKeywordRank(${mp.id},${i})" title="Update rank manually">
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg>
                 </button>`}
+                <a class="btn-icon" href="https://www.google.com/search?q=${encodeURIComponent(kw.keyword)}&gl=us&hl=en" target="_blank" rel="noopener" onclick="event.stopPropagation()" title="Search Google for this keyword">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                </a>
                 <button class="btn-icon danger" onclick="removeKeyword(${mp.id},${i})" title="Remove">
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
                 </button>
@@ -1326,6 +1371,7 @@ function renderMoneyPosts(sub) {
                     </button>
                 </div>
             </div>
+            ${renderSerpPreview(mp, sub)}
             ${ahrefsHtml}
             <div class="mp-google-section">
                 <div class="mp-tasks-header">
