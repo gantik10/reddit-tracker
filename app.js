@@ -821,25 +821,55 @@ async function autoCheckRank(mpId, kwIndex) {
     const kw = mp?.googleKeywords?.[kwIndex];
     if (!kw || !mp.url) return;
 
-    // Show progress panel with 3 checks
+    const serpKey = getSerpApiKey();
+
+    // SERP API: single request, no panel needed
+    if (serpKey) {
+        toast('info', 'Checking rank...', `"${kw.keyword}"`, 3000);
+
+        try {
+            const data = await checkRankWithProxy(kw.keyword, mp.url, 0);
+            const rankType = data.type === 'google' ? 'google' : data.redditRank ? 'reddit' : 'none';
+            const avgRank = data.rank || data.redditRank || null;
+
+            // Save
+            updateSub(s => {
+                const p = s.moneyPosts.find(x => x.id === mpId);
+                const k = p?.googleKeywords?.[kwIndex];
+                if (!k) return;
+                if (!k.history) k.history = [];
+                if (k.rankType) k.history.push({ rankType: k.rankType, avgRank: k.avgRank, date: k.updatedAt });
+                k.rankType = rankType;
+                k.avgRank = avgRank;
+                k.rank = avgRank;
+                k.checks = [{ profileIndex: 1, type: rankType, googleRank: data.rank, redditRank: data.redditRank }];
+                k.updatedAt = new Date().toISOString();
+            });
+
+            renderDetail();
+
+            if (rankType === 'google') toast('success', `Google #${avgRank}`, `"${kw.keyword}" is on Google!`, 6000);
+            else if (rankType === 'reddit') toast('info', `Reddit #${avgRank}`, `"${kw.keyword}" among Reddit posts`, 6000);
+            else toast('warning', 'Not ranking', `"${kw.keyword}" not found`, 6000);
+            return;
+        } catch (err) {
+            toast('error', 'Check failed', err.message, 6000);
+            return;
+        }
+    }
+
+    // Fallback: Chromium with 3 parallel proxies
     const checks3 = Array.from({ length: NUM_CHECKS }, (_, i) => i);
     showRankPanel(kw.keyword, checks3);
 
-    // Launch 3 checks in PARALLEL with different proxy ports
     const promises = checks3.map(i => {
         updateRankProfile(i, 'running', 'Fresh proxy, searching...');
-
         return checkRankWithProxy(kw.keyword, mp.url, i)
             .then(data => {
-                if (data.type === 'google') {
-                    updateRankProfile(i, 'done', 'Found on Google', `<span class="rp-result google">G#${data.rank}</span>`);
-                } else if (data.type === 'reddit' && data.redditRank) {
-                    updateRankProfile(i, 'done', 'Found on Reddit', `<span class="rp-result reddit">R#${data.redditRank}</span>`);
-                } else if (data.type === 'captcha') {
-                    updateRankProfile(i, 'captcha', 'CAPTCHA hit', '<span class="rp-result none">CAP</span>');
-                } else {
-                    updateRankProfile(i, 'done', 'Not found', '<span class="rp-result none">—</span>');
-                }
+                if (data.type === 'google') updateRankProfile(i, 'done', 'Found on Google', `<span class="rp-result google">G#${data.rank}</span>`);
+                else if (data.type === 'reddit' && data.redditRank) updateRankProfile(i, 'done', 'Found on Reddit', `<span class="rp-result reddit">R#${data.redditRank}</span>`);
+                else if (data.type === 'captcha') updateRankProfile(i, 'captcha', 'CAPTCHA hit', '<span class="rp-result none">CAP</span>');
+                else updateRankProfile(i, 'done', 'Not found', '<span class="rp-result none">—</span>');
                 return { profileIndex: i + 1, type: data.type, googleRank: data.rank, redditRank: data.redditRank, error: null };
             })
             .catch(err => {
@@ -848,27 +878,16 @@ async function autoCheckRank(mpId, kwIndex) {
             });
     });
 
-    // Wait for ALL to finish
     const checks = await Promise.all(promises);
 
-    // Calculate AVG
     const googleRanks = checks.filter(c => c.type === 'google' && c.googleRank != null).map(c => c.googleRank);
     const redditRanks = checks.filter(c => c.type === 'reddit' && c.redditRank != null).map(c => c.redditRank);
-    const captchaCount = checks.filter(c => c.type === 'captcha').length;
 
     let rankType, avgRank;
-    if (googleRanks.length > 0) {
-        rankType = 'google';
-        avgRank = Math.round(googleRanks.reduce((a, b) => a + b, 0) / googleRanks.length * 10) / 10;
-    } else if (redditRanks.length > 0) {
-        rankType = 'reddit';
-        avgRank = Math.round(redditRanks.reduce((a, b) => a + b, 0) / redditRanks.length * 10) / 10;
-    } else {
-        rankType = 'none';
-        avgRank = null;
-    }
+    if (googleRanks.length > 0) { rankType = 'google'; avgRank = Math.round(googleRanks.reduce((a, b) => a + b, 0) / googleRanks.length * 10) / 10; }
+    else if (redditRanks.length > 0) { rankType = 'reddit'; avgRank = Math.round(redditRanks.reduce((a, b) => a + b, 0) / redditRanks.length * 10) / 10; }
+    else { rankType = 'none'; avgRank = null; }
 
-    // Show final result in panel
     showRankResult(rankType, avgRank);
 
     // Save
