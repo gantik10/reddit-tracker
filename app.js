@@ -980,7 +980,7 @@ async function autoCheckRank(mpId, kwIndex) {
             const rankType = data.type === 'google' ? 'google' : data.redditRank ? 'reddit' : 'none';
             const avgRank = data.rank || data.redditRank || null;
 
-            // Save
+            // Save rank + SERP results in one call
             updateSub(s => {
                 const p = s.moneyPosts.find(x => x.id === mpId);
                 const k = p?.googleKeywords?.[kwIndex];
@@ -992,6 +992,11 @@ async function autoCheckRank(mpId, kwIndex) {
                 k.rank = avgRank;
                 k.checks = [{ profileIndex: 1, type: rankType, googleRank: data.rank, redditRank: data.redditRank }];
                 k.updatedAt = new Date().toISOString();
+                // SERP results + competitors
+                if (data.competitors?.length) k.pendingCompetitors = data.competitors;
+                if (data.serpResults) k.serpResults = data.serpResults;
+                if (data.redditSerpResults) k.redditSerpResults = data.redditSerpResults;
+                k.serpQuery = data.serpQuery || kw.keyword;
             });
 
             renderDetail();
@@ -999,16 +1004,6 @@ async function autoCheckRank(mpId, kwIndex) {
             if (rankType === 'google') toast('success', `Google #${avgRank}`, `"${kw.keyword}" is on Google!`, 6000);
             else if (rankType === 'reddit') toast('info', `Reddit #${avgRank}`, `"${kw.keyword}" among Reddit posts`, 6000);
             else toast('warning', 'Not ranking', `"${kw.keyword}" not found`, 6000);
-
-            // Store competitors + SERP results
-            updateSub(s => {
-                const k = s.moneyPosts.find(x => x.id === mpId)?.googleKeywords?.[kwIndex];
-                if (!k) return;
-                if (data.competitors?.length) k.pendingCompetitors = data.competitors;
-                if (data.serpResults) k.serpResults = data.serpResults;
-                if (data.redditSerpResults) k.redditSerpResults = data.redditSerpResults;
-                k.serpQuery = data.serpQuery || kw.keyword;
-            });
             return;
         } catch (err) {
             toast('error', 'Check failed', err.message, 6000);
