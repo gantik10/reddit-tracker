@@ -18,7 +18,7 @@ const MIME = {
 };
 
 // --- HTTPS request helper ---
-function httpsRequest(targetUrl, headers = {}) {
+function httpsRequest(targetUrl, headers = {}, maxRedirects = 5) {
     return new Promise((resolve, reject) => {
         const parsed = new URL(targetUrl);
         const opts = {
@@ -27,6 +27,12 @@ function httpsRequest(targetUrl, headers = {}) {
             headers: { 'User-Agent': 'LKMediaTracker/1.0', 'Accept': 'application/json', ...headers }
         };
         const req = https.request(opts, res => {
+            // Follow redirects
+            if ((res.statusCode === 301 || res.statusCode === 302 || res.statusCode === 307) && res.headers.location && maxRedirects > 0) {
+                const redirectUrl = res.headers.location.startsWith('http') ? res.headers.location : `https://${parsed.hostname}${res.headers.location}`;
+                httpsRequest(redirectUrl, headers, maxRedirects - 1).then(resolve).catch(reject);
+                return;
+            }
             let data = '';
             res.on('data', c => data += c);
             res.on('end', () => resolve({ status: res.statusCode, data }));
