@@ -1,10 +1,56 @@
 // ===== LK Media Group — Reddit Tracker (v3) =====
 
-// --- Storage ---
+// --- Storage (synced to server for team sharing) ---
 const S = {
     get(k) { try { return JSON.parse(localStorage.getItem('lk_' + k)) || []; } catch { return []; } },
-    set(k, v) { localStorage.setItem('lk_' + k, JSON.stringify(v)); },
-    nextId(k) { const items = this.get(k); return items.length ? Math.max(...items.map(i => i.id)) + 1 : 1; }
+    set(k, v) {
+        localStorage.setItem('lk_' + k, JSON.stringify(v));
+        S._pushToServer();
+    },
+    nextId(k) { const items = this.get(k); return items.length ? Math.max(...items.map(i => i.id)) + 1 : 1; },
+
+    // Debounced push to server (avoids hammering on rapid saves)
+    _pushTimer: null,
+    _pushToServer() {
+        if (S._pushTimer) clearTimeout(S._pushTimer);
+        S._pushTimer = setTimeout(() => {
+            const data = {};
+            ['subreddits', 'team'].forEach(k => {
+                try { data[k] = JSON.parse(localStorage.getItem('lk_' + k)) || []; } catch { data[k] = []; }
+            });
+            fetch(`${window.location.origin}/api/data`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data)
+            }).catch(err => console.log('[Sync] Push failed:', err.message));
+        }, 500);
+    },
+
+    // Pull from server on load
+    async pullFromServer() {
+        try {
+            const res = await fetch(`${window.location.origin}/api/data`);
+            const data = await res.json();
+
+            // If server has data, use it
+            if (data.subreddits?.length) {
+                localStorage.setItem('lk_subreddits', JSON.stringify(data.subreddits));
+                if (data.team) localStorage.setItem('lk_team', JSON.stringify(data.team));
+                console.log('[Sync] Pulled from server:', data.subreddits.length, 'subreddits');
+            } else {
+                // Server empty — push local data up (one-time migration)
+                const localSubs = S.get('subreddits');
+                if (localSubs.length) {
+                    console.log('[Sync] Server empty, pushing local data up...');
+                    S._pushToServer();
+                }
+            }
+            return true;
+        } catch (err) {
+            console.log('[Sync] Pull failed, using local data:', err.message);
+            return false;
+        }
+    }
 };
 
 let currentSubId = null;
@@ -1216,47 +1262,6 @@ function saveAhrefsUpdate() {
     renderDetail();
 }
 
-// ==========================================
-//  SERP PREVIEW
-// ==========================================
-function renderSerpPreview(mp, sub) {
-    if (!mp.url) return '';
-
-    // Build the Google SERP snippet as it would appear
-    const urlObj = (() => { try { return new URL(mp.url); } catch { return null; } })();
-    if (!urlObj) return '';
-
-    // Google breadcrumb: reddit.com › r › subreddit › comments › ...
-    const pathParts = urlObj.pathname.split('/').filter(Boolean);
-    const breadcrumb = urlObj.hostname + ' › ' + pathParts.slice(0, 4).join(' › ');
-
-    // Google title: "Post Title : r/subreddit - Reddit"
-    const serpTitle = `${mp.title} : r/${sub.name} - Reddit`;
-
-    // Google snippet: Reddit approximation
-    const commentCount = mp.comments || 0;
-    const dateStr = mp.history?.length ? fmtDateFull(mp.history[0].date) : '';
-    const snippet = `${dateStr ? dateStr + ' — ' : ''}${commentCount} comments · r/${sub.name}`;
-
-    return `<div class="serp-preview">
-        <div class="serp-preview-header">
-            <span class="serp-preview-label">Google SERP Preview</span>
-            <a class="serp-preview-search" href="https://www.google.com/search?q=${encodeURIComponent(mp.title + ' site:reddit.com')}&gl=us&hl=en" target="_blank" rel="noopener" onclick="event.stopPropagation()" title="Search Google for this post title">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-                Search Google
-            </a>
-        </div>
-        <div class="serp-card">
-            <div class="serp-favicon">
-                <img src="https://www.google.com/s2/favicons?domain=reddit.com&sz=32" width="16" height="16" alt="">
-                <span class="serp-site">Reddit</span>
-                <span class="serp-breadcrumb">${esc(breadcrumb)}</span>
-            </div>
-            <div class="serp-title">${esc(serpTitle.length > 60 ? serpTitle.slice(0, 57) + '...' : serpTitle)}</div>
-            <div class="serp-snippet">${esc(snippet)}</div>
-        </div>
-    </div>`;
-}
 
 // ==========================================
 //  FULL SERP RESULTS (collapsible)
@@ -1435,7 +1440,6 @@ function renderMoneyPosts(sub) {
                     </button>
                 </div>
             </div>
-            ${renderSerpPreview(mp, sub)}
             ${ahrefsHtml}
             <div class="mp-google-section">
                 <div class="mp-tasks-header">
@@ -2783,5 +2787,8 @@ async function autoCheckAllMoneyComments() {
 // ==========================================
 //  INIT
 // ==========================================
-renderHome();
-startAutoRefresh();
+// Pull shared data from server, then render
+S.pullFromServer().then(() => {
+    renderHome();
+    startAutoRefresh();
+});

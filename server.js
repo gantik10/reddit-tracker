@@ -483,6 +483,39 @@ const server = http.createServer(async (req, res) => {
 
     if (req.method === 'OPTIONS') { res.writeHead(204); res.end(); return; }
 
+    // --- Shared data storage ---
+    const DATA_FILE = path.join(__dirname, 'data.json');
+
+    if (parsed.pathname === '/api/data' && req.method === 'GET') {
+        try {
+            if (fs.existsSync(DATA_FILE)) {
+                const data = fs.readFileSync(DATA_FILE, 'utf8');
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.end(data);
+            } else {
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.end('{}');
+            }
+        } catch (err) {
+            res.writeHead(500, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: err.message }));
+        }
+        return;
+    }
+
+    if (parsed.pathname === '/api/data' && req.method === 'POST') {
+        const body = await readBody(req);
+        try {
+            fs.writeFileSync(DATA_FILE, JSON.stringify(body, null, 2), 'utf8');
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ success: true }));
+        } catch (err) {
+            res.writeHead(500, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: err.message }));
+        }
+        return;
+    }
+
     // --- Proxy endpoint (Reddit, Ahrefs) ---
     if (parsed.pathname === '/api/proxy') {
         const targetUrl = parsed.searchParams.get('url');
