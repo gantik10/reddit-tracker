@@ -36,16 +36,70 @@ document.getElementById('loginPassword').addEventListener('keydown', e => {
     if (e.key === 'Enter') checkLogin();
 });
 
-// --- Last update timestamp ---
-function updateSyncTime() {
-    const el = document.getElementById('lastSyncTime');
-    if (el) {
-        const now = new Date();
-        const h = now.getHours().toString().padStart(2, '0');
-        const m = now.getMinutes().toString().padStart(2, '0');
-        const day = now.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-        el.textContent = `· Updated ${day} ${h}:${m}`;
+// --- Activity Status Bar ---
+const _activity = { tasks: [], expanded: false };
+
+function activityAdd(id, label) {
+    _activity.tasks.push({ id, label, status: 'running', result: '' });
+    renderActivity();
+}
+
+function activityUpdate(id, status, result) {
+    const t = _activity.tasks.find(x => x.id === id);
+    if (t) { t.status = status; t.result = result; }
+    renderActivity();
+    // Auto-hide bar when all done
+    if (_activity.tasks.every(t => t.status !== 'running')) {
+        setTimeout(() => {
+            if (_activity.tasks.every(t => t.status !== 'running')) {
+                _activity.tasks = [];
+                renderActivity();
+            }
+        }, 5000);
     }
+}
+
+function toggleActivityBar() {
+    _activity.expanded = !_activity.expanded;
+    document.getElementById('activityBody').classList.toggle('hidden', !_activity.expanded);
+    document.getElementById('activityToggle').innerHTML = _activity.expanded ? '&#9660;' : '&#9650;';
+}
+
+function renderActivity() {
+    const bar = document.getElementById('activityBar');
+    const running = _activity.tasks.filter(t => t.status === 'running');
+    const done = _activity.tasks.filter(t => t.status !== 'running');
+
+    if (!_activity.tasks.length) {
+        bar.classList.add('hidden');
+        return;
+    }
+    bar.classList.remove('hidden');
+
+    // Summary
+    const summary = document.getElementById('activitySummary');
+    if (running.length) {
+        summary.textContent = `Checking ${running.length} keyword${running.length > 1 ? 's' : ''}... (${done.length}/${_activity.tasks.length} done)`;
+    } else {
+        summary.textContent = `All ${_activity.tasks.length} checks complete`;
+    }
+
+    // Spinner visibility
+    const indicator = bar.querySelector('.activity-indicator');
+    indicator.style.display = running.length ? '' : 'none';
+
+    // Body
+    const body = document.getElementById('activityBody');
+    body.innerHTML = _activity.tasks.map(t => {
+        const icon = t.status === 'running' ? '<span class="activity-spinner"></span>'
+            : t.status === 'done' ? '<span class="activity-done-dot"></span>'
+            : '<span class="activity-err-dot"></span>';
+        return `<div class="activity-row">
+            ${icon}
+            <span class="activity-label">${esc(t.label)}</span>
+            <span class="activity-result">${t.result}</span>
+        </div>`;
+    }).join('');
 }
 
 // --- Storage (synced to server for team sharing) ---
@@ -170,7 +224,7 @@ const S = {
                 }
             }
             console.log('[Sync] Pulled:', (data.subreddits || []).length, 'subs');
-            updateSyncTime();
+
             return true;
         } catch (err) {
             console.log('[Sync] Pull failed, using local:', err.message);
@@ -203,6 +257,14 @@ function initials(name) { return name.split(' ').map(w => w[0]).join('').toUpper
 function fmtDate(iso) {
     if (!iso) return '';
     return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+}
+function fmtDateTime(iso) {
+    if (!iso) return '';
+    const d = new Date(iso);
+    const day = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    const h = d.getHours().toString().padStart(2, '0');
+    const m = d.getMinutes().toString().padStart(2, '0');
+    return `${day} ${h}:${m}`;
 }
 function fmtDateFull(iso) {
     if (!iso) return '';
@@ -1216,6 +1278,9 @@ async function autoCheckRank(mpId, kwIndex) {
     const kw = mp?.googleKeywords?.[kwIndex];
     if (!kw || !mp.url) return;
 
+    const actId = `rank_${mpId}_${kwIndex}_${Date.now()}`;
+    activityAdd(actId, `"${kw.keyword}" — r/${sub?.name || '?'}`);
+
     const serpKey = getSerpApiKey();
 
     // SERP API: single request, no panel needed
@@ -1248,13 +1313,21 @@ async function autoCheckRank(mpId, kwIndex) {
 
             renderDetail();
 
-            if (rankType === 'google') toast('success', `Google #${avgRank}`, `"${kw.keyword}" is on Google!`, 6000);
-            else if (rankType === 'reddit') toast('info', `Reddit #${avgRank}`, `"${kw.keyword}" among Reddit posts`, 6000);
-            else toast('warning', 'Not ranking', `"${kw.keyword}" not found`, 6000);
+            if (rankType === 'google') {
+                toast('success', `Google #${avgRank}`, `"${kw.keyword}" is on Google!`, 6000);
+                activityUpdate(actId, 'done', `Google #${avgRank}`);
+            } else if (rankType === 'reddit') {
+                toast('info', `Reddit #${avgRank}`, `"${kw.keyword}" among Reddit posts`, 6000);
+                activityUpdate(actId, 'done', `Reddit #${avgRank}`);
+            } else {
+                toast('warning', 'Not ranking', `"${kw.keyword}" not found`, 6000);
+                activityUpdate(actId, 'done', 'Not found');
+            }
             return;
         } catch (err) {
             // Keep old rank on error — don't clear it
             toast('error', 'Check failed', `"${kw.keyword}": ${err.message}. Previous result kept.`, 6000);
+            activityUpdate(actId, 'error', err.message.slice(0, 30));
             return;
         }
     }
@@ -1281,10 +1354,12 @@ async function autoCheckRank(mpId, kwIndex) {
     } catch (err) {
         updateRankProfile(0, 'error', err.message.slice(0, 40), '<span class="rp-result none">ERR</span>');
         toast('error', 'Check failed', `Previous result kept.`, 6000);
+        activityUpdate(actId, 'error', err.message.slice(0, 30));
         return; // Don't overwrite old rank on error
     }
 
     showRankResult(rankType, avgRank);
+    activityUpdate(actId, 'done', rankType === 'google' ? `Google #${avgRank}` : rankType === 'reddit' ? `Reddit #${avgRank}` : 'Not found');
 
     // Save only if we got a result
     updateSub(s => {
@@ -1651,7 +1726,7 @@ function renderMoneyPosts(sub) {
                     <span class="gr-type-badge ${badgeClass}">${rType === 'google' ? 'GOOGLE' : rType === 'reddit' ? 'REDDIT' : 'N/A'}</span>
                     <span class="gr-rank ${rankClass}">${avg ? '#' + avg : '—'}</span>
                     ${pillsHtml}
-                    <span class="gr-note">${statusText}${kw.updatedAt ? ' · ' + fmtDate(kw.updatedAt) : ''}${kw.captchaCount ? ' · ' + kw.captchaCount + ' captcha' : ''}</span>
+                    <span class="gr-note">${statusText}${kw.updatedAt ? ' · ' + fmtDateTime(kw.updatedAt) : ''}${kw.captchaCount ? ' · ' + kw.captchaCount + ' captcha' : ''}</span>
                     ${serpToggle}
                     ${hasDolphin ? `<button class="btn-icon" onclick="autoCheckRank(${mp.id},${i})" title="Check rank">
                         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg>

@@ -29,7 +29,7 @@
                 <div class="logo-icon">LK</div>
                 <div class="header-title">
                     <span class="header-name">LK Media Group</span>
-                    <span class="header-sub">Reddit Tracker <span class="last-sync" id="lastSyncTime"></span></span>
+                    <span class="header-sub">Reddit Tracker</span>
                 </div>
             </div>
             <div class="header-actions">
@@ -714,6 +714,16 @@
         </div>
     </div>
 
+    <!-- Activity Status Bar -->
+    <div class="activity-bar hidden" id="activityBar">
+        <div class="activity-header" onclick="toggleActivityBar()">
+            <span class="activity-indicator"><span class="activity-spinner"></span></span>
+            <span class="activity-summary" id="activitySummary">Checking...</span>
+            <span class="activity-toggle" id="activityToggle">&#9650;</span>
+        </div>
+        <div class="activity-body hidden" id="activityBody"></div>
+    </div>
+
     <!-- Toast Notifications -->
     <div class="toast-container" id="toastContainer"></div>
 
@@ -728,6 +738,6 @@
         <div class="rank-panel-result hidden" id="rankPanelResult"></div>
     </div>
 
-    <script src="app.js?v=20260331d"></script>
+    <script src="app.js?v=20260331e"></script>
 </body>
 </html>
