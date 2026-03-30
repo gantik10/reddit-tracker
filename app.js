@@ -5,25 +5,85 @@ const S = {
     get(k) { try { return JSON.parse(localStorage.getItem('lk_' + k)) || []; } catch { return []; } },
     set(k, v) {
         localStorage.setItem('lk_' + k, JSON.stringify(v));
-        S._pushToServer();
+        S._syncToServer();
     },
     nextId(k) { const items = this.get(k); return items.length ? Math.max(...items.map(i => i.id)) + 1 : 1; },
 
-    // Debounced push to server (avoids hammering on rapid saves)
-    _pushTimer: null,
-    _pushToServer() {
-        if (S._pushTimer) clearTimeout(S._pushTimer);
-        S._pushTimer = setTimeout(() => {
-            const data = {};
-            ['subreddits', 'team'].forEach(k => {
-                try { data[k] = JSON.parse(localStorage.getItem('lk_' + k)) || []; } catch { data[k] = []; }
-            });
-            fetch(`${window.location.origin}/api/data`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(data)
-            }).catch(err => console.log('[Sync] Push failed:', err.message));
+    // Debounced sync: read server → merge → write back
+    _syncTimer: null,
+    _syncing: false,
+    _syncToServer() {
+        if (S._syncTimer) clearTimeout(S._syncTimer);
+        S._syncTimer = setTimeout(async () => {
+            if (S._syncing) return;
+            S._syncing = true;
+            try {
+                // 1. Read current server state
+                const res = await fetch(`${window.location.origin}/api/data`);
+                const serverData = await res.json();
+
+                // 2. Merge: local wins for items we have, but keep server items we don't
+                const localSubs = S.get('subreddits');
+                const serverSubs = serverData.subreddits || [];
+                const merged = S._mergeSubs(localSubs, serverSubs);
+
+                const localTeam = S.get('team');
+                const serverTeam = serverData.team || [];
+                const mergedTeam = S._mergeById(localTeam, serverTeam);
+
+                // 3. Save merged result locally
+                localStorage.setItem('lk_subreddits', JSON.stringify(merged));
+                localStorage.setItem('lk_team', JSON.stringify(mergedTeam));
+
+                // 4. Push merged result to server
+                await fetch(`${window.location.origin}/api/data`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ subreddits: merged, team: mergedTeam })
+                });
+            } catch (err) {
+                console.log('[Sync] Failed:', err.message);
+            }
+            S._syncing = false;
         }, 500);
+    },
+
+    // Merge subreddits: union by ID, local version wins if both exist
+    _mergeSubs(local, server) {
+        const byId = new Map();
+        // Server items first (will be overwritten by local)
+        server.forEach(s => byId.set(s.id, s));
+        // Local items overwrite server
+        local.forEach(s => byId.set(s.id, s));
+        // But for money posts within each sub, also merge by ID
+        for (const [id, localSub] of byId) {
+            const serverSub = server.find(s => s.id === id);
+            if (serverSub && localSub !== serverSub) {
+                // Merge money posts: keep all from both sides
+                const localMps = localSub.moneyPosts || [];
+                const serverMps = serverSub.moneyPosts || [];
+                const mpMap = new Map();
+                serverMps.forEach(mp => mpMap.set(mp.id, mp));
+                localMps.forEach(mp => mpMap.set(mp.id, mp));
+                localSub.moneyPosts = Array.from(mpMap.values());
+                // Merge tasks
+                const localTasks = localSub.tasks || [];
+                const serverTasks = serverSub.tasks || [];
+                const taskMap = new Map();
+                serverTasks.forEach(t => taskMap.set(t.id, t));
+                localTasks.forEach(t => taskMap.set(t.id, t));
+                localSub.tasks = Array.from(taskMap.values());
+            }
+        }
+        return Array.from(byId.values());
+    },
+
+    // Simple merge by ID: local wins
+    _mergeById(local, server) {
+        const byId = new Map();
+        server.forEach(s => byId.set(s.id, s));
+        local.forEach(s => byId.set(s.id, s));
+        return Array.from(byId.values());
     },
 
     // Pull from server on load
@@ -31,23 +91,16 @@ const S = {
         try {
             const res = await fetch(`${window.location.origin}/api/data`);
             const data = await res.json();
-
-            // If server has data, use it
             if (data.subreddits?.length) {
                 localStorage.setItem('lk_subreddits', JSON.stringify(data.subreddits));
-                if (data.team) localStorage.setItem('lk_team', JSON.stringify(data.team));
-                console.log('[Sync] Pulled from server:', data.subreddits.length, 'subreddits');
-            } else {
-                // Server empty — push local data up (one-time migration)
-                const localSubs = S.get('subreddits');
-                if (localSubs.length) {
-                    console.log('[Sync] Server empty, pushing local data up...');
-                    S._pushToServer();
-                }
             }
+            if (data.team?.length) {
+                localStorage.setItem('lk_team', JSON.stringify(data.team));
+            }
+            console.log('[Sync] Pulled:', (data.subreddits || []).length, 'subs');
             return true;
         } catch (err) {
-            console.log('[Sync] Pull failed, using local data:', err.message);
+            console.log('[Sync] Pull failed, using local:', err.message);
             return false;
         }
     }
@@ -2753,4 +2806,11 @@ async function autoCheckAllMoneyComments() {
 S.pullFromServer().then(() => {
     renderHome();
     startAutoRefresh();
+    // Re-pull from server every 30 seconds to pick up teammate changes
+    setInterval(async () => {
+        await S.pullFromServer();
+        if (currentSubId) renderDetail();
+        else if (!document.getElementById('taskBoardView').classList.contains('hidden')) renderTaskBoard();
+        else renderHome();
+    }, 30000);
 });
