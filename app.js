@@ -141,11 +141,21 @@ const S = {
             if (data.team?.length) {
                 localStorage.setItem('lk_team', JSON.stringify(data.team));
             }
-            // Restore API keys from server (shared across devices)
-            if (data.keys) {
+            // Sync API keys: pull from server OR push local keys if server has none
+            const keyNames = ['lk_ahrefs_key', 'lk_serp_key', 'lk_upvote_key', 'lk_dolphin_token', 'lk_dolphin_profiles'];
+            if (data.keys && Object.keys(data.keys).length) {
+                // Server has keys — restore to local
                 Object.entries(data.keys).forEach(([k, v]) => {
-                    if (v && !localStorage.getItem(k)) localStorage.setItem(k, v);
+                    if (v) localStorage.setItem(k, v);
                 });
+                console.log('[Sync] Restored API keys from server');
+            } else {
+                // Server has no keys — push local keys up if we have any
+                const localHasKeys = keyNames.some(k => localStorage.getItem(k));
+                if (localHasKeys) {
+                    console.log('[Sync] Server has no keys, pushing local keys...');
+                    S._syncToServer();
+                }
             }
             console.log('[Sync] Pulled:', (data.subreddits || []).length, 'subs');
             return true;
