@@ -200,8 +200,8 @@ async function startDolphinProfile(profileId, token) {
     const userDataDir = `/tmp/dolphin-chrome-${profileId}`;
     const cmd = `DISPLAY=:99 chromium --no-sandbox --disable-gpu --remote-debugging-port=${debugPort} --user-data-dir="${userDataDir}" ${proxyArg} --no-first-run --disable-default-apps --disable-features=Translate about:blank`;
 
-    execSync(`${cmd} &`, { shell: '/bin/bash', timeout: 5000 }).toString();
-    await new Promise(r => setTimeout(r, 3000));
+    require('child_process').spawn('bash', ['-c', cmd], { detached: true, stdio: 'ignore' }).unref();
+    await new Promise(r => setTimeout(r, 4000));
 
     // If proxy has auth, we'll handle it in Puppeteer
     const proxyAuth = proxy?.login ? { username: proxy.login, password: proxy.password } : null;
@@ -214,7 +214,7 @@ async function stopDolphinProfile(profileId, token) {
     // Try Dolphin stop
     await httpGet(`${DOLPHIN_API}/browser_profiles/${profileId}/stop`).catch(() => {});
     // Also kill our Chromium instance
-    execSync(`pkill -f "user-data-dir=.*${profileId}" 2>/dev/null || true`, { shell: '/bin/bash' });
+    try { execSync(`pkill -f "dolphin-chrome-${profileId}" 2>/dev/null; exit 0`, { shell: '/bin/bash', timeout: 5000 }); } catch {}
 }
 
 // --- Scrape Google results from current page ---
