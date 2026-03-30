@@ -8,7 +8,7 @@ const fs = require('fs');
 const path = require('path');
 const puppeteer = require('puppeteer-core');
 
-const PORT = 3000;
+const PORT = process.env.PORT || 3002;
 const DOLPHIN_API = 'http://localhost:3001/v1.0';
 
 const MIME = {
