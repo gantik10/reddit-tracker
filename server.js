@@ -420,6 +420,30 @@ function generateRecommendations(ourData, competitors, ourPost) {
         });
     }
 
+    // ---- TOP COMMENT ANALYSIS ----
+    const topWithComments = competitors.filter(c => c.topComments?.length > 0);
+    if (topWithComments.length > 0) {
+        const topComp = topWithComments[0];
+        const topComment = topComp.topComments[0];
+        if (topComment) {
+            const avgTopCommentLen = Math.round(
+                topWithComments.reduce((s, c) => s + (c.topComments[0]?.length || 0), 0) / topWithComments.length
+            );
+            const avgTopCommentUpvotes = Math.round(
+                topWithComments.reduce((s, c) => s + (c.topComments[0]?.upvotes || 0), 0) / topWithComments.length
+            );
+            const linksInTopComments = topWithComments.filter(c => c.topComments[0]?.hasLinks).length;
+
+            recs.push({
+                priority: 'high',
+                category: 'Top Comment Strategy',
+                action: `#1 competitor's top comment: ${avgTopCommentUpvotes} upvotes, ${avgTopCommentLen} chars`,
+                detail: `Top-ranking post (r/${topComp.subreddit}) has a strong top comment by u/${topComment.author} with ${topComment.upvotes} upvotes and ${topComment.replies} replies. ${linksInTopComments > 0 ? `${linksInTopComments}/${topWithComments.length} competitors have links in their top comment.` : 'No links in top comments.'} Preview: "${topComment.body.slice(0, 150)}..."`,
+                metric: `${avgTopCommentUpvotes} avg upvotes`
+            });
+        }
+    }
+
     // ---- COMPETITOR-SPECIFIC INSIGHTS ----
     competitors.forEach(comp => {
         if (comp.position < (rank || 999)) {
@@ -581,14 +605,27 @@ const server = http.createServer(async (req, res) => {
                 const compPostId = comp.url.match(/comments\/([A-Za-z0-9]+)/i)?.[1];
                 if (!compPostId) continue;
 
-                // Fetch Reddit post data
-                const postData = JSON.parse(httpsRequest(`https://www.reddit.com/comments/${compPostId}.json`).data);
+                // Fetch Reddit post data with comments
+                const postData = JSON.parse(httpsRequest(`https://www.reddit.com/comments/${compPostId}.json?limit=5`).data);
                 const post = postData?.[0]?.data?.children?.[0]?.data;
                 if (!post) continue;
 
                 // Fetch subreddit data
                 const subData = JSON.parse(httpsRequest(`https://www.reddit.com/r/${post.subreddit}/about.json`).data);
                 const sub = subData?.data;
+
+                // Extract top comments for analysis
+                const topComments = (postData?.[1]?.data?.children || [])
+                    .filter(c => c.kind === 't1')
+                    .slice(0, 3)
+                    .map(c => ({
+                        author: c.data.author,
+                        body: (c.data.body || '').slice(0, 300),
+                        upvotes: c.data.ups || c.data.score || 0,
+                        replies: c.data.replies?.data?.children?.length || 0,
+                        hasLinks: (c.data.body || '').includes('http'),
+                        length: (c.data.body || '').length,
+                    }));
 
                 analyses.push({
                     position: comp.position,
@@ -606,6 +643,7 @@ const server = http.createServer(async (req, res) => {
                     flair: post.link_flair_text || '',
                     titleLength: post.title.length,
                     titleWords: post.title.split(/\s+/).length,
+                    topComments,
                 });
             } catch (e) {
                 console.log(`[Analyze] Failed for ${comp.url}: ${e.message}`);
@@ -641,6 +679,67 @@ const server = http.createServer(async (req, res) => {
 
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ success: true, analyses, ourData, recommendations }));
+        return;
+    }
+
+    // --- Money Comment position check ---
+    if (parsed.pathname === '/api/check-comment' && req.method === 'POST') {
+        const body = await readBody(req);
+        const { postUrl, commentId } = body;
+
+        if (!postUrl || !commentId) {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: 'Missing postUrl or commentId' }));
+            return;
+        }
+
+        const postId = postUrl.match(/comments\/([A-Za-z0-9]+)/i)?.[1];
+        if (!postId) {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: 'Invalid post URL' }));
+            return;
+        }
+
+        console.log(`[Comment] Checking position of ${commentId} in post ${postId}...`);
+
+        try {
+            // Fetch post with comments sorted by best (default Reddit sort)
+            const data = JSON.parse(httpsRequest(`https://www.reddit.com/comments/${postId}.json?limit=25`).data);
+            const comments = data?.[1]?.data?.children || [];
+
+            let position = null;
+            let totalTopLevel = 0;
+            let commentData = null;
+
+            for (let i = 0; i < comments.length; i++) {
+                const c = comments[i];
+                if (c.kind !== 't1') continue; // skip "more" items
+                totalTopLevel++;
+                if (c.data.id === commentId || c.data.name === `t1_${commentId}`) {
+                    position = totalTopLevel;
+                    commentData = {
+                        author: c.data.author,
+                        body: (c.data.body || '').slice(0, 500),
+                        upvotes: c.data.ups || c.data.score || 0,
+                        awards: c.data.total_awards_received || 0,
+                        replies: c.data.replies?.data?.children?.length || 0,
+                        createdUtc: c.data.created_utc,
+                        isStickied: c.data.stickied || false,
+                    };
+                }
+            }
+
+            console.log(`[Comment] ${commentId}: position ${position}/${totalTopLevel}`);
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({
+                success: true, position, totalTopLevel, commentData,
+                postId, commentId
+            }));
+        } catch (err) {
+            console.error(`[Comment] Error: ${err.message}`);
+            res.writeHead(500, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: err.message }));
+        }
         return;
     }
 

@@ -1937,6 +1937,108 @@ select.input {
 ::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
 
 /* ===== Responsive ===== */
+/* ===== Money Comment Section ===== */
+.mp-money-comment-section {
+    padding: 0 20px 12px;
+}
+
+.mc-card {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 14px;
+    background: var(--bg-muted);
+    border-radius: var(--radius-lg);
+    cursor: pointer;
+    transition: var(--transition);
+    border: 1px solid var(--border);
+}
+
+.mc-card:hover {
+    border-color: var(--primary);
+    background: var(--bg-hover);
+}
+
+.mc-position {
+    font-size: 20px;
+    font-weight: 800;
+    min-width: 40px;
+    text-align: center;
+    font-family: 'Fira Code', monospace;
+}
+
+.mc-pos-1 {
+    color: var(--accent-green);
+}
+
+.mc-pos-top {
+    color: var(--accent-yellow);
+}
+
+.mc-pos-other {
+    color: var(--accent-red);
+}
+
+.mc-pos-unknown {
+    color: var(--text-muted);
+}
+
+.mc-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.mc-author {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.mc-checked {
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-top: 2px;
+}
+
+.mc-history {
+    display: flex;
+    gap: 4px;
+    align-items: center;
+}
+
+.mc-hist-entry {
+    font-size: 10px;
+    font-weight: 700;
+    font-family: 'Fira Code', monospace;
+    padding: 2px 5px;
+    border-radius: 3px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+}
+
+/* ===== SEO Advisor Opt-in ===== */
+.rec-check-prompt {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 14px 20px;
+}
+
+.rec-check-hint {
+    font-size: 12px;
+    color: var(--text-muted);
+}
+
+.rec-add-task {
+    flex-shrink: 0;
+    opacity: 0;
+    transition: opacity 0.15s;
+}
+
+.rec-item:hover .rec-add-task {
+    opacity: 1;
+}
+
 @media (max-width: 900px) {
     .detail-columns { grid-template-columns: 1fr; }
     .subreddit-grid { grid-template-columns: 1fr; }

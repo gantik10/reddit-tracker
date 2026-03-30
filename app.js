@@ -853,9 +853,12 @@ async function autoCheckRank(mpId, kwIndex) {
             else if (rankType === 'reddit') toast('info', `Reddit #${avgRank}`, `"${kw.keyword}" among Reddit posts`, 6000);
             else toast('warning', 'Not ranking', `"${kw.keyword}" not found`, 6000);
 
-            // Analyze competitors if we have them
+            // Store competitors for opt-in analysis (don't auto-trigger)
             if (data.competitors?.length) {
-                analyzeCompetitors(mpId, kwIndex, data.competitors, rankType, avgRank);
+                updateSub(s => {
+                    const k = s.moneyPosts.find(x => x.id === mpId)?.googleKeywords?.[kwIndex];
+                    if (k) k.pendingCompetitors = data.competitors;
+                });
             }
             return;
         } catch (err) {
@@ -1233,7 +1236,8 @@ function renderMoneyPosts(sub) {
                 </div>
                 ${keywordsHtml || '<div class="empty-keywords">No keywords tracked. Add a keyword to monitor Google ranking.</div>'}
             </div>
-            ${renderRecommendations(keywords)}
+            ${renderMoneyComment(mp)}
+            ${renderRecommendations(mp.id, keywords)}
             <div class="mp-tasks">
                 <div class="mp-tasks-header">
                     <span class="mp-tasks-label">Post Tasks (${activeTasks} active)</span>
@@ -1312,42 +1316,168 @@ function saveRankUpdate() {
 }
 
 // ==========================================
+//  MONEY COMMENT — Render
+// ==========================================
+function renderMoneyComment(mp) {
+    const mc = mp.moneyComment;
+    if (!mc?.commentId) {
+        return `<div class="mp-money-comment-section">
+            <div class="mp-tasks-header">
+                <span class="mp-tasks-label">Money Comment</span>
+                <button class="btn btn-xs btn-ghost" onclick="openSetMoneyComment(${mp.id})">+ Set Comment</button>
+            </div>
+            <div class="empty-keywords">No money comment set. Define which comment is your money comment to track its position.</div>
+        </div>`;
+    }
+
+    const posClass = mc.position === 1 ? 'mc-pos-1' : mc.position && mc.position <= 3 ? 'mc-pos-top' : mc.position ? 'mc-pos-other' : 'mc-pos-unknown';
+    const posText = mc.position ? `#${mc.position}` : '?';
+
+    // Position history mini-chart
+    const historyHtml = (mc.history || []).length > 0 ? `<div class="mc-history">
+        ${mc.history.slice(-6).map(h => `<span class="mc-hist-entry ${h.position === 1 ? 'mc-pos-1' : h.position <= 3 ? 'mc-pos-top' : 'mc-pos-other'}" title="${fmtDate(h.date)}: #${h.position}">#${h.position}</span>`).join('')}
+        <span class="mc-hist-entry ${posClass}" title="Now">${posText}</span>
+    </div>` : '';
+
+    return `<div class="mp-money-comment-section">
+        <div class="mp-tasks-header">
+            <span class="mp-tasks-label">Money Comment</span>
+            <span style="display:flex;gap:4px;">
+                <button class="btn btn-xs btn-ghost" onclick="checkMoneyCommentPosition(${mp.id})">Check Position</button>
+                <button class="btn btn-xs btn-ghost" onclick="openSetMoneyComment(${mp.id})">Change</button>
+            </span>
+        </div>
+        <div class="mc-card" onclick="checkMoneyCommentPosition(${mp.id})">
+            <div class="mc-position ${posClass}">${posText}</div>
+            <div class="mc-info">
+                <div class="mc-author">u/${esc(mc.author || '?')} ${mc.upvotes ? `· ${fmtNumAlways(mc.upvotes)} upvotes` : ''} ${mc.replies ? `· ${mc.replies} replies` : ''}</div>
+                ${mc.checkedAt ? `<div class="mc-checked">Last checked: ${fmtDate(mc.checkedAt)} · ${mc.totalTopLevel || '?'} top-level comments</div>` : ''}
+            </div>
+            ${historyHtml}
+            <button class="btn-icon danger" onclick="event.stopPropagation();removeMoneyComment(${mp.id})" title="Remove" style="margin-left:auto;">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+        </div>
+    </div>`;
+}
+
+// ==========================================
 //  SEO ADVISOR — Render Recommendations
 // ==========================================
-function renderRecommendations(keywords) {
-    // Collect all recommendations from all keywords
-    const allRecs = [];
-    keywords.forEach(kw => {
-        if (kw.recommendations?.length) {
-            allRecs.push(...kw.recommendations.map(r => ({ ...r, keyword: kw.keyword })));
-        }
-    });
+function renderRecommendations(mpId, keywords) {
+    // Check if any keyword has recommendations
+    const hasRecs = keywords.some(kw => kw.recommendations?.length);
+    // Check if any keyword has competitors or pending competitors (meaning analysis is possible)
+    const hasCompetitors = keywords.some(kw => kw.competitorAnalysis?.length || kw.pendingCompetitors?.length || kw.rankType);
 
-    if (!allRecs.length) return '';
+    if (!hasRecs && !hasCompetitors) return '';
 
-    const priorityColors = {
-        critical: 'rec-critical', high: 'rec-high', medium: 'rec-medium', low: 'rec-low', info: 'rec-info'
-    };
-    const priorityLabels = {
-        critical: 'CRITICAL', high: 'HIGH', medium: 'MEDIUM', low: 'LOW', info: 'INFO'
-    };
+    // If recommendations exist, show them
+    if (hasRecs) {
+        const allRecs = [];
+        keywords.forEach(kw => {
+            if (kw.recommendations?.length) {
+                allRecs.push(...kw.recommendations.map(r => ({ ...r, keyword: kw.keyword })));
+            }
+        });
 
+        const priorityColors = {
+            critical: 'rec-critical', high: 'rec-high', medium: 'rec-medium', low: 'rec-low', info: 'rec-info'
+        };
+        const priorityLabels = {
+            critical: 'CRITICAL', high: 'HIGH', medium: 'MEDIUM', low: 'LOW', info: 'INFO'
+        };
+
+        return `<div class="mp-recommendations">
+            <div class="mp-tasks-header">
+                <span class="mp-tasks-label">SEO Advisor (${allRecs.length} recommendations)</span>
+                <button class="btn btn-xs btn-ghost" onclick="refreshRecommendations(${mpId})">Refresh</button>
+            </div>
+            ${allRecs.map((r, i) => `
+                <div class="rec-item">
+                    <span class="rec-priority ${priorityColors[r.priority]}">${priorityLabels[r.priority]}</span>
+                    <div class="rec-content">
+                        <div class="rec-category">${esc(r.category)}</div>
+                        <div class="rec-action">${esc(r.action)}</div>
+                        <div class="rec-detail">${esc(r.detail)}</div>
+                        ${r.metric ? `<div class="rec-metric">${esc(r.metric)}</div>` : ''}
+                    </div>
+                    <button class="btn-icon rec-add-task" onclick="addRecAsTask(${mpId},'${esc(r.category).replace(/'/g, "\\'")}','${esc(r.action).replace(/'/g, "\\'")}')" title="Add as task">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                    </button>
+                </div>
+            `).join('')}
+        </div>`;
+    }
+
+    // No recommendations yet but competitors available — show "Check Recommendations" button
     return `<div class="mp-recommendations">
         <div class="mp-tasks-header">
-            <span class="mp-tasks-label">SEO Advisor (${allRecs.length} recommendations)</span>
+            <span class="mp-tasks-label">SEO Advisor</span>
         </div>
-        ${allRecs.map(r => `
-            <div class="rec-item">
-                <span class="rec-priority ${priorityColors[r.priority]}">${priorityLabels[r.priority]}</span>
-                <div class="rec-content">
-                    <div class="rec-category">${esc(r.category)}</div>
-                    <div class="rec-action">${esc(r.action)}</div>
-                    <div class="rec-detail">${esc(r.detail)}</div>
-                    ${r.metric ? `<div class="rec-metric">${esc(r.metric)}</div>` : ''}
-                </div>
-            </div>
-        `).join('')}
+        <div class="rec-check-prompt">
+            <button class="btn btn-sm btn-primary" onclick="refreshRecommendations(${mpId})">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+                Check Recommendations
+            </button>
+            <span class="rec-check-hint">Analyze competitors and get actionable SEO advice</span>
+        </div>
     </div>`;
+}
+
+// Manually trigger recommendation analysis for a money post
+async function refreshRecommendations(mpId) {
+    const sub = getSub();
+    const mp = sub?.moneyPosts?.find(p => p.id === mpId);
+    if (!mp?.googleKeywords?.length) return toast('warning', 'No keywords', 'Add keywords first to get recommendations.');
+
+    toast('info', 'Analyzing...', 'Fetching competitor data for recommendations', 4000);
+
+    const serpKey = getSerpApiKey();
+    if (!serpKey) return toast('warning', 'Need SERP API', 'Set a SERP API key in Settings for recommendation analysis.');
+
+    for (let i = 0; i < mp.googleKeywords.length; i++) {
+        const kw = mp.googleKeywords[i];
+        // Use pending competitors from last rank check if available
+        if (kw.pendingCompetitors?.length) {
+            await analyzeCompetitors(mpId, i, kw.pendingCompetitors, kw.rankType || 'none', kw.avgRank);
+            updateSub(s => {
+                const k = s.moneyPosts.find(x => x.id === mpId)?.googleKeywords?.[i];
+                if (k) delete k.pendingCompetitors;
+            });
+        } else {
+            // Fresh SERP check + analysis
+            try {
+                const data = await checkRankWithProxy(kw.keyword, mp.url, 0);
+                if (data.competitors?.length) {
+                    await analyzeCompetitors(mpId, i, data.competitors, data.type, data.rank || data.redditRank);
+                }
+            } catch (err) {
+                toast('error', 'Analysis failed', err.message);
+            }
+        }
+    }
+}
+
+// Add a recommendation as a task to the money post
+function addRecAsTask(mpId, category, action) {
+    const title = `[${category}] ${action}`;
+    updateSub(sub => {
+        const mp = sub.moneyPosts.find(p => p.id === mpId);
+        if (!mp) return;
+        if (!mp.tasks) mp.tasks = [];
+        const id = mp.tasks.length ? Math.max(...mp.tasks.map(t => t.id)) + 1 : 1;
+        mp.tasks.push({
+            id,
+            title,
+            assigneeId: null,
+            priority: 'High',
+            status: 'To Do',
+            dueDate: ''
+        });
+    });
+    renderDetail();
+    toast('success', 'Task added', title.slice(0, 50));
 }
 
 // ==========================================
@@ -1388,6 +1518,176 @@ async function analyzeCompetitors(mpId, kwIndex, competitors, rankType, rank) {
     } catch (e) {
         console.log('Competitor analysis failed:', e.message);
     }
+}
+
+// ==========================================
+//  MONEY COMMENT TRACKING
+// ==========================================
+function openSetMoneyComment(mpId) {
+    const sub = getSub();
+    const mp = sub?.moneyPosts?.find(p => p.id === mpId);
+    if (!mp) return;
+
+    // Build modal content dynamically
+    const modal = document.getElementById('moneyCommentModal');
+    const existing = mp.moneyComment;
+    document.getElementById('mcMpId').value = mpId;
+    document.getElementById('mcCommentUrl').value = existing?.commentUrl || '';
+    document.getElementById('mcCommentId').value = existing?.commentId || '';
+
+    // Show current status if exists
+    const statusEl = document.getElementById('mcStatus');
+    if (existing?.position) {
+        statusEl.className = 'fetch-status success';
+        statusEl.textContent = `Current position: #${existing.position}/${existing.totalTopLevel || '?'} (${existing.upvotes || 0} upvotes)`;
+    } else {
+        statusEl.className = 'fetch-status';
+        statusEl.textContent = '';
+    }
+
+    openModal('moneyCommentModal');
+}
+
+function parseCommentUrl(input) {
+    input = input.trim();
+    // Extract comment ID from Reddit URL: .../comments/POST_ID/slug/COMMENT_ID/
+    const match = input.match(/reddit\.com\/r\/[^/]+\/comments\/([A-Za-z0-9]+)\/[^/]*\/([A-Za-z0-9]+)/i);
+    if (match) return { postId: match[1], commentId: match[2] };
+    // Just a comment ID
+    if (/^[a-z0-9]+$/i.test(input) && input.length < 20) return { commentId: input };
+    return null;
+}
+
+async function fetchMoneyComment() {
+    const mpId = Number(document.getElementById('mcMpId').value);
+    const urlInput = document.getElementById('mcCommentUrl').value;
+    const status = document.getElementById('mcStatus');
+
+    const sub = getSub();
+    const mp = sub?.moneyPosts?.find(p => p.id === mpId);
+    if (!mp?.url) return toast('warning', 'No post URL', 'Add a post URL first.');
+
+    const parsed = parseCommentUrl(urlInput);
+    if (!parsed?.commentId) {
+        status.className = 'fetch-status error';
+        status.textContent = 'Paste a comment permalink or comment ID';
+        return;
+    }
+
+    status.className = 'fetch-status loading';
+    status.innerHTML = '<span class="spinner"></span> Checking comment position...';
+
+    try {
+        const res = await fetch(`${SERVER}/api/check-comment`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ postUrl: mp.url, commentId: parsed.commentId })
+        });
+        const data = await res.json();
+        if (data.error) throw new Error(data.error);
+
+        document.getElementById('mcCommentId').value = parsed.commentId;
+
+        if (data.position) {
+            status.className = 'fetch-status success';
+            status.textContent = `Position #${data.position}/${data.totalTopLevel} | ${data.commentData?.upvotes || 0} upvotes | by u/${data.commentData?.author || '?'}`;
+        } else {
+            status.className = 'fetch-status error';
+            status.textContent = 'Comment not found in top 25 comments. Check the URL.';
+        }
+    } catch (err) {
+        status.className = 'fetch-status error';
+        status.textContent = err.message;
+    }
+}
+
+function saveMoneyComment() {
+    const mpId = Number(document.getElementById('mcMpId').value);
+    const commentUrl = document.getElementById('mcCommentUrl').value.trim();
+    const commentId = document.getElementById('mcCommentId').value.trim();
+    if (!commentId) return toast('warning', 'Fetch first', 'Paste a comment URL and click Fetch.');
+
+    updateSub(s => {
+        const p = s.moneyPosts.find(x => x.id === mpId);
+        if (!p) return;
+        if (!p.moneyComment) p.moneyComment = {};
+        p.moneyComment.commentUrl = commentUrl;
+        p.moneyComment.commentId = commentId;
+        p.moneyComment.setAt = new Date().toISOString();
+        if (!p.moneyComment.history) p.moneyComment.history = [];
+    });
+
+    closeModal('moneyCommentModal');
+    renderDetail();
+    toast('success', 'Money comment set', 'Click the position badge to refresh.');
+
+    // Auto-check position
+    checkMoneyCommentPosition(mpId);
+}
+
+async function checkMoneyCommentPosition(mpId) {
+    const sub = getSub();
+    const mp = sub?.moneyPosts?.find(p => p.id === mpId);
+    if (!mp?.moneyComment?.commentId || !mp.url) return;
+
+    try {
+        const res = await fetch(`${SERVER}/api/check-comment`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ postUrl: mp.url, commentId: mp.moneyComment.commentId })
+        });
+        const data = await res.json();
+        if (data.error) throw new Error(data.error);
+
+        updateSub(s => {
+            const p = s.moneyPosts.find(x => x.id === mpId);
+            if (!p?.moneyComment) return;
+            const mc = p.moneyComment;
+
+            // Save to history
+            if (mc.position) {
+                if (!mc.history) mc.history = [];
+                mc.history.push({
+                    position: mc.position,
+                    upvotes: mc.upvotes,
+                    totalTopLevel: mc.totalTopLevel,
+                    date: mc.checkedAt
+                });
+            }
+
+            mc.position = data.position;
+            mc.totalTopLevel = data.totalTopLevel;
+            mc.upvotes = data.commentData?.upvotes || 0;
+            mc.author = data.commentData?.author || '';
+            mc.replies = data.commentData?.replies || 0;
+            mc.checkedAt = new Date().toISOString();
+        });
+
+        renderDetail();
+
+        // Silent when #1. Critical alert when not #1.
+        if (data.position === 1) {
+            toast('success', 'Comment is #1', `Holding top position · ${data.commentData?.upvotes || 0} upvotes`);
+        } else if (data.position && data.position > 1) {
+            toast('error',
+                'CRITICAL: Money comment is NOT #1!',
+                `Currently #${data.position}/${data.totalTopLevel}. Needs immediate action.`,
+                0  // persistent — must be manually dismissed
+            );
+        } else {
+            toast('error', 'Comment not found', 'Not in top 25 comments — check the comment ID', 0);
+        }
+    } catch (err) {
+        toast('error', 'Check failed', err.message);
+    }
+}
+
+function removeMoneyComment(mpId) {
+    updateSub(s => {
+        const p = s.moneyPosts.find(x => x.id === mpId);
+        if (p) delete p.moneyComment;
+    });
+    renderDetail();
 }
 
 function removeKeyword(mpId, kwIndex) {
@@ -1778,13 +2078,17 @@ document.getElementById('deleteConfirmBtn').addEventListener('click', () => {
 //  AUTO-REFRESH (followers + post stats)
 // ==========================================
 let autoRefreshInterval = null;
+let moneyCommentInterval = null;
 
 function startAutoRefresh() {
     if (autoRefreshInterval) return;
-    // Refresh every 5 minutes
+    // Refresh followers + posts every 5 minutes
     autoRefreshInterval = setInterval(autoRefreshAll, 5 * 60 * 1000);
-    // Also run once after 10 seconds on load
+    // Money comment check every hour
+    moneyCommentInterval = setInterval(autoCheckAllMoneyComments, 60 * 60 * 1000);
+    // Run followers after 10 seconds, money comments after 30 seconds on load
     setTimeout(autoRefreshAll, 10000);
+    setTimeout(autoCheckAllMoneyComments, 30000);
 }
 
 async function autoRefreshAll() {
@@ -1855,6 +2159,74 @@ async function autoRefreshAll() {
     // Re-render current view
     if (currentSubId) renderDetail();
     else renderHome();
+}
+
+// ==========================================
+//  HOURLY MONEY COMMENT CHECK
+// ==========================================
+async function autoCheckAllMoneyComments() {
+    const subs = S.get('subreddits');
+    if (!subs.length) return;
+
+    for (const sub of subs) {
+        for (const mp of (sub.moneyPosts || [])) {
+            if (!mp.moneyComment?.commentId || !mp.url) continue;
+
+            try {
+                const mcRes = await fetch(`${SERVER}/api/check-comment`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ postUrl: mp.url, commentId: mp.moneyComment.commentId })
+                });
+                const mcData = await mcRes.json();
+                if (!mcData.success) continue;
+
+                let allSubs = S.get('subreddits');
+                const si = allSubs.findIndex(x => x.id === sub.id);
+                const p = allSubs[si]?.moneyPosts?.find(x => x.id === mp.id);
+                if (!p?.moneyComment) continue;
+
+                const mc = p.moneyComment;
+                const oldPos = mc.position;
+
+                // Save current to history
+                if (mc.position) {
+                    if (!mc.history) mc.history = [];
+                    mc.history.push({
+                        position: mc.position, upvotes: mc.upvotes,
+                        totalTopLevel: mc.totalTopLevel, date: mc.checkedAt
+                    });
+                }
+
+                mc.position = mcData.position;
+                mc.totalTopLevel = mcData.totalTopLevel;
+                mc.upvotes = mcData.commentData?.upvotes || 0;
+                mc.author = mcData.commentData?.author || '';
+                mc.replies = mcData.commentData?.replies || 0;
+                mc.checkedAt = new Date().toISOString();
+                S.set('subreddits', allSubs);
+
+                // CRITICAL ALERT if lost #1 — persistent toast, no auto-dismiss
+                if (mcData.position && mcData.position > 1) {
+                    toast('error',
+                        'CRITICAL: Money comment lost #1!',
+                        `"${p.title?.slice(0, 40)}..." in r/${sub.name} dropped to #${mcData.position}. Was ${oldPos ? '#' + oldPos : 'unchecked'}. Immediate action needed.`,
+                        0  // 0 = no auto-dismiss, stays until manually closed
+                    );
+                }
+
+                console.log(`[MC] r/${sub.name} "${p.title?.slice(0, 30)}": comment #${mcData.position || '?'}/${mcData.totalTopLevel}`);
+            } catch (err) {
+                console.log(`[MC] Failed for post ${mp.id}: ${err.message}`);
+            }
+
+            // Delay between checks
+            await new Promise(r => setTimeout(r, 2000));
+        }
+    }
+
+    // Re-render if viewing a subreddit
+    if (currentSubId) renderDetail();
 }
 
 // ==========================================

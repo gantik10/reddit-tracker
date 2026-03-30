@@ -492,6 +492,33 @@
         </div>
     </div>
 
+    <!-- Money Comment Modal -->
+    <div class="modal-overlay" id="moneyCommentModal">
+        <div class="modal modal-sm">
+            <div class="modal-header">
+                <h3>Set Money Comment</h3>
+                <button class="modal-close" onclick="closeModal('moneyCommentModal')">&times;</button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="mcMpId">
+                <input type="hidden" id="mcCommentId">
+                <div class="form-group">
+                    <label>Comment permalink or ID</label>
+                    <div class="fetch-input-row">
+                        <input type="text" class="input" id="mcCommentUrl" placeholder="https://reddit.com/r/.../comments/.../slug/COMMENT_ID/">
+                        <button class="btn btn-primary" onclick="fetchMoneyComment()">Fetch</button>
+                    </div>
+                    <p class="modal-hint">Right-click the comment on Reddit → Copy Link. Or paste just the comment ID.</p>
+                </div>
+                <div class="fetch-status" id="mcStatus"></div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-ghost" onclick="closeModal('moneyCommentModal')">Cancel</button>
+                <button class="btn btn-primary" onclick="saveMoneyComment()">Save & Track</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Toast Notifications -->
     <div class="toast-container" id="toastContainer"></div>
 
@@ -506,6 +533,6 @@
         <div class="rank-panel-result hidden" id="rankPanelResult"></div>
     </div>
 
-    <script src="app.js?v=20260330c"></script>
+    <script src="app.js?v=20260330d"></script>
 </body>
 </html>
