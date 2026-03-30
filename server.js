@@ -156,25 +156,58 @@ async function getDolphinLocalToken() {
 }
 
 async function startDolphinProfile(profileId, token) {
-    // Try to get a valid local session token
-    const localToken = await getDolphinLocalToken();
-    const authToken = localToken || token;
+    // Try automation=1 first
+    let data = await httpGet(`${DOLPHIN_API}/browser_profiles/${profileId}/start?automation=1`);
 
-    const data = await httpGet(`${DOLPHIN_API}/browser_profiles/${profileId}/start?automation=1`, {
-        'Authorization': `Bearer ${authToken}`
-    });
-    if (!data.success) {
-        throw new Error(data.error || 'Failed to start profile. Log into Dolphin Anty on the VPS via VNC.');
+    if (data.success && data.automation) {
+        return data.automation;
     }
-    return data.automation;
+
+    // If automation fails, start normally and find the debug port
+    console.log('[Dolphin] automation=1 failed, trying manual approach...');
+
+    // Stop if already started
+    await httpGet(`${DOLPHIN_API}/browser_profiles/${profileId}/stop`).catch(() => {});
+    await new Promise(r => setTimeout(r, 2000));
+
+    // Start without automation
+    data = await httpGet(`${DOLPHIN_API}/browser_profiles/${profileId}/start`);
+    if (!data.success) {
+        throw new Error(data.error || 'Failed to start profile');
+    }
+
+    // Wait for browser to launch
+    await new Promise(r => setTimeout(r, 3000));
+
+    // Find the Chrome process and its debug port
+    try {
+        const portInfo = execSync(
+            `ss -tlnp | grep -oP '(?<=:)(9[0-9]{3})(?=\\s)' | head -1`,
+            { encoding: 'utf8', timeout: 5000 }
+        ).trim();
+
+        if (portInfo) {
+            console.log(`[Dolphin] Found debug port: ${portInfo}`);
+            return { port: parseInt(portInfo) };
+        }
+    } catch {}
+
+    // Scan common debug ports
+    for (let port = 9222; port <= 9250; port++) {
+        try {
+            const versionInfo = await httpGet(`http://127.0.0.1:${port}/json/version`);
+            if (versionInfo.webSocketDebuggerUrl) {
+                console.log(`[Dolphin] Found debug port by scan: ${port}`);
+                return { port, wsEndpoint: versionInfo.webSocketDebuggerUrl };
+            }
+        } catch {}
+    }
+
+    throw new Error('Profile started but no debug port found. Check Dolphin automation settings.');
 }
 
 async function stopDolphinProfile(profileId, token) {
-    const localToken = await getDolphinLocalToken();
-    const authToken = localToken || token;
-    await httpGet(`${DOLPHIN_API}/browser_profiles/${profileId}/stop`, {
-        'Authorization': `Bearer ${authToken}`
-    }).catch(() => {});
+    await httpGet(`${DOLPHIN_API}/browser_profiles/${profileId}/stop`).catch(() => {});
 }
 
 // --- Scrape Google results from current page ---
