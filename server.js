@@ -540,12 +540,21 @@ const server = http.createServer(async (req, res) => {
                 .filter(r => r.link?.includes('reddit.com/r/') && r.link?.includes('/comments/'))
                 .map(r => ({ position: r.position, url: r.link, title: r.title, snippet: r.snippet || '' }));
 
+            // Full SERP results for preview
+            const googleSerp = organic.map(r => ({
+                position: r.position, url: r.link, title: r.title,
+                snippet: r.snippet || '', displayedLink: r.displayed_link || '',
+                source: r.source || '', favicon: r.favicon || '',
+                isTarget: !!(postId && r.link?.toLowerCase().includes(`comments/${postId}`))
+            }));
+
             if (googleRank) {
                 console.log(`[SERP] Found on Google #${googleRank}`);
                 res.writeHead(200, { 'Content-Type': 'application/json' });
                 res.end(JSON.stringify({
                     success: true, type: 'google', rank: googleRank, redditRank: null,
-                    totalResults: organic.length, competitors: googleCompetitors
+                    totalResults: organic.length, competitors: googleCompetitors,
+                    serpResults: googleSerp, serpQuery: keyword
                 }));
                 return;
             }
@@ -571,11 +580,21 @@ const server = http.createServer(async (req, res) => {
                 redditCompetitors.push({ position: r.position, url: r.link, title: r.title, snippet: r.snippet || '' });
             }
 
+            // Full Reddit SERP results for preview
+            const redditSerp = redditOrganic.map(r => ({
+                position: r.position, url: r.link, title: r.title,
+                snippet: r.snippet || '', displayedLink: r.displayed_link || '',
+                source: r.source || '', favicon: r.favicon || '',
+                isTarget: !!(postId && r.link?.toLowerCase().includes(`comments/${postId}`))
+            }));
+
             console.log(`[SERP] Reddit rank: ${redditRank || 'not found'}, ${redditCompetitors.length} competitors above`);
             res.writeHead(200, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify({
                 success: true, type: 'reddit', rank: null, redditRank,
-                totalResults: redditOrganic.length, competitors: redditCompetitors
+                totalResults: redditOrganic.length, competitors: redditCompetitors,
+                serpResults: googleSerp, redditSerpResults: redditSerp,
+                serpQuery: keyword
             }));
         } catch (err) {
             console.error(`[SERP] Error: ${err.message}`);

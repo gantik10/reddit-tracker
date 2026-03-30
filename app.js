@@ -954,13 +954,15 @@ async function autoCheckRank(mpId, kwIndex) {
             else if (rankType === 'reddit') toast('info', `Reddit #${avgRank}`, `"${kw.keyword}" among Reddit posts`, 6000);
             else toast('warning', 'Not ranking', `"${kw.keyword}" not found`, 6000);
 
-            // Store competitors for opt-in analysis (don't auto-trigger)
-            if (data.competitors?.length) {
-                updateSub(s => {
-                    const k = s.moneyPosts.find(x => x.id === mpId)?.googleKeywords?.[kwIndex];
-                    if (k) k.pendingCompetitors = data.competitors;
-                });
-            }
+            // Store competitors + SERP results
+            updateSub(s => {
+                const k = s.moneyPosts.find(x => x.id === mpId)?.googleKeywords?.[kwIndex];
+                if (!k) return;
+                if (data.competitors?.length) k.pendingCompetitors = data.competitors;
+                if (data.serpResults) k.serpResults = data.serpResults;
+                if (data.redditSerpResults) k.redditSerpResults = data.redditSerpResults;
+                k.serpQuery = data.serpQuery || kw.keyword;
+            });
             return;
         } catch (err) {
             toast('error', 'Check failed', err.message, 6000);
@@ -1257,6 +1259,59 @@ function renderSerpPreview(mp, sub) {
 }
 
 // ==========================================
+//  FULL SERP RESULTS (collapsible)
+// ==========================================
+const _serpOpen = {};
+
+function toggleSerp(serpId) {
+    _serpOpen[serpId] = !_serpOpen[serpId];
+    const el = document.getElementById(serpId);
+    if (el) el.classList.toggle('hidden', !_serpOpen[serpId]);
+}
+
+function renderSerpResults(serpId, kw) {
+    const isOpen = !!_serpOpen[serpId];
+    const googleResults = kw.serpResults || [];
+    const redditResults = kw.redditSerpResults || [];
+    const hasGoogle = googleResults.length > 0;
+    const hasReddit = redditResults.length > 0;
+
+    function serpResultHtml(r) {
+        const domain = (() => { try { return new URL(r.url).hostname; } catch { return ''; } })();
+        const highlightClass = r.isTarget ? 'serp-result-ours' : '';
+
+        return `<div class="serp-result ${highlightClass}">
+            <div class="serp-result-url">
+                <img class="serp-result-icon" src="${r.favicon || `https://www.google.com/s2/favicons?domain=${domain}&sz=32`}" width="16" height="16" alt="" onerror="this.style.display='none'">
+                <span class="serp-result-source">${esc(r.source || domain)}</span>
+                <span class="serp-result-link">${esc(r.displayedLink || r.url || '')}</span>
+            </div>
+            <a class="serp-result-title" href="${esc(r.url)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">${esc(r.title || '')}</a>
+            <div class="serp-result-snippet">${esc(r.snippet || '')}</div>
+            <span class="serp-result-pos">#${r.position}</span>
+            ${r.isTarget ? '<span class="serp-result-tag">YOUR POST</span>' : ''}
+        </div>`;
+    }
+
+    return `<div class="serp-full-panel ${isOpen ? '' : 'hidden'}" id="${serpId}">
+        ${hasGoogle ? `<div class="serp-section">
+            <div class="serp-section-header">
+                <span class="serp-section-title">Google Results for "${esc(kw.serpQuery || kw.keyword)}"</span>
+                <a class="serp-section-link" href="https://www.google.com/search?q=${encodeURIComponent(kw.keyword)}&gl=us&hl=en" target="_blank" rel="noopener" onclick="event.stopPropagation()">Open in Google</a>
+            </div>
+            ${googleResults.map(serpResultHtml).join('')}
+        </div>` : ''}
+        ${hasReddit ? `<div class="serp-section">
+            <div class="serp-section-header">
+                <span class="serp-section-title">Reddit Results (site:reddit.com)</span>
+                <a class="serp-section-link" href="https://www.google.com/search?q=${encodeURIComponent(kw.keyword + ' site:www.reddit.com')}&gl=us&hl=en" target="_blank" rel="noopener" onclick="event.stopPropagation()">Open in Google</a>
+            </div>
+            ${redditResults.map(serpResultHtml).join('')}
+        </div>` : ''}
+    </div>`;
+}
+
+// ==========================================
 //  MONEY POSTS RENDERING
 // ==========================================
 function renderMoneyPosts(sub) {
@@ -1329,23 +1384,32 @@ function renderMoneyPosts(sub) {
                 <span class="gr-avg-label">AVG</span>
             </div>` : '';
 
-            return `<div class="google-rank-row">
-                <span class="gr-keyword">${esc(kw.keyword)}</span>
-                <span class="gr-type-badge ${badgeClass}">${rType === 'google' ? 'GOOGLE' : rType === 'reddit' ? 'REDDIT' : 'N/A'}</span>
-                <span class="gr-rank ${rankClass}">${avg ? '#' + avg : '—'}</span>
-                ${pillsHtml}
-                <span class="gr-note">${statusText}${kw.updatedAt ? ' · ' + fmtDate(kw.updatedAt) : ''}${kw.captchaCount ? ' · ' + kw.captchaCount + ' captcha' : ''}</span>
-                ${hasDolphin ? `<button class="btn-icon" onclick="autoCheckRank(${mp.id},${i})" title="Check via ${profileCount} profiles">
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg>
-                </button>` : `<button class="btn-icon" onclick="updateKeywordRank(${mp.id},${i})" title="Update rank manually">
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg>
-                </button>`}
-                <a class="btn-icon" href="https://www.google.com/search?q=${encodeURIComponent(kw.keyword)}&gl=us&hl=en" target="_blank" rel="noopener" onclick="event.stopPropagation()" title="Search Google for this keyword">
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-                </a>
-                <button class="btn-icon danger" onclick="removeKeyword(${mp.id},${i})" title="Remove">
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-                </button>
+            const hasSerpData = kw.serpResults?.length || kw.redditSerpResults?.length;
+            const serpId = `serp_${mp.id}_${i}`;
+
+            return `<div class="google-rank-block">
+                <div class="google-rank-row">
+                    <span class="gr-keyword">${esc(kw.keyword)}</span>
+                    <span class="gr-type-badge ${badgeClass}">${rType === 'google' ? 'GOOGLE' : rType === 'reddit' ? 'REDDIT' : 'N/A'}</span>
+                    <span class="gr-rank ${rankClass}">${avg ? '#' + avg : '—'}</span>
+                    ${pillsHtml}
+                    <span class="gr-note">${statusText}${kw.updatedAt ? ' · ' + fmtDate(kw.updatedAt) : ''}${kw.captchaCount ? ' · ' + kw.captchaCount + ' captcha' : ''}</span>
+                    ${hasSerpData ? `<button class="btn-icon" onclick="toggleSerp('${serpId}')" title="View full SERP results">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="21" x2="9" y2="9"/></svg>
+                    </button>` : ''}
+                    ${hasDolphin ? `<button class="btn-icon" onclick="autoCheckRank(${mp.id},${i})" title="Check rank">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg>
+                    </button>` : `<button class="btn-icon" onclick="updateKeywordRank(${mp.id},${i})" title="Update rank manually">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg>
+                    </button>`}
+                    <a class="btn-icon" href="https://www.google.com/search?q=${encodeURIComponent(kw.keyword)}&gl=us&hl=en" target="_blank" rel="noopener" onclick="event.stopPropagation()" title="Search Google">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                    </a>
+                    <button class="btn-icon danger" onclick="removeKeyword(${mp.id},${i})" title="Remove">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                    </button>
+                </div>
+                ${hasSerpData ? renderSerpResults(serpId, kw) : ''}
             </div>`;
         }).join('') : '';
 
