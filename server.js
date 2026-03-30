@@ -106,18 +106,74 @@ async function getDolphinProfiles(token) {
     throw new Error('Unexpected response from Dolphin API');
 }
 
+// Get Dolphin local session token from db.json or by refreshing
+let cachedLocalToken = null;
+
+async function getDolphinLocalToken() {
+    if (cachedLocalToken) {
+        // Test if still valid
+        const test = await httpGet(`${DOLPHIN_API}/browser_profiles?page=0&limit=1`, {
+            'Authorization': `Bearer ${cachedLocalToken}`
+        }).catch(() => ({ success: false }));
+        if (test.success) return cachedLocalToken;
+    }
+
+    // Read from db.json
+    const dbPath = '/root/.config/dolphin_anty/db.json';
+    try {
+        const db = JSON.parse(require('fs').readFileSync(dbPath, 'utf8'));
+        if (db.sessionId) {
+            cachedLocalToken = db.sessionId;
+            const test = await httpGet(`${DOLPHIN_API}/browser_profiles?page=0&limit=1`, {
+                'Authorization': `Bearer ${cachedLocalToken}`
+            }).catch(() => ({ success: false }));
+            if (test.success) return cachedLocalToken;
+        }
+
+        // Try to refresh session using the refresh token
+        if (db.refreshToken && db.remoteApiToken) {
+            console.log('[Dolphin] Attempting token refresh...');
+            const refreshResult = JSON.parse(
+                execSync(`curl -sL -X POST "https://dolphin-anty-api.com/auth/refresh" -H "Authorization: Bearer ${db.remoteApiToken}" -H "Content-Type: application/json"`, {
+                    encoding: 'utf8', timeout: 10000
+                })
+            );
+            if (refreshResult.success && refreshResult.data?.token) {
+                cachedLocalToken = refreshResult.data.token;
+                // Save to db.json
+                db.sessionId = cachedLocalToken;
+                require('fs').writeFileSync(dbPath, JSON.stringify(db, null, 2));
+                console.log('[Dolphin] Token refreshed successfully');
+                return cachedLocalToken;
+            }
+        }
+    } catch (e) {
+        console.log('[Dolphin] Token refresh error:', e.message);
+    }
+
+    // Fallback: try using the remote API token directly
+    return null;
+}
+
 async function startDolphinProfile(profileId, token) {
-    // Use LOCAL API to start profile for automation
+    // Try to get a valid local session token
+    const localToken = await getDolphinLocalToken();
+    const authToken = localToken || token;
+
     const data = await httpGet(`${DOLPHIN_API}/browser_profiles/${profileId}/start?automation=1`, {
-        'Authorization': `Bearer ${token}`
+        'Authorization': `Bearer ${authToken}`
     });
-    if (!data.success) throw new Error(data.error || 'Failed to start profile. Is Dolphin Anty running?');
+    if (!data.success) {
+        throw new Error(data.error || 'Failed to start profile. Log into Dolphin Anty on the VPS via VNC.');
+    }
     return data.automation;
 }
 
 async function stopDolphinProfile(profileId, token) {
+    const localToken = await getDolphinLocalToken();
+    const authToken = localToken || token;
     await httpGet(`${DOLPHIN_API}/browser_profiles/${profileId}/stop`, {
-        'Authorization': `Bearer ${token}`
+        'Authorization': `Bearer ${authToken}`
     }).catch(() => {});
 }
 
