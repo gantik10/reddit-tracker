@@ -7,6 +7,7 @@ const fs = require('fs');
 const path = require('path');
 const { execSync, spawn } = require('child_process');
 const puppeteer = require('puppeteer-core');
+const proxyChain = require('proxy-chain');
 
 const PORT = process.env.PORT || 3002;
 
@@ -83,13 +84,16 @@ async function launchFreshChromium(proxyPort) {
     // Fresh profile dir — deleted after use
     const userDataDir = `/tmp/rank-check-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
-    const proxyUrl = `socks5://${PROXY_BASE.host}:${proxyPort}`;
+    // Create authenticated proxy URL and anonymize it for Chromium
+    const originalProxy = `socks5://${PROXY_BASE.login}:${PROXY_BASE.password}@${PROXY_BASE.host}:${proxyPort}`;
+    const localProxy = await proxyChain.anonymizeProxy(originalProxy);
+    console.log(`[Chrome] Proxy: port ${proxyPort} → ${localProxy}`);
 
     const args = [
         '--no-sandbox', '--disable-gpu', '--disable-dev-shm-usage',
         `--remote-debugging-port=${debugPort}`,
         `--user-data-dir=${userDataDir}`,
-        `--proxy-server=${proxyUrl}`,
+        `--proxy-server=${localProxy}`,
         '--no-first-run', '--disable-default-apps',
         '--disable-features=Translate,OptimizationGuideModelDownloading',
         '--disable-background-networking',
@@ -127,13 +131,15 @@ async function launchFreshChromium(proxyPort) {
         throw new Error('Chrome failed to start');
     }
 
-    return { wsEndpoint, proc, userDataDir, debugPort, proxyPort };
+    return { wsEndpoint, proc, userDataDir, debugPort, proxyPort, localProxy };
 }
 
 function killChromium(instance) {
     if (!instance) return;
     try { process.kill(-instance.proc.pid); } catch {}
     try { execSync(`pkill -f "rank-check.*${instance.debugPort}" 2>/dev/null; exit 0`, { shell: '/bin/bash', timeout: 3000 }); } catch {}
+    // Close proxy forwarder
+    if (instance.localProxy) proxyChain.closeAnonymizedProxy(instance.localProxy, true).catch(() => {});
     // Delete fresh profile
     try { execSync(`rm -rf "${instance.userDataDir}" 2>/dev/null; exit 0`, { shell: '/bin/bash', timeout: 3000 }); } catch {}
 }
@@ -181,9 +187,6 @@ async function checkGoogleRank(proxyPort, keyword, targetUrl) {
         browser = await puppeteer.connect({ browserWSEndpoint: instance.wsEndpoint, defaultViewport: null });
         const page = await browser.newPage();
         await page.setDefaultTimeout(30000);
-
-        // SOCKS5 auth
-        await page.authenticate({ username: PROXY_BASE.login, password: PROXY_BASE.password });
 
         // ===== STEP 1: Regular Google search =====
         console.log(`[Rank] Step 1: Google "${keyword}" (proxy port ${proxyPort})...`);
