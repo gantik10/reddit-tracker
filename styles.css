@@ -2907,6 +2907,12 @@ select.input {
     opacity: 1;
 }
 
+.last-sync {
+    font-size: 10px;
+    color: var(--text-muted);
+    font-weight: 400;
+}
+
 /* ===== Login Gate ===== */
 .login-gate {
     position: fixed;

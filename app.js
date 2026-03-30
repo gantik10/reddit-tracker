@@ -36,6 +36,18 @@ document.getElementById('loginPassword').addEventListener('keydown', e => {
     if (e.key === 'Enter') checkLogin();
 });
 
+// --- Last update timestamp ---
+function updateSyncTime() {
+    const el = document.getElementById('lastSyncTime');
+    if (el) {
+        const now = new Date();
+        const h = now.getHours().toString().padStart(2, '0');
+        const m = now.getMinutes().toString().padStart(2, '0');
+        const day = now.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+        el.textContent = `· Updated ${day} ${h}:${m}`;
+    }
+}
+
 // --- Storage (synced to server for team sharing) ---
 const S = {
     get(k) { try { return JSON.parse(localStorage.getItem('lk_' + k)) || []; } catch { return []; } },
@@ -158,6 +170,7 @@ const S = {
                 }
             }
             console.log('[Sync] Pulled:', (data.subreddits || []).length, 'subs');
+            updateSyncTime();
             return true;
         } catch (err) {
             console.log('[Sync] Pull failed, using local:', err.message);
@@ -2620,6 +2633,7 @@ async function autoRefreshAll() {
     }
 
     // Re-render current view
+    updateSyncTime();
     if (currentSubId) renderDetail();
     else renderHome();
 }
