@@ -155,59 +155,66 @@ async function getDolphinLocalToken() {
     return null;
 }
 
+// Get proxy config from Dolphin cloud API for a profile
+async function getProfileProxy(profileId, token) {
+    const result = JSON.parse(
+        execSync(`curl -sL "https://dolphin-anty-api.com/browser_profiles/${profileId}" -H "Authorization: Bearer ${token}"`, {
+            encoding: 'utf8', timeout: 15000
+        })
+    );
+    const proxy = result?.data?.proxy;
+    if (!proxy || !proxy.host) return null;
+    return {
+        type: proxy.type || 'socks5',
+        host: proxy.host,
+        port: proxy.port,
+        login: proxy.login,
+        password: proxy.password
+    };
+}
+
+// Launch Chromium directly with the profile's proxy
+let nextDebugPort = 9300;
+
 async function startDolphinProfile(profileId, token) {
-    // Try automation=1 first
-    let data = await httpGet(`${DOLPHIN_API}/browser_profiles/${profileId}/start?automation=1`);
-
-    if (data.success && data.automation) {
-        return data.automation;
-    }
-
-    // If automation fails, start normally and find the debug port
-    console.log('[Dolphin] automation=1 failed, trying manual approach...');
-
-    // Stop if already started
-    await httpGet(`${DOLPHIN_API}/browser_profiles/${profileId}/stop`).catch(() => {});
-    await new Promise(r => setTimeout(r, 2000));
-
-    // Start without automation
-    data = await httpGet(`${DOLPHIN_API}/browser_profiles/${profileId}/start`);
-    if (!data.success) {
-        throw new Error(data.error || 'Failed to start profile');
-    }
-
-    // Wait for browser to launch
-    await new Promise(r => setTimeout(r, 3000));
-
-    // Find the Chrome process and its debug port
+    // First try Dolphin's native automation
     try {
-        const portInfo = execSync(
-            `ss -tlnp | grep -oP '(?<=:)(9[0-9]{3})(?=\\s)' | head -1`,
-            { encoding: 'utf8', timeout: 5000 }
-        ).trim();
-
-        if (portInfo) {
-            console.log(`[Dolphin] Found debug port: ${portInfo}`);
-            return { port: parseInt(portInfo) };
+        let data = await httpGet(`${DOLPHIN_API}/browser_profiles/${profileId}/start?automation=1`);
+        if (data.success && data.automation) {
+            console.log('[Dolphin] Native automation started');
+            return data.automation;
         }
     } catch {}
 
-    // Scan common debug ports
-    for (let port = 9222; port <= 9250; port++) {
-        try {
-            const versionInfo = await httpGet(`http://127.0.0.1:${port}/json/version`);
-            if (versionInfo.webSocketDebuggerUrl) {
-                console.log(`[Dolphin] Found debug port by scan: ${port}`);
-                return { port, wsEndpoint: versionInfo.webSocketDebuggerUrl };
-            }
-        } catch {}
-    }
+    // Fallback: launch Chromium directly with the profile's proxy
+    console.log('[Dolphin] Native automation failed, launching Chromium with proxy...');
 
-    throw new Error('Profile started but no debug port found. Check Dolphin automation settings.');
+    const proxy = await getProfileProxy(profileId, token);
+    const debugPort = nextDebugPort++;
+    if (nextDebugPort > 9350) nextDebugPort = 9300;
+
+    const proxyArg = proxy
+        ? `--proxy-server=${proxy.type}://${proxy.host}:${proxy.port}`
+        : '';
+
+    const userDataDir = `/tmp/dolphin-chrome-${profileId}`;
+    const cmd = `DISPLAY=:99 chromium --no-sandbox --disable-gpu --remote-debugging-port=${debugPort} --user-data-dir="${userDataDir}" ${proxyArg} --no-first-run --disable-default-apps --disable-features=Translate about:blank`;
+
+    execSync(`${cmd} &`, { shell: '/bin/bash', timeout: 5000 }).toString();
+    await new Promise(r => setTimeout(r, 3000));
+
+    // If proxy has auth, we'll handle it in Puppeteer
+    const proxyAuth = proxy?.login ? { username: proxy.login, password: proxy.password } : null;
+
+    console.log(`[Dolphin] Chromium started on port ${debugPort} with proxy ${proxy?.host || 'none'}`);
+    return { port: debugPort, proxyAuth };
 }
 
 async function stopDolphinProfile(profileId, token) {
+    // Try Dolphin stop
     await httpGet(`${DOLPHIN_API}/browser_profiles/${profileId}/stop`).catch(() => {});
+    // Also kill our Chromium instance
+    execSync(`pkill -f "user-data-dir=.*${profileId}" 2>/dev/null || true`, { shell: '/bin/bash' });
 }
 
 // --- Scrape Google results from current page ---
@@ -306,6 +313,11 @@ async function checkGoogleRank(profileId, token, keyword, targetUrl) {
         browser = await puppeteer.connect({ browserWSEndpoint: wsEndpoint, defaultViewport: null });
         const page = await browser.newPage();
         await page.setDefaultTimeout(30000);
+
+        // Handle proxy authentication if needed
+        if (automation.proxyAuth) {
+            await page.authenticate(automation.proxyAuth);
+        }
 
         // ========== STEP 1: Regular Google search (first page) ==========
         console.log(`[Rank] Step 1: Searching Google for "${keyword}"...`);
