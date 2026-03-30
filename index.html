@@ -1,0 +1,511 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LK Media Group — Reddit Tracker</title>
+    <link rel="stylesheet" href="styles.css">
+    <link href="https://fonts.googleapis.com/css2?family=Oxanium:wght@300;400;500;600;700;800&family=Fira+Code:wght@400;500;600&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="app">
+        <!-- Top Header -->
+        <header class="app-header">
+            <div class="header-left">
+                <div class="logo-icon">LK</div>
+                <div class="header-title">
+                    <span class="header-name">LK Media Group</span>
+                    <span class="header-sub">Reddit Tracker</span>
+                </div>
+            </div>
+            <div class="header-actions">
+                <button class="btn btn-primary" id="addSubredditBtn" onclick="openAddSubreddit()">+ Add Subreddit</button>
+                <button class="btn btn-ghost" onclick="openTeamPanel()">Team</button>
+                <button class="btn btn-ghost" onclick="openSettings()" title="Settings">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+                </button>
+                <button class="theme-toggle" id="themeToggle" title="Toggle theme">
+                    <svg class="theme-icon sun" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+                    <svg class="theme-icon moon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg>
+                </button>
+            </div>
+        </header>
+
+        <!-- HOME -->
+        <main class="main-content" id="homeView">
+            <div class="subreddit-grid" id="subredditGrid"></div>
+            <div class="empty-home" id="emptyHome">
+                <div class="empty-home-icon">
+                    <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg>
+                </div>
+                <h2>No subreddits yet</h2>
+                <p>Paste a subreddit link to start tracking</p>
+                <button class="btn btn-primary" onclick="openAddSubreddit()">+ Add Subreddit</button>
+            </div>
+        </main>
+
+        <!-- DETAIL VIEW -->
+        <main class="main-content hidden" id="detailView">
+            <div class="detail-header" id="detailHeader">
+                <div class="detail-banner" id="detailBanner">
+                    <button class="btn-back" onclick="goHome()">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>
+                        All Subreddits
+                    </button>
+                    <div class="detail-header-actions">
+                        <button class="btn btn-sm btn-banner-ghost" onclick="autoCheckSubreddit()" title="Check all keyword positions">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+                        Check Positions
+                    </button>
+                    <button class="btn btn-sm btn-banner-ghost" onclick="refreshSubredditData()">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg>
+                            Refresh
+                        </button>
+                        <button class="btn btn-sm btn-banner-ghost" onclick="deleteCurrentSubreddit()">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
+                            Delete
+                        </button>
+                    </div>
+                </div>
+                <div class="detail-identity">
+                    <div class="detail-avatar" id="detailAvatar"></div>
+                    <div class="detail-name-block">
+                        <h1 class="detail-name" id="detailName"></h1>
+                        <div class="detail-desc" id="detailDesc"></div>
+                    </div>
+                    <div class="detail-followers-block">
+                        <div class="followers-current">
+                            <span class="followers-count" id="detailFollowers">0</span>
+                            <span class="followers-label">Followers</span>
+                        </div>
+                        <div class="followers-change" id="detailFollowersChange"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Ahrefs Bar -->
+            <div class="ahrefs-bar">
+                <div class="ahrefs-stat">
+                    <span class="ahrefs-stat-label">Ahrefs DR</span>
+                    <span class="ahrefs-stat-value" id="ahrefsDR">—</span>
+                </div>
+                <div class="ahrefs-stat">
+                    <span class="ahrefs-stat-label">Organic Traffic</span>
+                    <span class="ahrefs-stat-value" id="ahrefsTraffic">—</span>
+                </div>
+                <div class="ahrefs-stat">
+                    <span class="ahrefs-stat-label">SEO Rank</span>
+                    <span class="ahrefs-stat-value" id="ahrefsRank">—</span>
+                </div>
+                <div class="ahrefs-stat">
+                    <span class="ahrefs-stat-label">Referring Domains</span>
+                    <span class="ahrefs-stat-value" id="ahrefsRefDomains">—</span>
+                </div>
+                <button class="btn btn-sm btn-ghost" onclick="openUpdateAhrefs()">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg>
+                    Update Ahrefs
+                </button>
+            </div>
+
+            <!-- Follower History -->
+            <div class="followers-history-bar" id="followersHistoryBar"></div>
+
+            <!-- Columns -->
+            <div class="detail-columns">
+                <div class="detail-section">
+                    <div class="section-header">
+                        <h2>Money Posts</h2>
+                        <button class="btn btn-sm btn-primary" onclick="openAddMoneyPost()">+ Add Post Link</button>
+                    </div>
+                    <div class="money-posts-list" id="moneyPostsList"></div>
+                    <div class="empty-section" id="emptyMoneyPosts"><p>No money posts yet. Paste a Reddit post link to start tracking.</p></div>
+                </div>
+                <div class="detail-section">
+                    <div class="section-header">
+                        <h2>Subreddit Tasks</h2>
+                        <div class="section-header-actions">
+                            <div class="view-toggle">
+                                <button class="view-btn active" id="listViewBtn" onclick="setTaskView('list')" title="List">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+                                </button>
+                                <button class="view-btn" id="kanbanViewBtn" onclick="setTaskView('kanban')" title="Kanban">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="5" height="18" rx="1"/><rect x="10" y="3" width="5" height="12" rx="1"/><rect x="17" y="3" width="5" height="15" rx="1"/></svg>
+                                </button>
+                            </div>
+                            <button class="btn btn-sm btn-primary" onclick="openAddSubredditTask()">+ Add Task</button>
+                        </div>
+                    </div>
+                    <div class="tasks-list" id="subredditTasksList"></div>
+                    <div class="kanban-board hidden" id="kanbanBoard">
+                        <div class="kanban-col" data-status="To Do" ondrop="kanbanDrop(event)" ondragover="event.preventDefault()">
+                            <div class="kanban-col-header">
+                                <span class="kanban-col-title">To Do</span>
+                                <span class="kanban-col-count" id="kanbanCountTodo">0</span>
+                            </div>
+                            <div class="kanban-col-body" id="kanbanTodo"></div>
+                        </div>
+                        <div class="kanban-col" data-status="In Progress" ondrop="kanbanDrop(event)" ondragover="event.preventDefault()">
+                            <div class="kanban-col-header progress">
+                                <span class="kanban-col-title">In Progress</span>
+                                <span class="kanban-col-count" id="kanbanCountProgress">0</span>
+                            </div>
+                            <div class="kanban-col-body" id="kanbanProgress"></div>
+                        </div>
+                        <div class="kanban-col" data-status="Done" ondrop="kanbanDrop(event)" ondragover="event.preventDefault()">
+                            <div class="kanban-col-header done">
+                                <span class="kanban-col-title">Done</span>
+                                <span class="kanban-col-count" id="kanbanCountDone">0</span>
+                            </div>
+                            <div class="kanban-col-body" id="kanbanDone"></div>
+                        </div>
+                    </div>
+                    <div class="empty-section" id="emptySubTasks"><p>No tasks yet</p></div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- ===== MODALS ===== -->
+
+    <!-- Add Subreddit — SIMPLE: just paste a link -->
+    <div class="modal-overlay" id="subredditModal">
+        <div class="modal modal-sm">
+            <div class="modal-header">
+                <h3>Add Subreddit</h3>
+                <button class="modal-close" onclick="closeModal('subredditModal')">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>Paste subreddit link or name</label>
+                    <div class="fetch-input-row">
+                        <input type="text" class="input" id="subInput" placeholder="r/MrMarketing or reddit.com/r/MrMarketing">
+                        <button class="btn btn-primary" id="subFetchBtn" onclick="fetchSubreddit()">Fetch</button>
+                    </div>
+                </div>
+                <div class="fetch-status" id="subFetchStatus"></div>
+                <div class="fetch-preview hidden" id="subPreview">
+                    <div class="preview-banner" id="previewBanner"></div>
+                    <div class="preview-identity">
+                        <div class="preview-avatar" id="previewAvatar"></div>
+                        <div class="preview-info">
+                            <div class="preview-name" id="previewName"></div>
+                            <div class="preview-subs" id="previewSubs"></div>
+                        </div>
+                    </div>
+                    <div class="preview-desc" id="previewDesc"></div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-ghost" onclick="closeModal('subredditModal')">Cancel</button>
+                <button class="btn btn-primary hidden" id="subSaveBtn" onclick="saveSubreddit()">Add & Track</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add Money Post — just paste a post link -->
+    <div class="modal-overlay" id="moneyPostModal">
+        <div class="modal modal-sm">
+            <div class="modal-header">
+                <h3 id="moneyPostModalTitle">Add Money Post</h3>
+                <button class="modal-close" onclick="closeModal('moneyPostModal')">&times;</button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="mpEditId">
+                <div class="form-group">
+                    <label>Paste Reddit post link</label>
+                    <div class="fetch-input-row">
+                        <input type="text" class="input" id="mpInput" placeholder="https://reddit.com/r/.../comments/...">
+                        <button class="btn btn-primary" id="mpFetchBtn" onclick="fetchMoneyPost()">Fetch</button>
+                    </div>
+                </div>
+                <div class="fetch-status" id="mpFetchStatus"></div>
+                <div class="fetch-preview hidden" id="mpPreview">
+                    <div class="mp-preview-title" id="mpPreviewTitle"></div>
+                    <div class="mp-preview-stats" id="mpPreviewStats"></div>
+                </div>
+                <div class="mp-manual-fields hidden" id="mpManualFields">
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>Community Rank</label>
+                            <input type="number" class="input" id="mpRank" placeholder="#" min="1">
+                        </div>
+                        <div class="form-group">
+                            <label>Revenue Tag</label>
+                            <select class="input" id="mpRevenue">
+                                <option value="Direct Sale">Direct Sale</option>
+                                <option value="Affiliate">Affiliate</option>
+                                <option value="Lead Gen">Lead Gen</option>
+                                <option value="Brand Awareness">Brand Awareness</option>
+                                <option value="Traffic Driver">Traffic Driver</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-ghost" onclick="closeModal('moneyPostModal')">Cancel</button>
+                <button class="btn btn-primary hidden" id="mpSaveBtn" onclick="saveMoneyPost()">Add & Track</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Update Ahrefs -->
+    <div class="modal-overlay" id="ahrefsModal">
+        <div class="modal modal-sm">
+            <div class="modal-header">
+                <h3>Update Ahrefs Data</h3>
+                <button class="modal-close" onclick="closeModal('ahrefsModal')">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="ahrefs-auto-section" id="ahrefsAutoSection">
+                    <button class="btn btn-primary" onclick="fetchAhrefsData()" id="ahrefsFetchBtn" style="width:100%;justify-content:center;">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg>
+                        Fetch from Ahrefs API
+                    </button>
+                    <div class="fetch-status" id="ahrefsFetchStatus"></div>
+                </div>
+                <div class="divider-or"><span>or enter manually</span></div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Domain Rating</label>
+                        <input type="number" class="input" id="updateDR" placeholder="0-100">
+                    </div>
+                    <div class="form-group">
+                        <label>SEO Rank</label>
+                        <input type="number" class="input" id="updateSeoRank" placeholder="e.g. 1500">
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Organic Traffic</label>
+                        <input type="number" class="input" id="updateTraffic" placeholder="Monthly">
+                    </div>
+                    <div class="form-group">
+                        <label>Referring Domains</label>
+                        <input type="number" class="input" id="updateRefDomains" placeholder="e.g. 340">
+                    </div>
+                </div>
+                <div class="ahrefs-history" id="ahrefsHistory"></div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-ghost" onclick="closeModal('ahrefsModal')">Cancel</button>
+                <button class="btn btn-primary" onclick="saveAhrefsUpdate()">Save</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Settings -->
+    <div class="modal-overlay" id="settingsModal">
+        <div class="modal modal-sm">
+            <div class="modal-header">
+                <h3>Settings</h3>
+                <button class="modal-close" onclick="closeModal('settingsModal')">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>Ahrefs API Key</label>
+                    <div class="api-key-input-row">
+                        <input type="password" class="input" id="ahrefsKeyInput" placeholder="Paste your Ahrefs API key">
+                        <button class="btn-icon" onclick="toggleKeyVisibility('ahrefsKeyInput')" title="Show/hide">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                        </button>
+                    </div>
+                    <p class="settings-hint">For fetching DR, organic traffic, referring domains per subreddit and post.</p>
+                </div>
+                <div class="form-group">
+                    <label>SERP API Key (for Google rank checking)</label>
+                    <div class="api-key-input-row">
+                        <input type="password" class="input" id="serpApiKeyInput" placeholder="Paste your SerpAPI or ValueSERP key">
+                        <button class="btn-icon" onclick="toggleKeyVisibility('serpApiKeyInput')" title="Show/hide">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                        </button>
+                    </div>
+                    <p class="settings-hint">For automated Google rank checking without any browser. Works from any device. Get a key from <a href="https://serpapi.com" target="_blank" style="color:var(--primary)">serpapi.com</a> or <a href="https://www.valueserp.com" target="_blank" style="color:var(--primary)">valueserp.com</a></p>
+                </div>
+                <div class="settings-divider-or"><span>or use Dolphin Anty (local only)</span></div>
+                <div class="form-group">
+                    <label>Dolphin Anty API Token</label>
+                    <div class="api-key-input-row">
+                        <input type="password" class="input" id="dolphinTokenInput" placeholder="Paste your Dolphin Anty API token">
+                        <button class="btn-icon" onclick="toggleKeyVisibility('dolphinTokenInput')" title="Show/hide">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                        </button>
+                    </div>
+                    <p class="settings-hint">For automated Google rank checking via your Dolphin profiles with USA proxies.</p>
+                </div>
+                <div class="form-group">
+                    <label>Dolphin Profiles for Rank Checking (3 profiles for reliable AVG)</label>
+                    <button class="btn btn-sm btn-ghost" onclick="loadDolphinProfiles()" style="margin-bottom:8px;">Load Profiles</button>
+                    <div class="dolphin-profiles-grid">
+                        <div class="dolphin-profile-slot">
+                            <span class="slot-label">Profile 1</span>
+                            <select class="input" id="dolphinProfile1"><option value="">Select...</option></select>
+                        </div>
+                        <div class="dolphin-profile-slot">
+                            <span class="slot-label">Profile 2</span>
+                            <select class="input" id="dolphinProfile2"><option value="">Select...</option></select>
+                        </div>
+                        <div class="dolphin-profile-slot">
+                            <span class="slot-label">Profile 3</span>
+                            <select class="input" id="dolphinProfile3"><option value="">Select...</option></select>
+                        </div>
+                    </div>
+                    <p class="settings-hint">Each profile should use a different USA proxy. Rank is checked across all 3 and averaged for accuracy.</p>
+                </div>
+                <div class="api-key-status" id="settingsStatus"></div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-ghost" onclick="closeModal('settingsModal')">Cancel</button>
+                <button class="btn btn-primary" onclick="saveSettings()">Save Settings</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Task Modal -->
+    <div class="modal-overlay" id="taskModal">
+        <div class="modal modal-sm">
+            <div class="modal-header">
+                <h3 id="taskModalTitle">Add Task</h3>
+                <button class="modal-close" onclick="closeModal('taskModal')">&times;</button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="taskEditId">
+                <input type="hidden" id="taskType">
+                <input type="hidden" id="taskParentId">
+                <div class="form-group">
+                    <label>Task</label>
+                    <input type="text" class="input" id="taskTitle" placeholder="What needs to be done?">
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Assign To</label>
+                        <select class="input" id="taskAssignee"><option value="">Unassigned</option></select>
+                    </div>
+                    <div class="form-group">
+                        <label>Priority</label>
+                        <select class="input" id="taskPriority">
+                            <option value="Low">Low</option>
+                            <option value="Medium" selected>Medium</option>
+                            <option value="High">High</option>
+                            <option value="Urgent">Urgent</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Status</label>
+                        <select class="input" id="taskStatus">
+                            <option value="To Do">To Do</option>
+                            <option value="In Progress">In Progress</option>
+                            <option value="Done">Done</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Due Date</label>
+                        <input type="date" class="input" id="taskDueDate">
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-ghost" onclick="closeModal('taskModal')">Cancel</button>
+                <button class="btn btn-primary" onclick="saveTask()">Save</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Team -->
+    <div class="modal-overlay" id="teamModal">
+        <div class="modal">
+            <div class="modal-header">
+                <h3>Team Members</h3>
+                <button class="modal-close" onclick="closeModal('teamModal')">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="team-list" id="teamList"></div>
+                <div class="add-team-inline">
+                    <input type="text" class="input" id="newMemberName" placeholder="Name">
+                    <input type="text" class="input" id="newMemberRole" placeholder="Role">
+                    <button class="btn btn-primary btn-sm" onclick="addTeamMember()">Add</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Delete Confirm -->
+    <div class="modal-overlay" id="deleteModal">
+        <div class="modal modal-sm">
+            <div class="modal-header">
+                <h3>Confirm Delete</h3>
+                <button class="modal-close" onclick="closeModal('deleteModal')">&times;</button>
+            </div>
+            <div class="modal-body"><p id="deleteMessage">Are you sure?</p></div>
+            <div class="modal-footer">
+                <button class="btn btn-ghost" onclick="closeModal('deleteModal')">Cancel</button>
+                <button class="btn btn-danger" id="deleteConfirmBtn">Delete</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add Keyword Modal -->
+    <div class="modal-overlay" id="keywordModal">
+        <div class="modal modal-sm">
+            <div class="modal-header">
+                <h3 id="keywordModalTitle">Add Keyword to Track</h3>
+                <button class="modal-close" onclick="closeModal('keywordModal')">&times;</button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="kwMpId">
+                <input type="hidden" id="kwIndex">
+                <div class="form-group">
+                    <label>Keyword</label>
+                    <input type="text" class="input" id="kwKeyword" placeholder="e.g. buy tiktok views">
+                </div>
+                <p class="modal-hint">We will check Google for this keyword and track where your Reddit post ranks.</p>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-ghost" onclick="closeModal('keywordModal')">Cancel</button>
+                <button class="btn btn-primary" onclick="saveKeyword()">Add & Check</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Update Rank Modal -->
+    <div class="modal-overlay" id="rankUpdateModal">
+        <div class="modal modal-sm">
+            <div class="modal-header">
+                <h3>Update Rank Manually</h3>
+                <button class="modal-close" onclick="closeModal('rankUpdateModal')">&times;</button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="ruMpId">
+                <input type="hidden" id="ruKwIndex">
+                <div class="form-group">
+                    <label id="ruKeywordLabel">Keyword</label>
+                    <input type="number" class="input" id="ruRank" placeholder="Rank position (1 = first)" min="1">
+                </div>
+                <p class="modal-hint">Search Google for this keyword and enter the position of your post.</p>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-ghost" onclick="closeModal('rankUpdateModal')">Cancel</button>
+                <button class="btn btn-primary" onclick="saveRankUpdate()">Update</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Notifications -->
+    <div class="toast-container" id="toastContainer"></div>
+
+    <!-- Rank Check Progress Panel -->
+    <div class="rank-panel hidden" id="rankPanel">
+        <div class="rank-panel-header">
+            <span class="rank-panel-title">Rank Check</span>
+            <button class="rank-panel-close" onclick="closeRankPanel()">&times;</button>
+        </div>
+        <div class="rank-panel-keyword" id="rankPanelKeyword"></div>
+        <div class="rank-panel-profiles" id="rankPanelProfiles"></div>
+        <div class="rank-panel-result hidden" id="rankPanelResult"></div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
