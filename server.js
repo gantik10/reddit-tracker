@@ -18,29 +18,21 @@ const MIME = {
 };
 
 // --- HTTPS request helper ---
-function httpsRequest(targetUrl, headers = {}, maxRedirects = 5) {
-    return new Promise((resolve, reject) => {
-        const parsed = new URL(targetUrl);
-        const opts = {
-            hostname: parsed.hostname, port: parsed.port || 443,
-            path: parsed.pathname + parsed.search, method: 'GET',
-            headers: { 'User-Agent': 'LKMediaTracker/1.0', 'Accept': 'application/json', ...headers }
-        };
-        const req = https.request(opts, res => {
-            // Follow redirects
-            if ((res.statusCode === 301 || res.statusCode === 302 || res.statusCode === 307) && res.headers.location && maxRedirects > 0) {
-                const redirectUrl = res.headers.location.startsWith('http') ? res.headers.location : `https://${parsed.hostname}${res.headers.location}`;
-                httpsRequest(redirectUrl, headers, maxRedirects - 1).then(resolve).catch(reject);
-                return;
-            }
-            let data = '';
-            res.on('data', c => data += c);
-            res.on('end', () => resolve({ status: res.statusCode, data }));
+const { execSync } = require('child_process');
+
+function httpsRequest(targetUrl, headers = {}) {
+    // Use curl for reliable HTTP requests (handles redirects, TLS, user-agent properly)
+    const headerArgs = Object.entries({ 'User-Agent': 'LKMediaTracker/1.0', 'Accept': 'application/json', ...headers })
+        .map(([k, v]) => `-H "${k}: ${v}"`).join(' ');
+
+    try {
+        const data = execSync(`curl -sL ${headerArgs} --max-time 15 "${targetUrl}"`, {
+            encoding: 'utf8', maxBuffer: 10 * 1024 * 1024, timeout: 20000
         });
-        req.on('error', reject);
-        req.setTimeout(15000, () => { req.destroy(); reject(new Error('Timeout')); });
-        req.end();
-    });
+        return { status: 200, data };
+    } catch (e) {
+        return { status: 502, data: JSON.stringify({ error: e.message }) };
+    }
 }
 
 // --- HTTP request helper (for Dolphin local API) ---
