@@ -71,11 +71,19 @@ const S = {
                 localStorage.setItem('lk_subreddits', JSON.stringify(merged));
                 localStorage.setItem('lk_team', JSON.stringify(mergedTeam));
 
-                // 4. Push merged result to server
+                // 4. Collect API keys (shared across team)
+                const keys = {};
+                ['lk_ahrefs_key', 'lk_serp_key', 'lk_upvote_key', 'lk_dolphin_token', 'lk_dolphin_profiles'].forEach(k => {
+                    const v = localStorage.getItem(k);
+                    if (v) keys[k] = v;
+                    else if (serverData.keys?.[k]) keys[k] = serverData.keys[k]; // keep server key if local is empty
+                });
+
+                // 5. Push merged result to server
                 await fetch(`${window.location.origin}/api/data`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ subreddits: merged, team: mergedTeam })
+                    body: JSON.stringify({ subreddits: merged, team: mergedTeam, keys })
                 });
             } catch (err) {
                 console.log('[Sync] Failed:', err.message);
@@ -132,6 +140,12 @@ const S = {
             }
             if (data.team?.length) {
                 localStorage.setItem('lk_team', JSON.stringify(data.team));
+            }
+            // Restore API keys from server (shared across devices)
+            if (data.keys) {
+                Object.entries(data.keys).forEach(([k, v]) => {
+                    if (v && !localStorage.getItem(k)) localStorage.setItem(k, v);
+                });
             }
             console.log('[Sync] Pulled:', (data.subreddits || []).length, 'subs');
             return true;
@@ -1033,6 +1047,8 @@ function saveSettings() {
 
     closeModal('settingsModal');
     toast('success', 'Settings saved', '');
+    // Sync keys to server so other devices get them
+    S._syncToServer();
 }
 
 function toggleKeyVisibility(inputId) {
