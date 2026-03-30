@@ -1048,13 +1048,12 @@ async function autoCheckRank(mpId, kwIndex) {
         if (!k) return;
         if (!k.history) k.history = [];
         if (k.rankType) {
-            k.history.push({ rankType: k.rankType, avgRank: k.avgRank, checks: k.checks, date: k.updatedAt });
+            k.history.push({ rankType: k.rankType, avgRank: k.avgRank, date: k.updatedAt });
         }
         k.rankType = rankType;
         k.avgRank = avgRank;
         k.rank = avgRank ? Math.round(avgRank) : null;
-        k.checks = checks;
-        k.captchaCount = captchaCount;
+        k.checks = [{ profileIndex: 1, type: rankType, googleRank: rankType === 'google' ? avgRank : null, redditRank: rankType === 'reddit' ? avgRank : null }];
         k.updatedAt = new Date().toISOString();
     });
 
@@ -1771,95 +1770,65 @@ async function analyzeCompetitors(mpId, kwIndex, competitors, rankType, rank) {
 // ==========================================
 //  MONEY COMMENT TRACKING
 // ==========================================
-function openSetMoneyComment(mpId) {
-    const sub = getSub();
-    const mp = sub?.moneyPosts?.find(p => p.id === mpId);
-    if (!mp) return;
-
-    // Build modal content dynamically
-    const modal = document.getElementById('moneyCommentModal');
-    const existing = mp.moneyComment;
-    document.getElementById('mcMpId').value = mpId;
-    document.getElementById('mcCommentUrl').value = existing?.commentUrl || '';
-    document.getElementById('mcCommentId').value = existing?.commentId || '';
-
-    // Show current status if exists
-    const statusEl = document.getElementById('mcStatus');
-    if (existing?.position) {
-        statusEl.className = 'fetch-status success';
-        statusEl.textContent = `Current position: #${existing.position}/${existing.totalTopLevel || '?'} (${existing.upvotes || 0} upvotes)`;
-    } else {
-        statusEl.className = 'fetch-status';
-        statusEl.textContent = '';
-    }
-
-    openModal('moneyCommentModal');
-}
-
-function parseCommentUrl(input) {
-    input = input.trim();
-    // Extract comment ID from Reddit URL: .../comments/POST_ID/slug/COMMENT_ID/
-    const match = input.match(/reddit\.com\/r\/[^/]+\/comments\/([A-Za-z0-9]+)\/[^/]*\/([A-Za-z0-9]+)/i);
-    if (match) return { postId: match[1], commentId: match[2] };
-    // Just a comment ID
-    if (/^[a-z0-9]+$/i.test(input) && input.length < 20) return { commentId: input };
-    return null;
-}
-
-async function fetchMoneyComment() {
-    const mpId = Number(document.getElementById('mcMpId').value);
-    const urlInput = document.getElementById('mcCommentUrl').value;
-    const status = document.getElementById('mcStatus');
-
+async function openSetMoneyComment(mpId) {
     const sub = getSub();
     const mp = sub?.moneyPosts?.find(p => p.id === mpId);
     if (!mp?.url) return toast('warning', 'No post URL', 'Add a post URL first.');
 
-    const parsed = parseCommentUrl(urlInput);
-    if (!parsed?.commentId) {
-        status.className = 'fetch-status error';
-        status.textContent = 'Paste a comment permalink or comment ID';
-        return;
-    }
+    document.getElementById('mcMpId').value = mpId;
+    document.getElementById('mcCommentId').value = '';
+
+    const status = document.getElementById('mcStatus');
+    const listEl = document.getElementById('mcCommentList');
 
     status.className = 'fetch-status loading';
-    status.innerHTML = '<span class="spinner"></span> Checking comment position...';
+    status.innerHTML = '<span class="spinner"></span> Loading top comments...';
+    listEl.innerHTML = '';
+
+    openModal('moneyCommentModal');
 
     try {
-        const res = await fetch(`${SERVER}/api/check-comment`, {
+        const res = await fetch(`${SERVER}/api/top-comments`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ postUrl: mp.url, commentId: parsed.commentId })
+            body: JSON.stringify({ postUrl: mp.url })
         });
         const data = await res.json();
         if (data.error) throw new Error(data.error);
 
-        document.getElementById('mcCommentId').value = parsed.commentId;
-
-        if (data.position) {
-            status.className = 'fetch-status success';
-            status.textContent = `Position #${data.position}/${data.totalTopLevel} | ${data.commentData?.upvotes || 0} upvotes | by u/${data.commentData?.author || '?'}`;
-        } else {
+        if (!data.comments?.length) {
             status.className = 'fetch-status error';
-            status.textContent = 'Comment not found in top 25 comments. Check the URL.';
+            status.textContent = 'No comments found on this post.';
+            return;
         }
+
+        status.className = 'fetch-status';
+        status.textContent = 'Select your money comment:';
+
+        const currentId = mp.moneyComment?.commentId;
+        listEl.innerHTML = data.comments.map(c => {
+            const isCurrent = c.id === currentId;
+            const bodyPreview = c.body.replace(/\n/g, ' ').slice(0, 120);
+            return `<div class="mc-pick ${isCurrent ? 'mc-pick-current' : ''}" onclick="pickMoneyComment(${mpId},'${c.id}')">
+                <div class="mc-pick-pos">#${c.position}</div>
+                <div class="mc-pick-body">
+                    <div class="mc-pick-author">u/${esc(c.author)} · ${c.upvotes} upvotes · ${c.replies} replies${c.isStickied ? ' · pinned' : ''}</div>
+                    <div class="mc-pick-text">${esc(bodyPreview)}${c.body.length > 120 ? '...' : ''}</div>
+                </div>
+                ${isCurrent ? '<span class="mc-pick-tag">CURRENT</span>' : ''}
+            </div>`;
+        }).join('');
     } catch (err) {
         status.className = 'fetch-status error';
         status.textContent = err.message;
     }
 }
 
-function saveMoneyComment() {
-    const mpId = Number(document.getElementById('mcMpId').value);
-    const commentUrl = document.getElementById('mcCommentUrl').value.trim();
-    const commentId = document.getElementById('mcCommentId').value.trim();
-    if (!commentId) return toast('warning', 'Fetch first', 'Paste a comment URL and click Fetch.');
-
+function pickMoneyComment(mpId, commentId) {
     updateSub(s => {
         const p = s.moneyPosts.find(x => x.id === mpId);
         if (!p) return;
         if (!p.moneyComment) p.moneyComment = {};
-        p.moneyComment.commentUrl = commentUrl;
         p.moneyComment.commentId = commentId;
         p.moneyComment.setAt = new Date().toISOString();
         if (!p.moneyComment.history) p.moneyComment.history = [];
@@ -1867,9 +1836,7 @@ function saveMoneyComment() {
 
     closeModal('moneyCommentModal');
     renderDetail();
-    toast('success', 'Money comment set', 'Click the position badge to refresh.');
-
-    // Auto-check position
+    toast('success', 'Money comment set', 'Checking position...');
     checkMoneyCommentPosition(mpId);
 }
 

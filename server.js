@@ -734,6 +734,44 @@ const server = http.createServer(async (req, res) => {
         return;
     }
 
+    // --- Fetch top comments for selection ---
+    if (parsed.pathname === '/api/top-comments' && req.method === 'POST') {
+        const body = await readBody(req);
+        const { postUrl } = body;
+
+        const postId = postUrl?.match(/comments\/([A-Za-z0-9]+)/i)?.[1];
+        if (!postId) {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: 'Invalid post URL' }));
+            return;
+        }
+
+        console.log(`[Comments] Fetching top comments for ${postId}...`);
+
+        try {
+            const data = JSON.parse(httpsRequest(`https://www.reddit.com/comments/${postId}.json?limit=10`).data);
+            const comments = (data?.[1]?.data?.children || [])
+                .filter(c => c.kind === 't1')
+                .slice(0, 7)
+                .map((c, i) => ({
+                    id: c.data.id,
+                    author: c.data.author,
+                    body: (c.data.body || '').slice(0, 200),
+                    upvotes: c.data.ups || c.data.score || 0,
+                    replies: c.data.replies?.data?.children?.length || 0,
+                    position: i + 1,
+                    isStickied: c.data.stickied || false,
+                }));
+
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ success: true, comments }));
+        } catch (err) {
+            res.writeHead(500, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: err.message }));
+        }
+        return;
+    }
+
     // --- Money Comment position check ---
     if (parsed.pathname === '/api/check-comment' && req.method === 'POST') {
         const body = await readBody(req);

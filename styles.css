@@ -2574,6 +2574,69 @@ select.input {
     border: 1px solid var(--border);
 }
 
+/* ===== Money Comment Picker ===== */
+.mc-pick {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 10px 12px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    margin-bottom: 6px;
+    cursor: pointer;
+    transition: var(--transition);
+    position: relative;
+}
+
+.mc-pick:hover {
+    border-color: var(--primary);
+    background: var(--bg-hover);
+}
+
+.mc-pick-current {
+    border-color: var(--accent-green);
+    background: rgba(70, 209, 96, 0.05);
+}
+
+.mc-pick-pos {
+    font-size: 16px;
+    font-weight: 800;
+    font-family: 'Fira Code', monospace;
+    color: var(--primary);
+    min-width: 28px;
+    padding-top: 2px;
+}
+
+.mc-pick-body {
+    flex: 1;
+    min-width: 0;
+}
+
+.mc-pick-author {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    margin-bottom: 3px;
+}
+
+.mc-pick-text {
+    font-size: 12px;
+    color: var(--text-primary);
+    line-height: 1.4;
+}
+
+.mc-pick-tag {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    font-size: 9px;
+    font-weight: 700;
+    color: var(--accent-green);
+    background: rgba(70, 209, 96, 0.12);
+    padding: 1px 6px;
+    border-radius: 3px;
+}
+
 /* ===== SEO Advisor Opt-in ===== */
 .rec-check-prompt {
     display: flex;
