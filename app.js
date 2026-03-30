@@ -745,18 +745,19 @@ function toast(type, title, message, duration = 5000) {
 // ==========================================
 //  RANK CHECK PROGRESS PANEL
 // ==========================================
-function showRankPanel(keyword, profiles) {
+function showRankPanel(keyword, checks) {
     const panel = document.getElementById('rankPanel');
     panel.classList.remove('hidden');
     document.getElementById('rankPanelKeyword').textContent = keyword;
     document.getElementById('rankPanelResult').classList.add('hidden');
 
     const container = document.getElementById('rankPanelProfiles');
-    container.innerHTML = profiles.map((_, i) => `
+    const count = Array.isArray(checks) ? checks.length : 1;
+    container.innerHTML = Array.from({ length: count }, (_, i) => `
         <div class="rp-profile" id="rpProfile${i}">
-            <div class="rp-status-dot waiting" id="rpDot${i}"></div>
-            <span class="rp-label">Profile ${i + 1}</span>
-            <span class="rp-step" id="rpStep${i}">Waiting...</span>
+            <div class="rp-status-dot running" id="rpDot${i}"></div>
+            <span class="rp-label">Check ${i + 1}</span>
+            <span class="rp-step" id="rpStep${i}">Searching Google...</span>
             <span class="rp-result" id="rpResult${i}"></span>
         </div>
     `).join('');
@@ -858,35 +859,28 @@ async function autoCheckRank(mpId, kwIndex) {
         }
     }
 
-    // Fallback: Chromium with 3 parallel proxies
-    const checks3 = Array.from({ length: NUM_CHECKS }, (_, i) => i);
-    showRankPanel(kw.keyword, checks3);
+    // Fallback: Chromium with proxy (single check)
+    showRankPanel(kw.keyword, [0]);
+    updateRankProfile(0, 'running', 'Searching Google...');
 
-    const promises = checks3.map(i => {
-        updateRankProfile(i, 'running', 'Fresh proxy, searching...');
-        return checkRankWithProxy(kw.keyword, mp.url, i)
-            .then(data => {
-                if (data.type === 'google') updateRankProfile(i, 'done', 'Found on Google', `<span class="rp-result google">G#${data.rank}</span>`);
-                else if (data.type === 'reddit' && data.redditRank) updateRankProfile(i, 'done', 'Found on Reddit', `<span class="rp-result reddit">R#${data.redditRank}</span>`);
-                else if (data.type === 'captcha') updateRankProfile(i, 'captcha', 'CAPTCHA hit', '<span class="rp-result none">CAP</span>');
-                else updateRankProfile(i, 'done', 'Not found', '<span class="rp-result none">—</span>');
-                return { profileIndex: i + 1, type: data.type, googleRank: data.rank, redditRank: data.redditRank, error: null };
-            })
-            .catch(err => {
-                updateRankProfile(i, 'error', err.message.slice(0, 40), '<span class="rp-result none">ERR</span>');
-                return { profileIndex: i + 1, type: 'error', googleRank: null, redditRank: null, error: err.message };
-            });
-    });
+    let rankType = 'none', avgRank = null;
 
-    const checks = await Promise.all(promises);
-
-    const googleRanks = checks.filter(c => c.type === 'google' && c.googleRank != null).map(c => c.googleRank);
-    const redditRanks = checks.filter(c => c.type === 'reddit' && c.redditRank != null).map(c => c.redditRank);
-
-    let rankType, avgRank;
-    if (googleRanks.length > 0) { rankType = 'google'; avgRank = Math.round(googleRanks.reduce((a, b) => a + b, 0) / googleRanks.length * 10) / 10; }
-    else if (redditRanks.length > 0) { rankType = 'reddit'; avgRank = Math.round(redditRanks.reduce((a, b) => a + b, 0) / redditRanks.length * 10) / 10; }
-    else { rankType = 'none'; avgRank = null; }
+    try {
+        const data = await checkRankWithProxy(kw.keyword, mp.url, 0);
+        if (data.type === 'google') {
+            updateRankProfile(0, 'done', 'Found on Google', `<span class="rp-result google">G#${data.rank}</span>`);
+            rankType = 'google'; avgRank = data.rank;
+        } else if (data.type === 'reddit' && data.redditRank) {
+            updateRankProfile(0, 'done', 'Found on Reddit', `<span class="rp-result reddit">R#${data.redditRank}</span>`);
+            rankType = 'reddit'; avgRank = data.redditRank;
+        } else if (data.type === 'captcha') {
+            updateRankProfile(0, 'captcha', 'CAPTCHA — retrying...', '<span class="rp-result none">CAP</span>');
+        } else {
+            updateRankProfile(0, 'done', 'Not found', '<span class="rp-result none">—</span>');
+        }
+    } catch (err) {
+        updateRankProfile(0, 'error', err.message.slice(0, 40), '<span class="rp-result none">ERR</span>');
+    }
 
     showRankResult(rankType, avgRank);
 
