@@ -516,6 +516,59 @@ const server = http.createServer(async (req, res) => {
         return;
     }
 
+    // --- Upvote Shop API proxy ---
+    if (parsed.pathname.startsWith('/api/upvote/') && req.method === 'POST') {
+        const body = await readBody(req);
+        const apiToken = req.headers['x-upvote-token'];
+        if (!apiToken) {
+            res.writeHead(401, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: 'Missing Upvote Shop token' }));
+            return;
+        }
+
+        const endpoint = parsed.pathname.replace('/api/upvote/', '');
+        const targetUrl = `https://panel.upvote.shop/api/${endpoint}`;
+
+        console.log(`[UpvoteShop] ${endpoint}`);
+        try {
+            const headerArgs = `-H "Authorization: Bearer ${apiToken}" -H "Content-Type: application/json"`;
+            const bodyArg = Object.keys(body).length ? `-d '${JSON.stringify(body)}'` : '';
+            const data = execSync(`curl -sL ${headerArgs} ${bodyArg} --max-time 15 "${targetUrl}"`, {
+                encoding: 'utf8', maxBuffer: 1024 * 1024, timeout: 20000
+            });
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(data);
+        } catch (e) {
+            res.writeHead(502, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: e.message }));
+        }
+        return;
+    }
+
+    if (parsed.pathname.startsWith('/api/upvote/') && req.method === 'GET') {
+        const apiToken = req.headers['x-upvote-token'];
+        if (!apiToken) {
+            res.writeHead(401, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: 'Missing token' }));
+            return;
+        }
+
+        const endpoint = parsed.pathname.replace('/api/upvote/', '');
+        const targetUrl = `https://panel.upvote.shop/api/${endpoint}`;
+
+        try {
+            const data = execSync(`curl -sL -H "Authorization: Bearer ${apiToken}" --max-time 15 "${targetUrl}"`, {
+                encoding: 'utf8', maxBuffer: 1024 * 1024, timeout: 20000
+            });
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(data);
+        } catch (e) {
+            res.writeHead(502, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: e.message }));
+        }
+        return;
+    }
+
     // --- Proxy endpoint (Reddit, Ahrefs) ---
     if (parsed.pathname === '/api/proxy') {
         const targetUrl = parsed.searchParams.get('url');

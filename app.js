@@ -940,6 +940,7 @@ function deleteCurrentSubreddit() {
 // ==========================================
 function getAhrefsKey() { return localStorage.getItem('lk_ahrefs_key') || ''; }
 function getSerpApiKey() { return localStorage.getItem('lk_serp_key') || ''; }
+function getUpvoteShopKey() { return localStorage.getItem('lk_upvote_key') || ''; }
 function getDolphinToken() { return localStorage.getItem('lk_dolphin_token') || ''; }
 function getDolphinProfiles() {
     try { return JSON.parse(localStorage.getItem('lk_dolphin_profiles')) || []; } catch { return []; }
@@ -948,12 +949,14 @@ function getDolphinProfiles() {
 function openSettings() {
     document.getElementById('ahrefsKeyInput').value = getAhrefsKey();
     document.getElementById('serpApiKeyInput').value = getSerpApiKey();
+    document.getElementById('upvoteShopKeyInput').value = getUpvoteShopKey();
     document.getElementById('dolphinTokenInput').value = getDolphinToken();
 
     const status = document.getElementById('settingsStatus');
     const parts = [];
     if (getAhrefsKey()) parts.push('Ahrefs');
     if (getSerpApiKey()) parts.push('SERP API');
+    if (getUpvoteShopKey()) parts.push('Upvote Shop');
     const profiles = getDolphinProfiles();
     if (getDolphinToken() && profiles.length) parts.push(`Dolphin (${profiles.length})`);
     if (parts.length) {
@@ -963,6 +966,9 @@ function openSettings() {
         status.className = 'api-key-status';
         status.textContent = '';
     }
+
+    // Check Upvote Shop balance if key exists
+    if (getUpvoteShopKey()) checkUpvoteBalance(document.getElementById('upvoteBalance'));
 
     if (getDolphinToken()) loadDolphinProfiles();
     openModal('settingsModal');
@@ -978,10 +984,16 @@ function saveSettings() {
         document.getElementById('dolphinProfile3').value,
     ].filter(p => p);
 
+    const upvoteKey = document.getElementById('upvoteShopKeyInput').value.trim();
+
     ahrefsKey ? localStorage.setItem('lk_ahrefs_key', ahrefsKey) : localStorage.removeItem('lk_ahrefs_key');
     serpKey ? localStorage.setItem('lk_serp_key', serpKey) : localStorage.removeItem('lk_serp_key');
+    upvoteKey ? localStorage.setItem('lk_upvote_key', upvoteKey) : localStorage.removeItem('lk_upvote_key');
     dolphinToken ? localStorage.setItem('lk_dolphin_token', dolphinToken) : localStorage.removeItem('lk_dolphin_token');
     localStorage.setItem('lk_dolphin_profiles', JSON.stringify(profiles));
+
+    // Show/hide Buy Votes button
+    document.getElementById('upvoteNavBtn').style.display = upvoteKey ? '' : 'none';
 
     closeModal('settingsModal');
     toast('success', 'Settings saved', '');
@@ -1596,6 +1608,9 @@ function renderMoneyPosts(sub) {
                     </div>
                 </div>
                 <div class="mp-actions">
+                    ${getUpvoteShopKey() ? `<button class="btn-icon uv-buy-icon" onclick="quickBuyPost(${mp.id},'1')" title="Buy upvotes for this post">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
+                    </button>` : ''}
                     <button class="btn-icon" onclick="refreshMoneyPost(${mp.id})" title="Refresh Reddit stats">
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg>
                     </button>
@@ -1722,6 +1737,7 @@ function renderMoneyComment(mp) {
         <div class="mp-tasks-header">
             <span class="mp-tasks-label">Money Comment</span>
             <span style="display:flex;gap:4px;">
+                ${getUpvoteShopKey() ? `<button class="btn btn-xs btn-ghost uv-buy-text" onclick="quickBuyComment(${mp.id})">Buy Upvotes</button>` : ''}
                 <button class="btn btn-xs btn-ghost" onclick="checkMoneyCommentPosition(${mp.id})">Check Position</button>
                 <button class="btn btn-xs btn-ghost" onclick="openSetMoneyComment(${mp.id})">Change</button>
             </span>
@@ -2849,6 +2865,127 @@ openSubreddit = function(id) {
 };
 
 // ==========================================
+//  UPVOTE SHOP
+// ==========================================
+async function uvApi(method, endpoint, body = null) {
+    const token = getUpvoteShopKey();
+    if (!token) throw new Error('No Upvote Shop token. Set it in Settings.');
+    const opts = {
+        method,
+        headers: { 'X-Upvote-Token': token, 'Content-Type': 'application/json' }
+    };
+    if (body) opts.body = JSON.stringify(body);
+    const res = await fetch(`${SERVER}/api/upvote/${endpoint}`, opts);
+    return res.json();
+}
+
+async function checkUpvoteBalance(targetEl) {
+    try {
+        const data = await uvApi('GET', 'check-balance');
+        if (data.balance !== undefined) {
+            targetEl.innerHTML = `<span class="uv-bal">Balance: <strong>$${Number(data.balance).toFixed(2)}</strong></span>`;
+        }
+    } catch {}
+}
+
+function openUpvoteShop(prefillLink, prefillType) {
+    if (!getUpvoteShopKey()) return openSettings();
+    const linkInput = document.getElementById('uvLink');
+    if (prefillLink) linkInput.value = prefillLink;
+    if (prefillType) document.getElementById('uvType').value = prefillType;
+
+    // Load balance
+    checkUpvoteBalance(document.getElementById('uvBalanceBar'));
+
+    // Load recent orders
+    loadRecentOrders();
+
+    openModal('upvoteModal');
+}
+
+// Quick-buy: open shop pre-filled with post URL
+function quickBuyPost(mpId, type) {
+    const sub = getSub();
+    const mp = sub?.moneyPosts?.find(p => p.id === mpId);
+    if (!mp?.url) return;
+    openUpvoteShop(mp.url, type || '1');
+}
+
+// Quick-buy for money comment
+function quickBuyComment(mpId) {
+    const sub = getSub();
+    const mp = sub?.moneyPosts?.find(p => p.id === mpId);
+    if (!mp?.moneyComment?.commentId || !mp?.url) return;
+    // Build comment URL
+    const commentUrl = mp.url.replace(/\/$/, '') + '/' + mp.moneyComment.commentId + '/';
+    openUpvoteShop(commentUrl, '6');
+}
+
+async function placeUpvoteOrder() {
+    const status = document.getElementById('uvStatus');
+    const link = document.getElementById('uvLink').value.trim();
+    const type = Number(document.getElementById('uvType').value);
+    const vote = Number(document.getElementById('uvVotes').value);
+    const speed = Number(document.getElementById('uvSpeed').value);
+    const after = Number(document.getElementById('uvDelay').value) || 0;
+
+    if (!link) return toast('warning', 'Missing link', 'Paste a Reddit post or comment URL.');
+    if (!vote || vote < 1) return toast('warning', 'Missing votes', 'Enter number of votes.');
+    if (type === 10 && vote < 100) return toast('warning', 'Min 100', 'TOP ranking requires at least 100 votes.');
+
+    status.className = 'fetch-status loading';
+    status.innerHTML = '<span class="spinner"></span> Placing order...';
+
+    try {
+        const data = await uvApi('POST', 'order/create', { link, type, vote, speed, after });
+        if (data.code === 1) {
+            status.className = 'fetch-status success';
+            status.textContent = `Order placed! ID: ${data.order_id}`;
+            toast('success', 'Order placed', `${vote} votes · Order #${data.order_id}`, 8000);
+            // Save order to local history
+            saveOrderHistory({ id: data.order_id, link, type, vote, speed, after, date: new Date().toISOString() });
+            loadRecentOrders();
+            // Refresh balance
+            checkUpvoteBalance(document.getElementById('uvBalanceBar'));
+        } else {
+            status.className = 'fetch-status error';
+            status.textContent = data.message || 'Order failed';
+        }
+    } catch (err) {
+        status.className = 'fetch-status error';
+        status.textContent = err.message;
+    }
+}
+
+function saveOrderHistory(order) {
+    let orders = [];
+    try { orders = JSON.parse(localStorage.getItem('lk_uv_orders')) || []; } catch {}
+    orders.unshift(order);
+    if (orders.length > 50) orders = orders.slice(0, 50);
+    localStorage.setItem('lk_uv_orders', JSON.stringify(orders));
+}
+
+function getOrderHistory() {
+    try { return JSON.parse(localStorage.getItem('lk_uv_orders')) || []; } catch { return []; }
+}
+
+const UV_TYPE_LABELS = { 1: 'Post Upvote', 6: 'Comment Upvote', 7: 'Comment Downvote', 8: 'Post Downvote', 10: 'TOP Ranking' };
+
+function loadRecentOrders() {
+    const orders = getOrderHistory().slice(0, 5);
+    const el = document.getElementById('uvOrders');
+    if (!orders.length) { el.innerHTML = ''; return; }
+
+    el.innerHTML = `<div class="uv-orders-title">Recent Orders</div>` +
+        orders.map(o => `<div class="uv-order-row">
+            <span class="uv-order-type">${UV_TYPE_LABELS[o.type] || 'Vote'}</span>
+            <span class="uv-order-votes">${o.vote} votes</span>
+            <span class="uv-order-date">${fmtDate(o.date)}</span>
+            <span class="uv-order-id">#${o.id}</span>
+        </div>`).join('');
+}
+
+// ==========================================
 //  HOURLY MONEY COMMENT CHECK
 // ==========================================
 async function autoCheckAllMoneyComments() {
@@ -2923,6 +3060,8 @@ async function autoCheckAllMoneyComments() {
 S.pullFromServer().then(() => {
     renderHome();
     startAutoRefresh();
+    // Show Buy Votes button if key is set
+    if (getUpvoteShopKey()) document.getElementById('upvoteNavBtn').style.display = '';
     // Re-pull from server every 30 seconds to pick up teammate changes
     setInterval(async () => {
         await S.pullFromServer();

@@ -21,6 +21,10 @@
             <div class="header-actions">
                 <button class="btn btn-primary" id="addSubredditBtn" onclick="openAddSubreddit()">+ Add Subreddit</button>
                 <button class="btn btn-ghost" id="tasksNavBtn" onclick="openTaskBoard()">Tasks</button>
+                <button class="btn btn-ghost" onclick="openUpvoteShop()" id="upvoteNavBtn" style="display:none">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
+                    Buy Votes
+                </button>
                 <button class="btn btn-ghost" onclick="openTeamPanel()">Team</button>
                 <button class="btn btn-ghost" onclick="openSettings()" title="Settings">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
@@ -438,6 +442,18 @@
                     </div>
                     <p class="settings-hint">For automated Google rank checking without any browser. Works from any device. Get a key from <a href="https://serpapi.com" target="_blank" style="color:var(--primary)">serpapi.com</a> or <a href="https://www.valueserp.com" target="_blank" style="color:var(--primary)">valueserp.com</a></p>
                 </div>
+                <div class="settings-divider-or"><span>Upvote Shop</span></div>
+                <div class="form-group">
+                    <label>Upvote Shop API Token</label>
+                    <div class="api-key-input-row">
+                        <input type="password" class="input" id="upvoteShopKeyInput" placeholder="Paste your Upvote Shop API token">
+                        <button class="btn-icon" onclick="toggleKeyVisibility('upvoteShopKeyInput')" title="Show/hide">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                        </button>
+                    </div>
+                    <p class="settings-hint">For buying upvotes/downvotes directly from the dashboard. Get token from <a href="https://panel.upvote.shop/settings" target="_blank" style="color:var(--primary)">panel.upvote.shop/settings</a></p>
+                    <div class="upvote-balance" id="upvoteBalance"></div>
+                </div>
                 <div class="settings-divider-or"><span>or use Dolphin Anty (local only)</span></div>
                 <div class="form-group">
                     <label>Dolphin Anty API Token</label>
@@ -627,6 +643,63 @@
         </div>
     </div>
 
+    <!-- Upvote Shop Order Modal -->
+    <div class="modal-overlay" id="upvoteModal">
+        <div class="modal">
+            <div class="modal-header">
+                <h3>Buy Votes — Upvote Shop</h3>
+                <button class="modal-close" onclick="closeModal('upvoteModal')">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="uv-balance-bar" id="uvBalanceBar"></div>
+                <div class="form-group">
+                    <label>Reddit Link (post or comment)</label>
+                    <input type="text" class="input" id="uvLink" placeholder="https://reddit.com/r/.../comments/...">
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Type</label>
+                        <select class="input" id="uvType">
+                            <option value="1">Post Upvote</option>
+                            <option value="8">Post Downvote</option>
+                            <option value="6">Comment Upvote</option>
+                            <option value="7">Comment Downvote</option>
+                            <option value="10">TOP Ranking (min 100)</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Votes</label>
+                        <input type="number" class="input" id="uvVotes" placeholder="e.g. 10" min="1" value="10">
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Speed (votes/min)</label>
+                        <select class="input" id="uvSpeed">
+                            <option value="0.3">Slow (0.3/min)</option>
+                            <option value="0.5">Gentle (0.5/min)</option>
+                            <option value="1" selected>Normal (1/min)</option>
+                            <option value="2">Fast (2/min)</option>
+                            <option value="3">Faster (3/min)</option>
+                            <option value="5">Max (5/min)</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Delay (minutes)</label>
+                        <input type="number" class="input" id="uvDelay" placeholder="0 = now" min="0" value="0">
+                    </div>
+                </div>
+                <div class="fetch-status" id="uvStatus"></div>
+                <!-- Recent orders -->
+                <div class="uv-orders" id="uvOrders"></div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-ghost" onclick="closeModal('upvoteModal')">Cancel</button>
+                <button class="btn btn-primary" onclick="placeUpvoteOrder()">Place Order</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Toast Notifications -->
     <div class="toast-container" id="toastContainer"></div>
 
@@ -641,6 +714,6 @@
         <div class="rank-panel-result hidden" id="rankPanelResult"></div>
     </div>
 
-    <script src="app.js?v=20260330q"></script>
+    <script src="app.js?v=20260330r"></script>
 </body>
 </html>

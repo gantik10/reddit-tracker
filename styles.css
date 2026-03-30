@@ -2651,6 +2651,83 @@ select.input {
     border: 1px solid var(--border);
 }
 
+/* ===== Upvote Shop ===== */
+.uv-balance-bar {
+    margin-bottom: 12px;
+}
+
+.uv-bal {
+    font-size: 13px;
+    color: var(--accent-green);
+    font-weight: 500;
+}
+
+.uv-bal strong {
+    font-size: 16px;
+}
+
+.uv-buy-icon {
+    color: var(--accent-green) !important;
+}
+
+.uv-buy-icon:hover {
+    background: rgba(70, 209, 96, 0.12) !important;
+}
+
+.uv-buy-text {
+    color: var(--accent-green) !important;
+}
+
+.uv-orders-title {
+    font-size: 10px;
+    text-transform: uppercase;
+    font-weight: 700;
+    color: var(--text-muted);
+    letter-spacing: 0.3px;
+    margin-top: 12px;
+    margin-bottom: 6px;
+    padding-top: 10px;
+    border-top: 1px solid var(--border);
+}
+
+.uv-order-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 5px 0;
+    font-size: 12px;
+    border-bottom: 1px solid var(--border);
+}
+
+.uv-order-row:last-child {
+    border-bottom: none;
+}
+
+.uv-order-type {
+    font-weight: 600;
+    min-width: 110px;
+}
+
+.uv-order-votes {
+    color: var(--accent-green);
+    font-weight: 600;
+}
+
+.uv-order-date {
+    color: var(--text-muted);
+    margin-left: auto;
+}
+
+.uv-order-id {
+    color: var(--text-muted);
+    font-family: 'Fira Code', monospace;
+    font-size: 11px;
+}
+
+.upvote-balance {
+    margin-top: 6px;
+}
+
 /* ===== Money Post Tabs & Search ===== */
 .mp-tabs {
     display: flex;
