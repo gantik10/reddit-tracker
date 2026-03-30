@@ -1,5 +1,41 @@
 // ===== LK Media Group — Reddit Tracker (v3) =====
 
+// --- Login Gate (one-time per device) ---
+const LK_AUTH_KEY = 'lk_auth';
+const LK_PASS_HASH = '8a5e3b7c'; // simple hash of password
+
+function simpleHash(str) {
+    let h = 0;
+    for (let i = 0; i < str.length; i++) h = ((h << 5) - h + str.charCodeAt(i)) | 0;
+    return (h >>> 0).toString(16);
+}
+
+function checkLogin() {
+    const input = document.getElementById('loginPassword').value;
+    if (simpleHash(input) === simpleHash('Kikiboom2001!')) {
+        localStorage.setItem(LK_AUTH_KEY, 'ok');
+        document.getElementById('loginGate').classList.add('hidden');
+        document.getElementById('appMain').classList.remove('hidden');
+        document.getElementById('loginError').classList.add('hidden');
+    } else {
+        document.getElementById('loginError').classList.remove('hidden');
+        document.getElementById('loginPassword').value = '';
+    }
+}
+
+// Check on load
+if (localStorage.getItem(LK_AUTH_KEY) === 'ok') {
+    document.getElementById('loginGate').classList.add('hidden');
+    document.getElementById('appMain').classList.remove('hidden');
+} else {
+    document.getElementById('loginGate').classList.remove('hidden');
+    document.getElementById('appMain').classList.add('hidden');
+}
+
+document.getElementById('loginPassword').addEventListener('keydown', e => {
+    if (e.key === 'Enter') checkLogin();
+});
+
 // --- Storage (synced to server for team sharing) ---
 const S = {
     get(k) { try { return JSON.parse(localStorage.getItem('lk_' + k)) || []; } catch { return []; } },

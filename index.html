@@ -8,7 +8,21 @@
     <link href="https://fonts.googleapis.com/css2?family=Oxanium:wght@300;400;500;600;700;800&family=Fira+Code:wght@400;500;600&display=swap" rel="stylesheet">
 </head>
 <body>
-    <div class="app">
+    <!-- Login Gate -->
+    <div class="login-gate" id="loginGate">
+        <div class="login-box">
+            <div class="login-logo">LK</div>
+            <h2 class="login-title">LK Media Group</h2>
+            <p class="login-sub">Reddit Tracker</p>
+            <div class="login-form">
+                <input type="password" class="input login-input" id="loginPassword" placeholder="Enter password" autocomplete="off">
+                <button class="btn btn-primary login-btn" onclick="checkLogin()">Enter</button>
+            </div>
+            <div class="login-error hidden" id="loginError">Wrong password</div>
+        </div>
+    </div>
+
+    <div class="app hidden" id="appMain">
         <!-- Top Header -->
         <header class="app-header">
             <div class="header-left">
@@ -714,6 +728,6 @@
         <div class="rank-panel-result hidden" id="rankPanelResult"></div>
     </div>
 
-    <script src="app.js?v=20260330r"></script>
+    <script src="app.js?v=20260331a"></script>
 </body>
 </html>

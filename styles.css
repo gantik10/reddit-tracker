@@ -2907,17 +2907,157 @@ select.input {
     opacity: 1;
 }
 
+/* ===== Login Gate ===== */
+.login-gate {
+    position: fixed;
+    inset: 0;
+    background: var(--bg-primary);
+    z-index: 9999;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.login-box {
+    text-align: center;
+    padding: 40px;
+    max-width: 360px;
+    width: 100%;
+}
+
+.login-logo {
+    width: 64px;
+    height: 64px;
+    background: var(--primary);
+    border-radius: var(--radius-lg);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 800;
+    font-size: 24px;
+    color: #fff;
+    margin: 0 auto 16px;
+    font-family: var(--font-sans);
+}
+
+.login-title {
+    font-size: 22px;
+    font-weight: 800;
+    margin-bottom: 2px;
+}
+
+.login-sub {
+    font-size: 13px;
+    color: var(--text-muted);
+    margin-bottom: 28px;
+}
+
+.login-form {
+    display: flex;
+    gap: 8px;
+}
+
+.login-input {
+    flex: 1;
+    text-align: center;
+    font-size: 15px !important;
+    padding: 10px 16px !important;
+}
+
+.login-btn {
+    padding: 10px 24px !important;
+    font-size: 14px !important;
+}
+
+.login-error {
+    color: var(--accent-red);
+    font-size: 13px;
+    font-weight: 600;
+    margin-top: 12px;
+}
+
+/* ===== Responsive ===== */
 @media (max-width: 900px) {
     .detail-columns { grid-template-columns: 1fr; }
     .subreddit-grid { grid-template-columns: 1fr; }
     .ahrefs-bar { flex-direction: column; gap: 12px; }
     .ahrefs-stat { border-right: none !important; border-bottom: 1px solid var(--border); padding: 8px 0; }
     .ahrefs-stat:last-of-type { border-bottom: none; }
+    .tb-kanban { grid-template-columns: 1fr; }
+    .tb-filters { flex-direction: column; }
+    .tb-header { flex-direction: column; align-items: flex-start; }
 }
 
 @media (max-width: 600px) {
-    .main-content { padding: 16px; }
+    .main-content { padding: 12px; }
+
+    /* Header */
+    .app-header { padding: 10px 14px; gap: 8px; flex-wrap: wrap; }
+    .header-actions { gap: 4px; flex-wrap: wrap; }
+    .header-actions .btn { font-size: 11px; padding: 5px 10px; }
+    .header-name { font-size: 14px; }
+    .header-sub { font-size: 10px; }
+    .logo-icon { width: 32px; height: 32px; font-size: 13px; }
+
+    /* Detail view */
     .detail-identity { flex-direction: column; align-items: flex-start; }
     .detail-followers-block { padding-top: 0; }
+    .detail-banner { min-height: 80px; }
+    .detail-header-actions { flex-wrap: wrap; gap: 4px; }
+    .detail-header-actions .btn { font-size: 10px; padding: 4px 8px; }
+    .detail-avatar { width: 48px; height: 48px; font-size: 20px; }
+    .detail-name { font-size: 18px; }
+
+    /* Forms */
     .form-row { flex-direction: column; gap: 0; }
+    .modal { margin: 8px; max-height: 90vh; }
+    .modal-body { padding: 14px; }
+    .fetch-input-row { flex-direction: column; gap: 6px; }
+    .fetch-input-row .btn { width: 100%; }
+
+    /* Money posts */
+    .money-post-header { flex-direction: column; align-items: flex-start; gap: 8px; }
+    .mp-actions { align-self: flex-end; }
+    .mp-rank { display: none; }
+    .mp-ahrefs-bar { flex-wrap: wrap; gap: 8px; padding: 10px 14px; }
+    .mp-ahrefs-stat { min-width: 60px; }
+    .google-rank-row { flex-wrap: wrap; gap: 4px; padding: 8px 14px; }
+    .gr-keyword { width: 100%; font-size: 12px; }
+    .gr-note { width: 100%; font-size: 10px; }
+
+    /* Money comment */
+    .mc-card { flex-wrap: wrap; }
+    .mc-history { width: 100%; margin-top: 6px; }
+
+    /* Task board */
+    .tb-title { font-size: 18px; }
+    .tb-card-title { font-size: 12px; }
+    .tb-header-left { flex-wrap: wrap; gap: 8px; }
+
+    /* Home cards */
+    .sub-card-body { padding: 10px 14px 14px; }
+    .sub-card-followers .count { font-size: 18px; }
+    .home-mp-row { padding: 4px 0; }
+
+    /* SERP panel */
+    .serp-full-panel { padding: 8px; }
+    .serp-result { padding: 8px; }
+    .serp-result-title { font-size: 15px; }
+    .serp-result-snippet { font-size: 12px; }
+
+    /* Kanban */
+    .kanban-board { flex-direction: column; }
+    .kanban-col { min-height: auto; }
+
+    /* Login */
+    .login-box { padding: 30px 20px; }
+    .login-form { flex-direction: column; }
+
+    /* Recommendations */
+    .rec-item { padding: 8px 14px 8px 42px; }
+    .rec-add-task { opacity: 1; }
+
+    /* Comment picker */
+    .mc-pick { gap: 8px; padding: 8px; }
+    .mc-pick-pos { font-size: 14px; min-width: 24px; }
 }
