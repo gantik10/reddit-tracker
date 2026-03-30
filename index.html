@@ -303,19 +303,36 @@
 
     <!-- Add Money Post — just paste a post link -->
     <div class="modal-overlay" id="moneyPostModal">
-        <div class="modal modal-sm">
+        <div class="modal">
             <div class="modal-header">
                 <h3 id="moneyPostModalTitle">Add Money Post</h3>
                 <button class="modal-close" onclick="closeModal('moneyPostModal')">&times;</button>
             </div>
             <div class="modal-body">
                 <input type="hidden" id="mpEditId">
-                <div class="form-group">
-                    <label>Paste Reddit post link</label>
-                    <div class="fetch-input-row">
-                        <input type="text" class="input" id="mpInput" placeholder="https://reddit.com/r/.../comments/...">
-                        <button class="btn btn-primary" id="mpFetchBtn" onclick="fetchMoneyPost()">Fetch</button>
+                <!-- Tabs: Link / Search -->
+                <div class="mp-tabs">
+                    <button class="mp-tab active" id="mpTabLink" onclick="setMpTab('link')">Paste Link</button>
+                    <button class="mp-tab" id="mpTabSearch" onclick="setMpTab('search')">Search Reddit</button>
+                </div>
+                <!-- Link tab -->
+                <div id="mpLinkTab">
+                    <div class="form-group">
+                        <div class="fetch-input-row">
+                            <input type="text" class="input" id="mpInput" placeholder="https://reddit.com/r/.../comments/...">
+                            <button class="btn btn-primary" id="mpFetchBtn" onclick="fetchMoneyPost()">Fetch</button>
+                        </div>
                     </div>
+                </div>
+                <!-- Search tab -->
+                <div id="mpSearchTab" class="hidden">
+                    <div class="form-group">
+                        <div class="fetch-input-row">
+                            <input type="text" class="input" id="mpSearchInput" placeholder="Search posts in this subreddit...">
+                            <button class="btn btn-primary" onclick="searchRedditPosts()">Search</button>
+                        </div>
+                    </div>
+                    <div id="mpSearchResults"></div>
                 </div>
                 <div class="fetch-status" id="mpFetchStatus"></div>
                 <div class="fetch-preview hidden" id="mpPreview">
@@ -624,6 +641,6 @@
         <div class="rank-panel-result hidden" id="rankPanelResult"></div>
     </div>
 
-    <script src="app.js?v=20260330p"></script>
+    <script src="app.js?v=20260330q"></script>
 </body>
 </html>

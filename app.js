@@ -532,6 +532,98 @@ function saveMoneyPost() {
 document.getElementById('mpInput').addEventListener('keydown', e => {
     if (e.key === 'Enter') fetchMoneyPost();
 });
+document.getElementById('mpSearchInput').addEventListener('keydown', e => {
+    if (e.key === 'Enter') searchRedditPosts();
+});
+
+// Money post tabs
+function setMpTab(tab) {
+    document.getElementById('mpTabLink').classList.toggle('active', tab === 'link');
+    document.getElementById('mpTabSearch').classList.toggle('active', tab === 'search');
+    document.getElementById('mpLinkTab').classList.toggle('hidden', tab !== 'link');
+    document.getElementById('mpSearchTab').classList.toggle('hidden', tab !== 'search');
+}
+
+// Search Reddit for posts in current subreddit
+async function searchRedditPosts() {
+    const query = document.getElementById('mpSearchInput').value.trim();
+    const resultsEl = document.getElementById('mpSearchResults');
+    const status = document.getElementById('mpFetchStatus');
+    if (!query) return;
+
+    const sub = getSub();
+    if (!sub) return;
+
+    status.className = 'fetch-status loading';
+    status.innerHTML = '<span class="spinner"></span> Searching r/' + esc(sub.name) + '...';
+    resultsEl.innerHTML = '';
+
+    try {
+        const data = await redditFetch(`/r/${sub.name}/search.json?q=${encodeURIComponent(query)}&restrict_sr=1&sort=relevance&limit=10`);
+        const posts = data?.data?.children || [];
+
+        status.className = 'fetch-status';
+        status.textContent = '';
+
+        if (!posts.length) {
+            resultsEl.innerHTML = '<div class="mp-search-empty">No posts found. Try different keywords.</div>';
+            return;
+        }
+
+        resultsEl.innerHTML = posts.map(p => {
+            const post = p.data;
+            return `<div class="mp-search-result" onclick="selectSearchResult('${post.id}')">
+                <div class="mp-search-title">${esc(post.title)}</div>
+                <div class="mp-search-meta">
+                    ${fmtNumAlways(post.ups || post.score || 0)} upvotes · ${post.num_comments || 0} comments · ${fmtDate(new Date(post.created_utc * 1000).toISOString())}
+                </div>
+            </div>`;
+        }).join('');
+    } catch (err) {
+        status.className = 'fetch-status error';
+        status.textContent = err.message;
+    }
+}
+
+async function selectSearchResult(postId) {
+    document.getElementById('mpSearchResults').innerHTML = '';
+    const status = document.getElementById('mpFetchStatus');
+    status.className = 'fetch-status loading';
+    status.innerHTML = '<span class="spinner"></span> Loading post...';
+
+    try {
+        const data = await redditFetch(`/comments/${postId}.json`);
+        const post = data[0].data.children[0].data;
+
+        fetchedPostData = {
+            title: post.title,
+            url: `https://www.reddit.com${post.permalink}`,
+            upvotes: post.ups || post.score || 0,
+            comments: post.num_comments || 0,
+            author: post.author || '',
+            created: post.created_utc ? new Date(post.created_utc * 1000).toISOString() : '',
+            subreddit: post.subreddit || '',
+            flair: post.link_flair_text || '',
+        };
+
+        document.getElementById('mpPreviewTitle').textContent = fetchedPostData.title;
+        document.getElementById('mpPreviewStats').innerHTML = `
+            <span>${fmtNumAlways(fetchedPostData.upvotes)} upvotes</span>
+            <span>${fmtNumAlways(fetchedPostData.comments)} comments</span>
+            <span>by u/${esc(fetchedPostData.author)}</span>
+            ${fetchedPostData.flair ? `<span class="badge badge-orange">${esc(fetchedPostData.flair)}</span>` : ''}
+        `;
+
+        status.className = 'fetch-status success';
+        status.textContent = 'Post found!';
+        document.getElementById('mpPreview').classList.remove('hidden');
+        document.getElementById('mpManualFields').classList.remove('hidden');
+        document.getElementById('mpSaveBtn').classList.remove('hidden');
+    } catch (err) {
+        status.className = 'fetch-status error';
+        status.textContent = err.message;
+    }
+}
 
 // --- Refresh a single money post ---
 async function refreshMoneyPost(mpId) {
@@ -642,7 +734,7 @@ function renderHome() {
             </div>`;
         }).join('') : '<div class="home-mp-empty">No money posts yet</div>';
 
-        // Tasks summary — count by assignee
+        // Tasks summary
         const team = S.get('team');
         const allTasks = [
             ...(sub.tasks || []),
@@ -650,29 +742,44 @@ function renderHome() {
         ];
         const activeTasks = allTasks.filter(t => t.status !== 'Done');
         const doneTasks = allTasks.filter(t => t.status === 'Done');
+        const todoTasks = allTasks.filter(t => t.status === 'To Do');
+        const inProgressTasks = allTasks.filter(t => t.status === 'In Progress');
 
-        // Group active tasks by assignee
-        const byAssignee = {};
-        activeTasks.forEach(t => {
-            const key = t.assigneeId || 0;
-            if (!byAssignee[key]) byAssignee[key] = 0;
-            byAssignee[key]++;
-        });
+        let tasksHtml = '';
+        if (activeTasks.length > 0) {
+            // Progress bar
+            const total = allTasks.length;
+            const donePercent = total ? Math.round((doneTasks.length / total) * 100) : 0;
+            const progressPercent = total ? Math.round((inProgressTasks.length / total) * 100) : 0;
 
-        const assigneeBadges = Object.entries(byAssignee).map(([id, count]) => {
-            const member = team.find(m => m.id === Number(id));
-            if (member) {
-                return `<span class="home-assignee" style="background:${member.color || 'var(--primary)'}" title="${esc(member.name)}: ${count} task${count > 1 ? 's' : ''}">${initials(member.name)} ${count}</span>`;
-            }
-            return `<span class="home-assignee home-assignee-none" title="Unassigned: ${count}">? ${count}</span>`;
-        }).join('');
+            // Show up to 3 active tasks
+            const taskPreview = activeTasks.slice(0, 3).map(t => {
+                const member = team.find(m => m.id === t.assigneeId);
+                const isOverdue = t.dueDate && t.dueDate < new Date().toISOString().slice(0, 10);
+                const statusDot = t.status === 'In Progress' ? 'home-task-dot-progress' : 'home-task-dot-todo';
+                return `<div class="home-task-item">
+                    <span class="home-task-dot ${statusDot}"></span>
+                    <span class="home-task-name">${esc(t.title.length > 35 ? t.title.slice(0, 32) + '...' : t.title)}</span>
+                    ${isOverdue ? '<span class="home-task-overdue">OVERDUE</span>' : ''}
+                    ${member ? `<span class="home-task-avatar" style="background:${member.color || 'var(--primary)'}">${initials(member.name)}</span>` : ''}
+                </div>`;
+            }).join('');
 
-        const tasksHtml = allTasks.length > 0 ? `<div class="home-tasks-section">
-            <div class="home-tasks-bar">
-                <span class="home-tasks-count">${activeTasks.length} active${doneTasks.length ? ` · ${doneTasks.length} done` : ''}</span>
-                <span class="home-assignees">${assigneeBadges}</span>
-            </div>
-        </div>` : '';
+            const moreCount = activeTasks.length - 3;
+
+            tasksHtml = `<div class="home-tasks-section">
+                <div class="home-tasks-header-row">
+                    <span class="home-tasks-label">Tasks</span>
+                    <span class="home-tasks-progress-text">${doneTasks.length}/${total} done</span>
+                </div>
+                <div class="home-tasks-progress-bar">
+                    <div class="home-tasks-progress-fill" style="width:${donePercent}%"></div>
+                    <div class="home-tasks-progress-active" style="width:${progressPercent}%;left:${donePercent}%"></div>
+                </div>
+                ${taskPreview}
+                ${moreCount > 0 ? `<div class="home-tasks-more">+${moreCount} more task${moreCount > 1 ? 's' : ''}</div>` : ''}
+            </div>`;
+        }
 
         return `<div class="sub-card" onclick="openSubreddit(${sub.id})">
             <div class="sub-card-banner" style="${bannerStyle}"></div>
@@ -1059,7 +1166,8 @@ async function autoCheckRank(mpId, kwIndex) {
             else toast('warning', 'Not ranking', `"${kw.keyword}" not found`, 6000);
             return;
         } catch (err) {
-            toast('error', 'Check failed', err.message, 6000);
+            // Keep old rank on error — don't clear it
+            toast('error', 'Check failed', `"${kw.keyword}": ${err.message}. Previous result kept.`, 6000);
             return;
         }
     }
@@ -1085,11 +1193,13 @@ async function autoCheckRank(mpId, kwIndex) {
         }
     } catch (err) {
         updateRankProfile(0, 'error', err.message.slice(0, 40), '<span class="rp-result none">ERR</span>');
+        toast('error', 'Check failed', `Previous result kept.`, 6000);
+        return; // Don't overwrite old rank on error
     }
 
     showRankResult(rankType, avgRank);
 
-    // Save
+    // Save only if we got a result
     updateSub(s => {
         const p = s.moneyPosts.find(x => x.id === mpId);
         const k = p?.googleKeywords?.[kwIndex];
@@ -1439,6 +1549,15 @@ function renderMoneyPosts(sub) {
             const hasSerpData = kw.serpResults?.length || kw.redditSerpResults?.length;
             const serpId = `serp_${mp.id}_${i}`;
 
+            // SERP toggle: if we have stored results, show expandable panel; if rank exists but no SERP data, link to Google
+            const serpToggle = hasSerpData
+                ? `<button class="btn-icon" onclick="toggleSerp('${serpId}')" title="View full SERP results">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="21" x2="9" y2="9"/></svg>
+                  </button>`
+                : (avg ? `<a class="btn-icon" href="https://www.google.com/search?q=${encodeURIComponent(rType === 'reddit' ? kw.keyword + ' site:www.reddit.com' : kw.keyword)}&gl=us&hl=en" target="_blank" rel="noopener" onclick="event.stopPropagation()" title="View on Google (SERP data not stored — re-check to capture)">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="21" x2="9" y2="9"/></svg>
+                  </a>` : '');
+
             return `<div class="google-rank-block">
                 <div class="google-rank-row">
                     <span class="gr-keyword">${esc(kw.keyword)}</span>
@@ -1446,9 +1565,7 @@ function renderMoneyPosts(sub) {
                     <span class="gr-rank ${rankClass}">${avg ? '#' + avg : '—'}</span>
                     ${pillsHtml}
                     <span class="gr-note">${statusText}${kw.updatedAt ? ' · ' + fmtDate(kw.updatedAt) : ''}${kw.captchaCount ? ' · ' + kw.captchaCount + ' captcha' : ''}</span>
-                    ${hasSerpData ? `<button class="btn-icon" onclick="toggleSerp('${serpId}')" title="View full SERP results">
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="21" x2="9" y2="9"/></svg>
-                    </button>` : ''}
+                    ${serpToggle}
                     ${hasDolphin ? `<button class="btn-icon" onclick="autoCheckRank(${mp.id},${i})" title="Check rank">
                         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg>
                     </button>` : `<button class="btn-icon" onclick="updateKeywordRank(${mp.id},${i})" title="Update rank manually">
