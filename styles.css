@@ -2029,6 +2029,35 @@ select.input {
     color: var(--text-muted);
 }
 
+.rec-toggle {
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    user-select: none;
+}
+
+.rec-toggle:hover {
+    color: var(--primary);
+}
+
+.rec-chevron {
+    transition: transform 0.15s;
+    flex-shrink: 0;
+}
+
+.rec-chevron-open {
+    transform: rotate(90deg);
+}
+
+.btn.danger, .btn-ghost.danger {
+    color: var(--accent-red);
+}
+
+.btn.danger:hover, .btn-ghost.danger:hover {
+    background: rgba(234,0,39,0.1);
+}
+
 .rec-add-task {
     flex-shrink: 0;
     opacity: 0;

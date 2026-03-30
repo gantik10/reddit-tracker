@@ -1388,11 +1388,19 @@ function renderRecommendations(mpId, keywords) {
             critical: 'CRITICAL', high: 'HIGH', medium: 'MEDIUM', low: 'LOW', info: 'INFO'
         };
 
+        const collapsed = isRecsCollapsed(mpId);
         return `<div class="mp-recommendations">
             <div class="mp-tasks-header">
-                <span class="mp-tasks-label">SEO Advisor (${allRecs.length} recommendations)</span>
-                <button class="btn btn-xs btn-ghost" onclick="refreshRecommendations(${mpId})">Refresh</button>
+                <span class="mp-tasks-label rec-toggle" onclick="toggleRecs(${mpId})">
+                    <svg class="rec-chevron ${collapsed ? '' : 'rec-chevron-open'}" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+                    SEO Advisor (${allRecs.length})
+                </span>
+                <span style="display:flex;gap:4px;">
+                    <button class="btn btn-xs btn-ghost" onclick="refreshRecommendations(${mpId})">Refresh</button>
+                    <button class="btn btn-xs btn-ghost danger" onclick="clearRecommendations(${mpId})">Clear</button>
+                </span>
             </div>
+            <div class="rec-body ${collapsed ? 'hidden' : ''}">
             ${allRecs.map((r, i) => `
                 <div class="rec-item">
                     <span class="rec-priority ${priorityColors[r.priority]}">${priorityLabels[r.priority]}</span>
@@ -1407,6 +1415,7 @@ function renderRecommendations(mpId, keywords) {
                     </button>
                 </div>
             `).join('')}
+            </div>
         </div>`;
     }
 
@@ -1423,6 +1432,30 @@ function renderRecommendations(mpId, keywords) {
             <span class="rec-check-hint">Analyze competitors and get actionable SEO advice</span>
         </div>
     </div>`;
+}
+
+// Clear all recommendations for a money post
+function clearRecommendations(mpId) {
+    updateSub(s => {
+        const p = s.moneyPosts.find(x => x.id === mpId);
+        if (!p?.googleKeywords) return;
+        p.googleKeywords.forEach(kw => {
+            delete kw.recommendations;
+            delete kw.competitorAnalysis;
+            delete kw.ourAnalysis;
+            delete kw.pendingCompetitors;
+        });
+    });
+    renderDetail();
+    toast('success', 'Cleared', 'Recommendations removed');
+}
+
+// Toggle recommendations collapsed/expanded
+const _recsCollapsed = {};
+function isRecsCollapsed(mpId) { return !!_recsCollapsed[mpId]; }
+function toggleRecs(mpId) {
+    _recsCollapsed[mpId] = !_recsCollapsed[mpId];
+    renderDetail();
 }
 
 // Manually trigger recommendation analysis for a money post
