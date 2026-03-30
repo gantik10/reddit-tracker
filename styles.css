@@ -284,6 +284,126 @@ body {
     font-weight: 600;
 }
 
+/* ===== Home Money Post Rows ===== */
+.home-mp-section {
+    border-top: 1px solid var(--border);
+    padding-top: 10px;
+}
+
+.home-mp-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 6px;
+}
+
+.home-mp-heading {
+    font-size: 10px;
+    text-transform: uppercase;
+    font-weight: 700;
+    color: var(--text-muted);
+    letter-spacing: 0.3px;
+}
+
+.home-check-btn {
+    font-size: 10px !important;
+    padding: 2px 8px !important;
+}
+
+.home-mp-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 5px 0;
+    border-bottom: 1px solid var(--border);
+}
+
+.home-mp-row:last-child {
+    border-bottom: none;
+}
+
+.home-mp-title {
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--text-primary);
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.home-mp-badges {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    flex-shrink: 0;
+}
+
+.home-rank {
+    font-size: 11px;
+    font-weight: 700;
+    font-family: 'Fira Code', monospace;
+    padding: 1px 6px;
+    border-radius: 3px;
+}
+
+.home-rank-google {
+    background: rgba(70, 209, 96, 0.15);
+    color: var(--accent-green);
+}
+
+.home-rank-reddit {
+    background: rgba(255, 69, 0, 0.12);
+    color: var(--primary);
+}
+
+.home-rank-none {
+    color: var(--text-muted);
+    font-size: 10px;
+}
+
+.home-mc-label {
+    font-size: 9px;
+    font-weight: 700;
+    color: var(--text-muted);
+    text-transform: uppercase;
+}
+
+.home-mc {
+    font-size: 11px;
+    font-weight: 700;
+    font-family: 'Fira Code', monospace;
+    padding: 1px 5px;
+    border-radius: 3px;
+}
+
+.home-mc-1 {
+    background: rgba(70, 209, 96, 0.15);
+    color: var(--accent-green);
+}
+
+.home-mc-top {
+    background: rgba(255, 176, 0, 0.15);
+    color: var(--accent-yellow);
+}
+
+.home-mc-bad {
+    background: rgba(234, 0, 39, 0.12);
+    color: var(--accent-red);
+}
+
+.home-mc-none {
+    color: var(--text-muted);
+}
+
+.home-mp-empty {
+    font-size: 11px;
+    color: var(--text-muted);
+    padding: 6px 0;
+}
+
 /* ===== Empty Home ===== */
 .empty-home {
     text-align: center;

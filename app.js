@@ -495,11 +495,6 @@ function renderHome() {
         const diffStr = diff > 0 ? `+${fmtNum(diff)}` : diff < 0 ? `${fmtNum(diff)}` : '—';
         const diffClass = diff > 0 ? 'up' : diff < 0 ? 'down' : 'neutral';
 
-        const moneyPosts = (sub.moneyPosts || []).length;
-        const subTasks = (sub.tasks || []).filter(t => t.status !== 'Done').length;
-        const postTasks = (sub.moneyPosts || []).reduce((sum, mp) => sum + (mp.tasks || []).filter(t => t.status !== 'Done').length, 0);
-        const totalTasks = subTasks + postTasks;
-
         const bannerStyle = sub.bannerImg
             ? `background-image:url('${esc(sub.bannerImg)}');background-color:${sub.bannerColor || '#1A1A2E'};`
             : `background:${sub.bannerColor || '#1A1A2E'};`;
@@ -508,6 +503,45 @@ function renderHome() {
         const avatarStyle = avatarHasImg
             ? `background-image:url('${esc(sub.iconImg)}');background-color:${sub.primaryColor || '#FF4500'};`
             : `background:${sub.primaryColor || '#FF4500'};`;
+
+        // Build money posts summary rows
+        const mps = sub.moneyPosts || [];
+        const hasKeywords = mps.some(mp => mp.googleKeywords?.length > 0);
+        const mpRowsHtml = mps.length > 0 ? mps.map(mp => {
+            // Best keyword rank
+            const keywords = mp.googleKeywords || [];
+            let bestRank = null, bestType = 'none', bestKw = '';
+            keywords.forEach(kw => {
+                const r = kw.avgRank || kw.rank;
+                if (r && (!bestRank || (kw.rankType === 'google' && bestType !== 'google') || r < bestRank)) {
+                    bestRank = r;
+                    bestType = kw.rankType || 'none';
+                    bestKw = kw.keyword;
+                }
+            });
+
+            const rankBadge = bestType === 'google'
+                ? `<span class="home-rank home-rank-google" title="${esc(bestKw)}: Google #${bestRank}">G#${bestRank}</span>`
+                : bestType === 'reddit' && bestRank
+                ? `<span class="home-rank home-rank-reddit" title="${esc(bestKw)}: Reddit #${bestRank}">R#${bestRank}</span>`
+                : `<span class="home-rank home-rank-none">—</span>`;
+
+            // Money comment position
+            const mc = mp.moneyComment;
+            const mcBadge = mc?.position
+                ? `<span class="home-mc ${mc.position === 1 ? 'home-mc-1' : mc.position <= 3 ? 'home-mc-top' : 'home-mc-bad'}" title="Money comment #${mc.position}">#${mc.position}</span>`
+                : mc?.commentId
+                ? `<span class="home-mc home-mc-none" title="Not checked yet">?</span>`
+                : '';
+
+            return `<div class="home-mp-row">
+                <span class="home-mp-title" title="${esc(mp.title)}">${esc(mp.title.length > 45 ? mp.title.slice(0, 42) + '...' : mp.title)}</span>
+                <span class="home-mp-badges">
+                    ${rankBadge}
+                    ${mcBadge ? `<span class="home-mc-label">MC</span>${mcBadge}` : ''}
+                </span>
+            </div>`;
+        }).join('') : '<div class="home-mp-empty">No money posts yet</div>';
 
         return `<div class="sub-card" onclick="openSubreddit(${sub.id})">
             <div class="sub-card-banner" style="${bannerStyle}"></div>
@@ -521,15 +555,49 @@ function renderHome() {
                     <span class="label">Followers</span>
                     <span class="change ${diffClass}">${diffStr}</span>
                 </div>
-                <div class="sub-card-stats">
-                    <div class="sub-card-stat"><span class="val">${moneyPosts}</span><span class="lbl">Money Posts</span></div>
-                    <div class="sub-card-stat"><span class="val">${totalTasks}</span><span class="lbl">Tasks</span></div>
-                    <div class="sub-card-stat"><span class="val">${sub.ahrefs?.dr || '—'}</span><span class="lbl">DR</span></div>
-                    <div class="sub-card-stat"><span class="val">${sub.ahrefs?.seoRank ? '#' + fmtNum(sub.ahrefs.seoRank) : '—'}</span><span class="lbl">SEO</span></div>
+                <div class="home-mp-section">
+                    <div class="home-mp-header">
+                        <span class="home-mp-heading">Money Posts (${mps.length})</span>
+                        ${hasKeywords ? `<button class="btn btn-xs btn-primary home-check-btn" onclick="event.stopPropagation();homeCheckAll(${sub.id})" title="Check all keyword ranks">Check All</button>` : ''}
+                    </div>
+                    ${mpRowsHtml}
                 </div>
             </div>
         </div>`;
     }).join('');
+}
+
+// ==========================================
+//  HOME — CHECK ALL RANKS FOR A SUBREDDIT
+// ==========================================
+async function homeCheckAll(subId) {
+    const subs = S.get('subreddits');
+    const sub = subs.find(s => s.id === subId);
+    if (!sub) return;
+
+    const serpKey = getSerpApiKey();
+    if (!serpKey) return toast('warning', 'Need SERP API', 'Set a SERP API key in Settings.');
+
+    const posts = (sub.moneyPosts || []).filter(mp => mp.googleKeywords?.length > 0);
+    if (!posts.length) return toast('warning', 'No keywords', 'No keywords to check in this subreddit.');
+
+    const totalKw = posts.reduce((s, mp) => s + mp.googleKeywords.length, 0);
+    toast('info', `Checking r/${sub.name}`, `${totalKw} keyword(s) across ${posts.length} post(s)`, 4000);
+
+    // Temporarily set currentSubId to allow updateSub to work
+    const prevSubId = currentSubId;
+    currentSubId = subId;
+
+    for (const mp of posts) {
+        for (let i = 0; i < mp.googleKeywords.length; i++) {
+            await autoCheckRank(mp.id, i);
+            await new Promise(r => setTimeout(r, 1000));
+        }
+    }
+
+    currentSubId = prevSubId;
+    toast('success', 'Done', `All rank checks complete for r/${sub.name}`, 5000);
+    renderHome();
 }
 
 // ==========================================
