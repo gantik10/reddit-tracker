@@ -335,7 +335,7 @@ const server = http.createServer(async (req, res) => {
 
         try {
             // Step 1: Regular Google search
-            const googleUrl = `https://serpapi.com/search.json?engine=google&q=${encodeURIComponent(keyword)}&gl=us&hl=en&num=10&api_key=${apiKey}`;
+            const googleUrl = `https://serpapi.com/search.json?engine=google&q=${encodeURIComponent(keyword)}&gl=us&hl=en&location=United+States&google_domain=google.com&num=10&api_key=${apiKey}`;
             const googleResult = JSON.parse(httpsRequest(googleUrl).data);
 
             if (googleResult.error) throw new Error(googleResult.error);
@@ -360,7 +360,7 @@ const server = http.createServer(async (req, res) => {
 
             // Step 2: site:reddit.com search
             console.log(`[SERP] Not on Google page 1, checking site:reddit.com...`);
-            const redditUrl = `https://serpapi.com/search.json?engine=google&q=${encodeURIComponent(keyword + ' site:www.reddit.com')}&gl=us&hl=en&num=20&api_key=${apiKey}`;
+            const redditUrl = `https://serpapi.com/search.json?engine=google&q=${encodeURIComponent(keyword + ' site:www.reddit.com')}&gl=us&hl=en&location=United+States&google_domain=google.com&num=20&api_key=${apiKey}`;
             const redditResult = JSON.parse(httpsRequest(redditUrl).data);
 
             if (redditResult.error) throw new Error(redditResult.error);
