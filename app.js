@@ -1890,7 +1890,12 @@ function saveTask() {
         }
     });
     closeModal('taskModal');
-    renderDetail();
+    // Re-render whichever view is active
+    if (!document.getElementById('taskBoardView').classList.contains('hidden')) {
+        renderTaskBoard();
+    } else {
+        renderDetail();
+    }
 }
 
 function editTask(type, parentId, taskId) {
@@ -2294,6 +2299,308 @@ async function autoRefreshAll() {
     if (currentSubId) renderDetail();
     else renderHome();
 }
+
+// ==========================================
+//  TASK BOARD — Global task management
+// ==========================================
+let tbView = localStorage.getItem('lk_tb_view') || 'kanban';
+
+function openTaskBoard() {
+    currentSubId = null;
+    document.getElementById('homeView').classList.add('hidden');
+    document.getElementById('detailView').classList.add('hidden');
+    document.getElementById('taskBoardView').classList.remove('hidden');
+    document.getElementById('addSubredditBtn').classList.add('hidden');
+    populateTbFilters();
+    renderTaskBoard();
+}
+
+function setTbView(view) {
+    tbView = view;
+    localStorage.setItem('lk_tb_view', view);
+    document.getElementById('tbListBtn').classList.toggle('active', view === 'list');
+    document.getElementById('tbKanbanBtn').classList.toggle('active', view === 'kanban');
+    renderTaskBoard();
+}
+
+function populateTbFilters() {
+    const subs = S.get('subreddits');
+    const team = S.get('team');
+
+    const subSel = document.getElementById('tbFilterSub');
+    subSel.innerHTML = '<option value="">All Subreddits</option>' +
+        subs.map(s => `<option value="${s.id}">r/${esc(s.name)}</option>`).join('');
+
+    const assigneeSel = document.getElementById('tbFilterAssignee');
+    assigneeSel.innerHTML = '<option value="">All Assignees</option><option value="0">Unassigned</option>' +
+        team.map(m => `<option value="${m.id}">${esc(m.name)}</option>`).join('');
+}
+
+// Gather ALL tasks from all subreddits into a flat array with context
+function gatherAllTasks() {
+    const subs = S.get('subreddits');
+    const tasks = [];
+
+    subs.forEach(sub => {
+        // Subreddit-level tasks
+        (sub.tasks || []).forEach(t => {
+            tasks.push({
+                ...t,
+                subId: sub.id,
+                subName: sub.name,
+                type: 'sub',
+                parentId: null,
+                postTitle: null,
+                _key: `s${sub.id}_t${t.id}`
+            });
+        });
+        // Post-level tasks
+        (sub.moneyPosts || []).forEach(mp => {
+            (mp.tasks || []).forEach(t => {
+                tasks.push({
+                    ...t,
+                    subId: sub.id,
+                    subName: sub.name,
+                    type: 'post',
+                    parentId: mp.id,
+                    postTitle: mp.title,
+                    _key: `s${sub.id}_p${mp.id}_t${t.id}`
+                });
+            });
+        });
+    });
+
+    return tasks;
+}
+
+function filterAndSortTasks(tasks) {
+    const filterSub = document.getElementById('tbFilterSub')?.value || '';
+    const filterAssignee = document.getElementById('tbFilterAssignee')?.value || '';
+    const filterPriority = document.getElementById('tbFilterPriority')?.value || '';
+    const filterStatus = document.getElementById('tbFilterStatus')?.value || '';
+    const sortBy = document.getElementById('tbSortBy')?.value || 'priority';
+
+    let filtered = tasks;
+    if (filterSub) filtered = filtered.filter(t => t.subId === Number(filterSub));
+    if (filterAssignee === '0') filtered = filtered.filter(t => !t.assigneeId);
+    else if (filterAssignee) filtered = filtered.filter(t => t.assigneeId === Number(filterAssignee));
+    if (filterPriority) filtered = filtered.filter(t => t.priority === filterPriority);
+    if (filterStatus) filtered = filtered.filter(t => t.status === filterStatus);
+
+    const priorityOrder = { Urgent: 0, High: 1, Medium: 2, Low: 3 };
+    const statusOrder = { 'To Do': 0, 'In Progress': 1, 'Done': 2 };
+
+    filtered.sort((a, b) => {
+        if (sortBy === 'priority') return (priorityOrder[a.priority] ?? 9) - (priorityOrder[b.priority] ?? 9);
+        if (sortBy === 'dueDate') {
+            if (!a.dueDate && !b.dueDate) return 0;
+            if (!a.dueDate) return 1;
+            if (!b.dueDate) return -1;
+            return a.dueDate.localeCompare(b.dueDate);
+        }
+        if (sortBy === 'status') return (statusOrder[a.status] ?? 9) - (statusOrder[b.status] ?? 9);
+        if (sortBy === 'assignee') return (a.assigneeId || 999) - (b.assigneeId || 999);
+        if (sortBy === 'subreddit') return a.subName.localeCompare(b.subName);
+        return 0;
+    });
+
+    return filtered;
+}
+
+function renderTaskBoard() {
+    const team = S.get('team');
+    const allTasks = gatherAllTasks();
+    const tasks = filterAndSortTasks(allTasks);
+
+    const active = allTasks.filter(t => t.status !== 'Done').length;
+    const done = allTasks.filter(t => t.status === 'Done').length;
+    document.getElementById('tbCount').textContent = `${active} active · ${done} done · ${allTasks.length} total`;
+
+    if (tbView === 'kanban') {
+        document.getElementById('tbList').classList.add('hidden');
+        document.getElementById('tbKanban').classList.remove('hidden');
+        renderTbKanban(tasks, team);
+    } else {
+        document.getElementById('tbKanban').classList.add('hidden');
+        document.getElementById('tbList').classList.remove('hidden');
+        renderTbList(tasks, team);
+    }
+
+    document.getElementById('tbListBtn').classList.toggle('active', tbView === 'list');
+    document.getElementById('tbKanbanBtn').classList.toggle('active', tbView === 'kanban');
+}
+
+function tbTaskCard(t, team, showStatus) {
+    const member = team.find(m => m.id === t.assigneeId);
+    const isOverdue = t.dueDate && t.status !== 'Done' && t.dueDate < new Date().toISOString().slice(0, 10);
+    const isDueSoon = t.dueDate && t.status !== 'Done' && !isOverdue && t.dueDate <= new Date(Date.now() + 2 * 86400000).toISOString().slice(0, 10);
+    const doneClass = t.status === 'Done' ? 'tb-card-done' : '';
+
+    return `<div class="tb-card ${doneClass}" draggable="true" data-key="${t._key}"
+        ondragstart="tbDragStart(event,'${t._key}')" ondragend="tbDragEnd(event)">
+        <div class="tb-card-top">
+            <span class="badge priority-${t.priority}" style="font-size:9px;">${t.priority}</span>
+            ${showStatus ? `<span class="tb-card-status tb-status-${t.status.replace(/\s/g, '')}">${t.status}</span>` : ''}
+            <span class="tb-card-sub">r/${esc(t.subName)}</span>
+        </div>
+        <div class="tb-card-title ${t.status === 'Done' ? 'done-text' : ''}">${esc(t.title)}</div>
+        ${t.postTitle ? `<div class="tb-card-post" title="${esc(t.postTitle)}">Post: ${esc(t.postTitle.length > 35 ? t.postTitle.slice(0, 32) + '...' : t.postTitle)}</div>` : ''}
+        <div class="tb-card-bottom">
+            ${t.dueDate ? `<span class="tb-card-due ${isOverdue ? 'overdue' : isDueSoon ? 'due-soon' : ''}">${isOverdue ? 'OVERDUE ' : ''}${fmtDate(t.dueDate)}</span>` : '<span></span>'}
+            <div class="tb-card-right">
+                <button class="btn-icon" onclick="tbEditTask('${t._key}')" title="Edit">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                </button>
+                ${member ? `<div class="tb-card-assignee" style="background:${member.color || 'var(--primary)'}" title="${esc(member.name)}">${initials(member.name)}</div>` : ''}
+            </div>
+        </div>
+    </div>`;
+}
+
+function renderTbList(tasks, team) {
+    const list = document.getElementById('tbList');
+    if (!tasks.length) {
+        list.innerHTML = '<div class="tb-empty">No tasks match your filters</div>';
+        return;
+    }
+    list.innerHTML = tasks.map(t => tbTaskCard(t, team, true)).join('');
+}
+
+function renderTbKanban(tasks, team) {
+    const buckets = { 'To Do': [], 'In Progress': [], 'Done': [] };
+    tasks.forEach(t => {
+        if (buckets[t.status]) buckets[t.status].push(t);
+        else buckets['To Do'].push(t);
+    });
+
+    document.getElementById('tbKcTodo').textContent = buckets['To Do'].length;
+    document.getElementById('tbKcProgress').textContent = buckets['In Progress'].length;
+    document.getElementById('tbKcDone').textContent = buckets['Done'].length;
+
+    document.getElementById('tbKbTodo').innerHTML = buckets['To Do'].map(t => tbTaskCard(t, team, false)).join('') || '<div class="tb-empty-col">No tasks</div>';
+    document.getElementById('tbKbProgress').innerHTML = buckets['In Progress'].map(t => tbTaskCard(t, team, false)).join('') || '<div class="tb-empty-col">No tasks</div>';
+    document.getElementById('tbKbDone').innerHTML = buckets['Done'].map(t => tbTaskCard(t, team, false)).join('') || '<div class="tb-empty-col">No tasks</div>';
+}
+
+// Drag-and-drop on task board kanban
+let tbDragKey = null;
+
+function tbDragStart(e, key) {
+    tbDragKey = key;
+    e.target.classList.add('dragging');
+    e.dataTransfer.effectAllowed = 'move';
+}
+
+function tbDragEnd(e) {
+    e.target.classList.remove('dragging');
+}
+
+function tbKanbanDrop(e) {
+    e.preventDefault();
+    if (!tbDragKey) return;
+
+    const col = e.target.closest('.tb-kanban-col');
+    if (!col) return;
+    const newStatus = col.dataset.status;
+
+    // Parse key to find the task: s{subId}_t{taskId} or s{subId}_p{mpId}_t{taskId}
+    const keyMatch = tbDragKey.match(/^s(\d+)(?:_p(\d+))?_t(\d+)$/);
+    if (!keyMatch) return;
+
+    const subId = Number(keyMatch[1]);
+    const mpId = keyMatch[2] ? Number(keyMatch[2]) : null;
+    const taskId = Number(keyMatch[3]);
+
+    let subs = S.get('subreddits');
+    const sub = subs.find(s => s.id === subId);
+    if (!sub) return;
+
+    if (mpId) {
+        const mp = (sub.moneyPosts || []).find(p => p.id === mpId);
+        const task = mp?.tasks?.find(t => t.id === taskId);
+        if (task) task.status = newStatus;
+    } else {
+        const task = (sub.tasks || []).find(t => t.id === taskId);
+        if (task) task.status = newStatus;
+    }
+
+    S.set('subreddits', subs);
+    tbDragKey = null;
+    renderTaskBoard();
+}
+
+// Edit task from task board
+function tbEditTask(key) {
+    const keyMatch = key.match(/^s(\d+)(?:_p(\d+))?_t(\d+)$/);
+    if (!keyMatch) return;
+
+    const subId = Number(keyMatch[1]);
+    const mpId = keyMatch[2] ? Number(keyMatch[2]) : null;
+    const taskId = Number(keyMatch[3]);
+
+    // Temporarily set currentSubId for editTask to work
+    const prevSubId = currentSubId;
+    currentSubId = subId;
+
+    if (mpId) {
+        editTask('post', mpId, taskId);
+    } else {
+        editTask('sub', null, taskId);
+    }
+
+    // Override the save to return to task board
+    const origSave = window._origSaveTask;
+    if (!origSave) {
+        window._origSaveTask = saveTask;
+    }
+    // We'll handle re-render in the patched goHome
+}
+
+// Add global task — pick subreddit first
+function openAddGlobalTask() {
+    const subs = S.get('subreddits');
+    if (!subs.length) return toast('warning', 'No subreddits', 'Add a subreddit first.');
+
+    // If only one subreddit, use it directly
+    if (subs.length === 1) {
+        currentSubId = subs[0].id;
+        openAddTask('sub', '');
+        return;
+    }
+
+    // Build quick picker
+    const picker = document.getElementById('tbSubPicker');
+    if (picker) picker.remove();
+
+    const div = document.createElement('div');
+    div.id = 'tbSubPicker';
+    div.className = 'modal-overlay active';
+    div.onclick = e => { if (e.target === div) div.remove(); };
+    div.innerHTML = `<div class="modal modal-sm">
+        <div class="modal-header">
+            <h3>Add Task to...</h3>
+            <button class="modal-close" onclick="document.getElementById('tbSubPicker').remove()">&times;</button>
+        </div>
+        <div class="modal-body">
+            ${subs.map(s => `<button class="btn btn-ghost" style="width:100%;justify-content:flex-start;margin-bottom:4px;" onclick="document.getElementById('tbSubPicker').remove();currentSubId=${s.id};openAddTask('sub','')">r/${esc(s.name)}</button>`).join('')}
+        </div>
+    </div>`;
+    document.body.appendChild(div);
+}
+
+// Override goHome to handle returning from task board
+const _origGoHome = goHome;
+goHome = function() {
+    document.getElementById('taskBoardView').classList.add('hidden');
+    _origGoHome();
+};
+
+// Also patch openSubreddit to hide task board
+const _origOpenSub = openSubreddit;
+openSubreddit = function(id) {
+    document.getElementById('taskBoardView').classList.add('hidden');
+    _origOpenSub(id);
+};
 
 // ==========================================
 //  HOURLY MONEY COMMENT CHECK
