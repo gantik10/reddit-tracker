@@ -543,6 +543,38 @@ function renderHome() {
             </div>`;
         }).join('') : '<div class="home-mp-empty">No money posts yet</div>';
 
+        // Tasks summary — count by assignee
+        const team = S.get('team');
+        const allTasks = [
+            ...(sub.tasks || []),
+            ...(sub.moneyPosts || []).flatMap(mp => mp.tasks || [])
+        ];
+        const activeTasks = allTasks.filter(t => t.status !== 'Done');
+        const doneTasks = allTasks.filter(t => t.status === 'Done');
+
+        // Group active tasks by assignee
+        const byAssignee = {};
+        activeTasks.forEach(t => {
+            const key = t.assigneeId || 0;
+            if (!byAssignee[key]) byAssignee[key] = 0;
+            byAssignee[key]++;
+        });
+
+        const assigneeBadges = Object.entries(byAssignee).map(([id, count]) => {
+            const member = team.find(m => m.id === Number(id));
+            if (member) {
+                return `<span class="home-assignee" style="background:${member.color || 'var(--primary)'}" title="${esc(member.name)}: ${count} task${count > 1 ? 's' : ''}">${initials(member.name)} ${count}</span>`;
+            }
+            return `<span class="home-assignee home-assignee-none" title="Unassigned: ${count}">? ${count}</span>`;
+        }).join('');
+
+        const tasksHtml = allTasks.length > 0 ? `<div class="home-tasks-section">
+            <div class="home-tasks-bar">
+                <span class="home-tasks-count">${activeTasks.length} active${doneTasks.length ? ` · ${doneTasks.length} done` : ''}</span>
+                <span class="home-assignees">${assigneeBadges}</span>
+            </div>
+        </div>` : '';
+
         return `<div class="sub-card" onclick="openSubreddit(${sub.id})">
             <div class="sub-card-banner" style="${bannerStyle}"></div>
             <div class="sub-card-identity">
@@ -562,6 +594,7 @@ function renderHome() {
                     </div>
                     ${mpRowsHtml}
                 </div>
+                ${tasksHtml}
             </div>
         </div>`;
     }).join('');
