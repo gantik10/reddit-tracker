@@ -790,6 +790,21 @@ function closeRankPanel() {
 const NUM_CHECKS = 3; // 3 parallel checks with different proxy ports
 
 async function checkRankWithProxy(keyword, targetUrl, proxyIndex) {
+    const serpKey = getSerpApiKey();
+
+    // Use SERP API if key is set (faster, no browser needed)
+    if (serpKey) {
+        const res = await fetch(`${SERVER}/api/serp-check`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ keyword, targetUrl, apiKey: serpKey })
+        });
+        const data = await res.json();
+        if (data.error) throw new Error(data.error);
+        return data;
+    }
+
+    // Fallback: Chromium + proxy
     const res = await fetch(`${SERVER}/api/check-rank`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

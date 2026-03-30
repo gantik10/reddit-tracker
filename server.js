@@ -320,7 +320,72 @@ const server = http.createServer(async (req, res) => {
         return;
     }
 
-    // --- Rank check endpoint ---
+    // --- SERP API rank check (clean, no browser) ---
+    if (parsed.pathname === '/api/serp-check' && req.method === 'POST') {
+        const body = await readBody(req);
+        const { keyword, targetUrl, apiKey } = body;
+
+        if (!keyword || !targetUrl || !apiKey) {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: 'Missing keyword, targetUrl, or apiKey' }));
+            return;
+        }
+
+        console.log(`[SERP] Checking "${keyword}"...`);
+
+        try {
+            // Step 1: Regular Google search
+            const googleUrl = `https://serpapi.com/search.json?engine=google&q=${encodeURIComponent(keyword)}&gl=us&hl=en&num=10&api_key=${apiKey}`;
+            const googleResult = JSON.parse(httpsRequest(googleUrl).data);
+
+            if (googleResult.error) throw new Error(googleResult.error);
+
+            const organic = googleResult.organic_results || [];
+            const postId = targetUrl.match(/comments\/([A-Za-z0-9]+)/i)?.[1]?.toLowerCase();
+
+            let googleRank = null;
+            for (const r of organic) {
+                if (postId && r.link?.toLowerCase().includes(`comments/${postId}`)) {
+                    googleRank = r.position;
+                    break;
+                }
+            }
+
+            if (googleRank) {
+                console.log(`[SERP] Found on Google #${googleRank}`);
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ success: true, type: 'google', rank: googleRank, redditRank: null, totalResults: organic.length }));
+                return;
+            }
+
+            // Step 2: site:reddit.com search
+            console.log(`[SERP] Not on Google page 1, checking site:reddit.com...`);
+            const redditUrl = `https://serpapi.com/search.json?engine=google&q=${encodeURIComponent(keyword + ' site:www.reddit.com')}&gl=us&hl=en&num=20&api_key=${apiKey}`;
+            const redditResult = JSON.parse(httpsRequest(redditUrl).data);
+
+            if (redditResult.error) throw new Error(redditResult.error);
+
+            const redditOrganic = redditResult.organic_results || [];
+            let redditRank = null;
+            for (const r of redditOrganic) {
+                if (postId && r.link?.toLowerCase().includes(`comments/${postId}`)) {
+                    redditRank = r.position;
+                    break;
+                }
+            }
+
+            console.log(`[SERP] Reddit rank: ${redditRank || 'not found'}`);
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ success: true, type: 'reddit', rank: null, redditRank, totalResults: redditOrganic.length }));
+        } catch (err) {
+            console.error(`[SERP] Error: ${err.message}`);
+            res.writeHead(500, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: err.message }));
+        }
+        return;
+    }
+
+    // --- Chromium rank check endpoint (fallback) ---
     if (parsed.pathname === '/api/check-rank' && req.method === 'POST') {
         const body = await readBody(req);
         const { keyword, targetUrl, proxyIndex } = body;
