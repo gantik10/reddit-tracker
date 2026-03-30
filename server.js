@@ -288,6 +288,166 @@ async function checkGoogleRank(proxyPort, keyword, targetUrl) {
 }
 
 // ==========================================
+//  SEO ADVISOR — Dynamic Recommendations
+// ==========================================
+function generateRecommendations(ourData, competitors, ourPost) {
+    const recs = [];
+    if (!ourData || !competitors.length) return recs;
+
+    const rankType = ourPost?.rankType || 'none';
+    const rank = ourPost?.rank || ourPost?.redditRank || null;
+
+    // Average competitor stats
+    const avgUpvotes = Math.round(competitors.reduce((s, c) => s + c.upvotes, 0) / competitors.length);
+    const avgComments = Math.round(competitors.reduce((s, c) => s + c.comments, 0) / competitors.length);
+    const avgSubs = Math.round(competitors.reduce((s, c) => s + c.subredditSubscribers, 0) / competitors.length);
+    const avgAge = Math.round(competitors.reduce((s, c) => s + c.ageInDays, 0) / competitors.length);
+    const avgTitleLen = Math.round(competitors.reduce((s, c) => s + c.titleWords, 0) / competitors.length);
+    const avgPostLen = Math.round(competitors.reduce((s, c) => s + c.postLength, 0) / competitors.length);
+
+    // Top competitor (rank #1 among reddit)
+    const top = competitors[0];
+
+    // ---- COMMENTS ----
+    if (ourData.comments < avgComments) {
+        const diff = avgComments - ourData.comments;
+        recs.push({
+            priority: 'high',
+            category: 'Comments',
+            action: `Add ${diff}+ comments to match competitors`,
+            detail: `Your post: ${ourData.comments} comments. Competitors above you average ${avgComments}. Top post (${top?.subreddit}): ${top?.comments} comments.`,
+            metric: `${ourData.comments} → ${avgComments}+`
+        });
+    }
+
+    if (top && ourData.comments < top.comments * 0.7) {
+        recs.push({
+            priority: 'critical',
+            category: 'Comments',
+            action: `#1 competitor has ${top.comments} comments vs your ${ourData.comments}`,
+            detail: `Big gap with the top-ranking post. Add keyword-rich comments with variations of the target keyword. Mix short and long comments.`,
+            metric: `Gap: ${top.comments - ourData.comments}`
+        });
+    }
+
+    // ---- UPVOTES ----
+    if (ourData.upvotes < avgUpvotes) {
+        recs.push({
+            priority: 'high',
+            category: 'Upvotes',
+            action: `Boost upvotes from ${ourData.upvotes} to ${avgUpvotes}+`,
+            detail: `Competitors average ${avgUpvotes} upvotes. Top post has ${top?.upvotes}. Gradual increase looks more natural.`,
+            metric: `${ourData.upvotes} → ${avgUpvotes}+`
+        });
+    }
+
+    // ---- SUBREDDIT AUTHORITY ----
+    if (ourData.subredditSubscribers < avgSubs) {
+        const subDiff = avgSubs - ourData.subredditSubscribers;
+        recs.push({
+            priority: 'medium',
+            category: 'Subreddit Authority',
+            action: `Grow r/${ourData.subreddit} subscribers by ${subDiff.toLocaleString()}+`,
+            detail: `Your subreddit: ${ourData.subredditSubscribers.toLocaleString()} subs. Competitor subreddits average ${avgSubs.toLocaleString()}. Top post's subreddit (r/${top?.subreddit}): ${top?.subredditSubscribers?.toLocaleString()} subs. Google weighs subreddit authority.`,
+            metric: `${ourData.subredditSubscribers.toLocaleString()} → ${avgSubs.toLocaleString()}+`
+        });
+    }
+
+    // ---- POST AGE ----
+    if (ourData.ageInDays > avgAge * 1.5 && competitors.some(c => c.ageInDays < ourData.ageInDays * 0.5)) {
+        recs.push({
+            priority: 'medium',
+            category: 'Post Freshness',
+            action: 'Consider creating a fresh post',
+            detail: `Your post is ${ourData.ageInDays} days old. Some competitors are newer (avg ${avgAge} days). Newer posts can overtake older ones. Keep this post but also create a fresh one targeting the same keyword.`,
+            metric: `${ourData.ageInDays} days old`
+        });
+    }
+
+    // ---- TITLE OPTIMIZATION ----
+    if (ourData.titleWords < avgTitleLen) {
+        recs.push({
+            priority: 'low',
+            category: 'Title',
+            action: `Title could be longer — competitors average ${avgTitleLen} words, yours has ${ourData.titleWords}`,
+            detail: `Longer titles capture more long-tail keywords. Top post title: "${top?.title}"`,
+            metric: `${ourData.titleWords} → ${avgTitleLen} words`
+        });
+    }
+
+    // ---- POST BODY LENGTH ----
+    if (ourData.postLength < avgPostLen * 0.5 && avgPostLen > 200) {
+        recs.push({
+            priority: 'medium',
+            category: 'Post Content',
+            action: `Post body is shorter than competitors`,
+            detail: `Your post: ${ourData.postLength} chars. Competitors average ${avgPostLen} chars. Longer posts with keyword-rich content tend to rank better.`,
+            metric: `${ourData.postLength} → ${avgPostLen}+ chars`
+        });
+    }
+
+    // ---- BACKLINKS ----
+    // Always recommend if not on Google
+    if (rankType !== 'google') {
+        recs.push({
+            priority: 'high',
+            category: 'Backlinks',
+            action: 'Increase backlink velocity to push into Google',
+            detail: `You're ranking among Reddit posts but not on Google yet. Push more backlinks targeting the post URL. The post needs enough domain authority to break into Google's main results.`,
+            metric: 'Not on Google yet'
+        });
+    }
+
+    // ---- BEHAVIORAL ----
+    if (rankType === 'reddit' && rank && rank <= 3) {
+        recs.push({
+            priority: 'high',
+            category: 'Behavioral',
+            action: 'Push CTR and behavioral signals — you\'re close to Google',
+            detail: `At Reddit position #${rank}, you're almost breaking into Google. Run behavioral campaigns (search → click → dwell time) to signal Google that users prefer your post.`,
+            metric: `Reddit #${rank} → Google`
+        });
+    }
+
+    // ---- GOOGLE TOP POSITION MAINTENANCE ----
+    if (rankType === 'google' && rank && rank <= 3) {
+        recs.push({
+            priority: 'low',
+            category: 'Maintenance',
+            action: 'Maintain position — add 2-3 fresh comments weekly',
+            detail: `You're ranking Google #${rank}. Don't over-optimize. Keep natural activity: a few new comments per week, steady upvote flow, occasional backlinks. Monitor for competitors gaining on you.`,
+            metric: `Google #${rank} ✓`
+        });
+    }
+
+    // ---- COMPETITOR-SPECIFIC INSIGHTS ----
+    competitors.forEach(comp => {
+        if (comp.position < (rank || 999)) {
+            const insights = [];
+            if (comp.comments > ourData.comments * 1.5) insights.push(`${comp.comments} comments (${Math.round(comp.comments / ourData.comments)}x yours)`);
+            if (comp.upvotes > ourData.upvotes * 1.5) insights.push(`${comp.upvotes} upvotes (${Math.round(comp.upvotes / ourData.upvotes)}x yours)`);
+            if (comp.subredditSubscribers > ourData.subredditSubscribers * 2) insights.push(`r/${comp.subreddit} has ${comp.subredditSubscribers.toLocaleString()} subs (${Math.round(comp.subredditSubscribers / ourData.subredditSubscribers)}x yours)`);
+
+            if (insights.length > 0) {
+                recs.push({
+                    priority: 'info',
+                    category: `Competitor #${comp.position}`,
+                    action: `r/${comp.subreddit}: "${comp.title.slice(0, 60)}..."`,
+                    detail: insights.join('. ') + '.',
+                    metric: `Position #${comp.position}`
+                });
+            }
+        }
+    });
+
+    // Sort: critical > high > medium > low > info
+    const priorityOrder = { critical: 0, high: 1, medium: 2, low: 3, info: 4 };
+    recs.sort((a, b) => (priorityOrder[a.priority] || 5) - (priorityOrder[b.priority] || 5));
+
+    return recs;
+}
+
+// ==========================================
 //  SERVER
 // ==========================================
 const server = http.createServer(async (req, res) => {
@@ -351,10 +511,18 @@ const server = http.createServer(async (req, res) => {
                 }
             }
 
+            // Collect all Reddit posts from Google results (competitors)
+            const googleCompetitors = organic
+                .filter(r => r.link?.includes('reddit.com/r/') && r.link?.includes('/comments/'))
+                .map(r => ({ position: r.position, url: r.link, title: r.title, snippet: r.snippet || '' }));
+
             if (googleRank) {
                 console.log(`[SERP] Found on Google #${googleRank}`);
                 res.writeHead(200, { 'Content-Type': 'application/json' });
-                res.end(JSON.stringify({ success: true, type: 'google', rank: googleRank, redditRank: null, totalResults: organic.length }));
+                res.end(JSON.stringify({
+                    success: true, type: 'google', rank: googleRank, redditRank: null,
+                    totalResults: organic.length, competitors: googleCompetitors
+                }));
                 return;
             }
 
@@ -367,21 +535,112 @@ const server = http.createServer(async (req, res) => {
 
             const redditOrganic = redditResult.organic_results || [];
             let redditRank = null;
+
+            // All Reddit competitors above us
+            const redditCompetitors = [];
             for (const r of redditOrganic) {
-                if (postId && r.link?.toLowerCase().includes(`comments/${postId}`)) {
+                const isOurs = postId && r.link?.toLowerCase().includes(`comments/${postId}`);
+                if (isOurs) {
                     redditRank = r.position;
                     break;
                 }
+                redditCompetitors.push({ position: r.position, url: r.link, title: r.title, snippet: r.snippet || '' });
             }
 
-            console.log(`[SERP] Reddit rank: ${redditRank || 'not found'}`);
+            console.log(`[SERP] Reddit rank: ${redditRank || 'not found'}, ${redditCompetitors.length} competitors above`);
             res.writeHead(200, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ success: true, type: 'reddit', rank: null, redditRank, totalResults: redditOrganic.length }));
+            res.end(JSON.stringify({
+                success: true, type: 'reddit', rank: null, redditRank,
+                totalResults: redditOrganic.length, competitors: redditCompetitors
+            }));
         } catch (err) {
             console.error(`[SERP] Error: ${err.message}`);
             res.writeHead(500, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify({ error: err.message }));
         }
+        return;
+    }
+
+    // --- Analyze competitors endpoint ---
+    if (parsed.pathname === '/api/analyze-competitors' && req.method === 'POST') {
+        const body = await readBody(req);
+        const { competitors, ourPost } = body;
+
+        if (!competitors?.length) {
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ success: true, analyses: [] }));
+            return;
+        }
+
+        console.log(`[Analyze] Analyzing ${competitors.length} competitors...`);
+
+        const analyses = [];
+        for (const comp of competitors.slice(0, 5)) { // max 5 competitors
+            try {
+                // Extract post ID from URL
+                const compPostId = comp.url.match(/comments\/([A-Za-z0-9]+)/i)?.[1];
+                if (!compPostId) continue;
+
+                // Fetch Reddit post data
+                const postData = JSON.parse(httpsRequest(`https://www.reddit.com/comments/${compPostId}.json`).data);
+                const post = postData?.[0]?.data?.children?.[0]?.data;
+                if (!post) continue;
+
+                // Fetch subreddit data
+                const subData = JSON.parse(httpsRequest(`https://www.reddit.com/r/${post.subreddit}/about.json`).data);
+                const sub = subData?.data;
+
+                analyses.push({
+                    position: comp.position,
+                    url: comp.url,
+                    title: post.title,
+                    subreddit: post.subreddit,
+                    subredditSubscribers: sub?.subscribers || 0,
+                    upvotes: post.ups || post.score || 0,
+                    comments: post.num_comments || 0,
+                    author: post.author,
+                    createdUtc: post.created_utc,
+                    ageInDays: Math.floor((Date.now() / 1000 - post.created_utc) / 86400),
+                    postLength: (post.selftext || '').length,
+                    hasLinks: (post.selftext || '').includes('http'),
+                    flair: post.link_flair_text || '',
+                    titleLength: post.title.length,
+                    titleWords: post.title.split(/\s+/).length,
+                });
+            } catch (e) {
+                console.log(`[Analyze] Failed for ${comp.url}: ${e.message}`);
+            }
+        }
+
+        // Fetch our post data for comparison
+        let ourData = null;
+        if (ourPost?.url) {
+            try {
+                const ourPostId = ourPost.url.match(/comments\/([A-Za-z0-9]+)/i)?.[1];
+                if (ourPostId) {
+                    const pd = JSON.parse(httpsRequest(`https://www.reddit.com/comments/${ourPostId}.json`).data);
+                    const p = pd?.[0]?.data?.children?.[0]?.data;
+                    const sd = JSON.parse(httpsRequest(`https://www.reddit.com/r/${p.subreddit}/about.json`).data);
+                    ourData = {
+                        title: p.title,
+                        subreddit: p.subreddit,
+                        subredditSubscribers: sd?.data?.subscribers || 0,
+                        upvotes: p.ups || p.score || 0,
+                        comments: p.num_comments || 0,
+                        ageInDays: Math.floor((Date.now() / 1000 - p.created_utc) / 86400),
+                        postLength: (p.selftext || '').length,
+                        titleLength: p.title.length,
+                        titleWords: p.title.split(/\s+/).length,
+                    };
+                }
+            } catch {}
+        }
+
+        // Generate recommendations
+        const recommendations = generateRecommendations(ourData, analyses, ourPost);
+
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ success: true, analyses, ourData, recommendations }));
         return;
     }
 

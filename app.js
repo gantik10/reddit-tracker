@@ -852,6 +852,11 @@ async function autoCheckRank(mpId, kwIndex) {
             if (rankType === 'google') toast('success', `Google #${avgRank}`, `"${kw.keyword}" is on Google!`, 6000);
             else if (rankType === 'reddit') toast('info', `Reddit #${avgRank}`, `"${kw.keyword}" among Reddit posts`, 6000);
             else toast('warning', 'Not ranking', `"${kw.keyword}" not found`, 6000);
+
+            // Analyze competitors if we have them
+            if (data.competitors?.length) {
+                analyzeCompetitors(mpId, kwIndex, data.competitors, rankType, avgRank);
+            }
             return;
         } catch (err) {
             toast('error', 'Check failed', err.message, 6000);
@@ -1228,6 +1233,7 @@ function renderMoneyPosts(sub) {
                 </div>
                 ${keywordsHtml || '<div class="empty-keywords">No keywords tracked. Add a keyword to monitor Google ranking.</div>'}
             </div>
+            ${renderRecommendations(keywords)}
             <div class="mp-tasks">
                 <div class="mp-tasks-header">
                     <span class="mp-tasks-label">Post Tasks (${activeTasks} active)</span>
@@ -1303,6 +1309,85 @@ function saveRankUpdate() {
 
     closeModal('rankUpdateModal');
     renderDetail();
+}
+
+// ==========================================
+//  SEO ADVISOR — Render Recommendations
+// ==========================================
+function renderRecommendations(keywords) {
+    // Collect all recommendations from all keywords
+    const allRecs = [];
+    keywords.forEach(kw => {
+        if (kw.recommendations?.length) {
+            allRecs.push(...kw.recommendations.map(r => ({ ...r, keyword: kw.keyword })));
+        }
+    });
+
+    if (!allRecs.length) return '';
+
+    const priorityColors = {
+        critical: 'rec-critical', high: 'rec-high', medium: 'rec-medium', low: 'rec-low', info: 'rec-info'
+    };
+    const priorityLabels = {
+        critical: 'CRITICAL', high: 'HIGH', medium: 'MEDIUM', low: 'LOW', info: 'INFO'
+    };
+
+    return `<div class="mp-recommendations">
+        <div class="mp-tasks-header">
+            <span class="mp-tasks-label">SEO Advisor (${allRecs.length} recommendations)</span>
+        </div>
+        ${allRecs.map(r => `
+            <div class="rec-item">
+                <span class="rec-priority ${priorityColors[r.priority]}">${priorityLabels[r.priority]}</span>
+                <div class="rec-content">
+                    <div class="rec-category">${esc(r.category)}</div>
+                    <div class="rec-action">${esc(r.action)}</div>
+                    <div class="rec-detail">${esc(r.detail)}</div>
+                    ${r.metric ? `<div class="rec-metric">${esc(r.metric)}</div>` : ''}
+                </div>
+            </div>
+        `).join('')}
+    </div>`;
+}
+
+// ==========================================
+//  SEO ADVISOR — Competitor Analysis
+// ==========================================
+async function analyzeCompetitors(mpId, kwIndex, competitors, rankType, rank) {
+    const sub = getSub();
+    const mp = sub?.moneyPosts?.find(p => p.id === mpId);
+    if (!mp) return;
+
+    try {
+        const res = await fetch(`${SERVER}/api/analyze-competitors`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                competitors,
+                ourPost: { url: mp.url, rankType, rank, redditRank: rank }
+            })
+        });
+        const data = await res.json();
+        if (!data.success) return;
+
+        // Save recommendations to the keyword
+        updateSub(s => {
+            const p = s.moneyPosts.find(x => x.id === mpId);
+            const k = p?.googleKeywords?.[kwIndex];
+            if (!k) return;
+            k.recommendations = data.recommendations || [];
+            k.competitorAnalysis = data.analyses || [];
+            k.ourAnalysis = data.ourData;
+        });
+
+        renderDetail();
+
+        if (data.recommendations?.length) {
+            toast('info', 'SEO Advisor', `${data.recommendations.length} recommendations for "${mp.googleKeywords[kwIndex]?.keyword}"`, 5000);
+        }
+    } catch (e) {
+        console.log('Competitor analysis failed:', e.message);
+    }
 }
 
 function removeKeyword(mpId, kwIndex) {
