@@ -148,14 +148,49 @@ function killChromium(instance) {
 async function scrapeGoogleResults(page) {
     return page.evaluate(() => {
         const links = [];
-        const containers = document.querySelectorAll('#search .g, #rso .g, #rso [data-sokoban-container] .g');
         const seen = new Set();
-        containers.forEach(el => {
+
+        // Method 1: Standard selectors
+        document.querySelectorAll('#search .g, #rso .g, [data-sokoban-container] .g').forEach(el => {
             const a = el.querySelector('a[href]');
-            if (!a || !a.href || a.href.includes('google.com') || seen.has(a.href)) return;
-            seen.add(a.href);
-            links.push({ url: a.href, title: el.querySelector('h3')?.textContent || '' });
+            if (a && a.href && !a.href.includes('google.com') && !seen.has(a.href)) {
+                seen.add(a.href);
+                links.push({ url: a.href, title: el.querySelector('h3')?.textContent || '' });
+            }
         });
+
+        // Method 2: If standard selectors found nothing, get ALL external links with headings
+        if (links.length === 0) {
+            document.querySelectorAll('a[href]').forEach(a => {
+                if (!a.href || a.href.includes('google.com') || a.href.includes('accounts.google') ||
+                    a.href.includes('support.google') || a.href.startsWith('javascript:') ||
+                    seen.has(a.href)) return;
+
+                // Must be a real result — has a heading nearby or is in main content
+                const parent = a.closest('[data-hveid], [data-ved], .g, [jscontroller]');
+                const hasHeading = a.querySelector('h3, h2') || a.closest('[data-hveid]')?.querySelector('h3, h2');
+                const isInSearch = a.closest('#search, #rso, #main, [role="main"]');
+
+                if ((parent || hasHeading) && isInSearch) {
+                    seen.add(a.href);
+                    const title = a.querySelector('h3, h2')?.textContent ||
+                                  a.closest('[data-hveid]')?.querySelector('h3, h2')?.textContent ||
+                                  a.textContent?.slice(0, 80) || '';
+                    links.push({ url: a.href, title });
+                }
+            });
+        }
+
+        // Method 3: Last resort — any link to real websites in search area
+        if (links.length === 0) {
+            document.querySelectorAll('#search a[href], #rso a[href], [role="main"] a[href]').forEach(a => {
+                if (!a.href || seen.has(a.href) || a.href.includes('google.com') ||
+                    !a.href.startsWith('http')) return;
+                seen.add(a.href);
+                links.push({ url: a.href, title: a.textContent?.slice(0, 80) || '' });
+            });
+        }
+
         return links;
     });
 }
