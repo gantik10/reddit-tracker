@@ -785,16 +785,15 @@ function closeRankPanel() {
 }
 
 // ==========================================
-//  PARALLEL RANK CHECKING
+//  PARALLEL RANK CHECKING (3 fresh proxies)
 // ==========================================
-async function checkRankWithProfile(profileId, token, keyword, targetUrl, profileIndex) {
-    // Update UI: starting
-    updateRankProfile(profileIndex, 'running', 'Starting browser...');
+const NUM_CHECKS = 3; // 3 parallel checks with different proxy ports
 
-    const res = await fetch(`${SERVER}/api/dolphin/check-rank`, {
+async function checkRankWithProxy(keyword, targetUrl, proxyIndex) {
+    const res = await fetch(`${SERVER}/api/check-rank`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-        body: JSON.stringify({ profileId, keyword, targetUrl })
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ keyword, targetUrl, proxyIndex })
     });
     const data = await res.json();
     if (data.error) throw new Error(data.error);
@@ -802,29 +801,21 @@ async function checkRankWithProfile(profileId, token, keyword, targetUrl, profil
 }
 
 async function autoCheckRank(mpId, kwIndex) {
-    const token = getDolphinToken();
-    const profiles = getDolphinProfiles();
-
-    if (!token || !profiles.length) {
-        toast('warning', 'Dolphin not configured', 'Go to Settings (gear icon) to add your Dolphin API token and select profiles.');
-        return;
-    }
-
     const sub = getSub();
     const mp = sub?.moneyPosts?.find(p => p.id === mpId);
     const kw = mp?.googleKeywords?.[kwIndex];
     if (!kw || !mp.url) return;
 
-    // Show progress panel
-    showRankPanel(kw.keyword, profiles);
+    // Show progress panel with 3 checks
+    const checks3 = Array.from({ length: NUM_CHECKS }, (_, i) => i);
+    showRankPanel(kw.keyword, checks3);
 
-    // Launch ALL profiles in PARALLEL
-    const promises = profiles.map((profileId, i) => {
-        updateRankProfile(i, 'running', 'Launching profile...');
+    // Launch 3 checks in PARALLEL with different proxy ports
+    const promises = checks3.map(i => {
+        updateRankProfile(i, 'running', 'Fresh proxy, searching...');
 
-        return checkRankWithProfile(profileId, token, kw.keyword, mp.url, i)
+        return checkRankWithProxy(kw.keyword, mp.url, i)
             .then(data => {
-                // Update UI with result
                 if (data.type === 'google') {
                     updateRankProfile(i, 'done', 'Found on Google', `<span class="rp-result google">G#${data.rank}</span>`);
                 } else if (data.type === 'reddit' && data.redditRank) {
@@ -1124,8 +1115,8 @@ function renderMoneyPosts(sub) {
         </div>`;
 
         // Google rank tracking
-        const hasDolphin = !!getDolphinToken() && getDolphinProfiles().length > 0;
-        const profileCount = getDolphinProfiles().length;
+        const hasDolphin = true; // Always available — uses Chromium + proxy directly
+        const profileCount = NUM_CHECKS;
         const keywordsHtml = keywords.length > 0 ? keywords.map((kw, i) => {
             const rType = kw.rankType || (kw.rank ? 'reddit' : 'none');
             const avg = kw.avgRank || kw.rank;
