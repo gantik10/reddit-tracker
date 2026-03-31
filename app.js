@@ -205,19 +205,32 @@ const S = {
         return Array.from(byId.values());
     },
 
-    // Pull from server on load
+    // Pull from server on load — merge, don't overwrite
     async pullFromServer() {
         try {
             const res = await fetch(`${window.location.origin}/api/data`);
             const data = await res.json();
             if (data.subreddits?.length) {
-                localStorage.setItem('lk_subreddits', JSON.stringify(data.subreddits));
+                const local = S.get('subreddits');
+                if (local.length) {
+                    // Merge: local wins (has freshest rank checks)
+                    const merged = S._mergeSubs(local, data.subreddits);
+                    localStorage.setItem('lk_subreddits', JSON.stringify(merged));
+                } else {
+                    localStorage.setItem('lk_subreddits', JSON.stringify(data.subreddits));
+                }
             }
             if (data.team?.length) {
                 localStorage.setItem('lk_team', JSON.stringify(data.team));
             }
             if (data.uv_orders?.length) {
-                localStorage.setItem('lk_uv_orders', JSON.stringify(data.uv_orders));
+                const localOrders = S.get('uv_orders');
+                const orderMap = new Map();
+                data.uv_orders.forEach(o => orderMap.set(o.id, o));
+                localOrders.forEach(o => orderMap.set(o.id, o)); // local wins
+                localStorage.setItem('lk_uv_orders', JSON.stringify(
+                    Array.from(orderMap.values()).sort((a, b) => new Date(b.date) - new Date(a.date)).slice(0, 200)
+                ));
             }
             // Sync API keys: pull from server OR push local keys if server has none
             const keyNames = ['lk_ahrefs_key', 'lk_serp_key', 'lk_upvote_key', 'lk_dolphin_token', 'lk_dolphin_profiles'];

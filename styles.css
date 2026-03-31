@@ -988,16 +988,20 @@ body {
 
 /* ===== Money Post Item ===== */
 .money-post-item {
-    border-left: 3px solid var(--primary);
-    margin-bottom: 12px;
-    padding-bottom: 4px;
-    border-bottom: 2px solid var(--border);
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    margin-bottom: 14px;
+    overflow: hidden;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+}
+
+.dark .money-post-item {
+    box-shadow: 0 1px 3px rgba(0,0,0,0.2);
 }
 
 .money-post-item:last-child {
-    border-bottom: none;
     margin-bottom: 0;
-    padding-bottom: 0;
 }
 
 .money-post-header {
