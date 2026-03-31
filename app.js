@@ -1709,20 +1709,7 @@ function renderPostMetrics(mp) {
             <span class="mp-metric-val">${fmtNumAlways(latest.comments)}</span>
             <span class="mp-metric-change ${cmClass}">${cmDiff > 0 ? '+' : ''}${cmDiff}</span>
         </div>
-        <div class="mp-metric">
-            <span class="mp-metric-label">Upvotes/Day</span>
-            <span class="mp-metric-val">${upvotesPerDay}</span>
-        </div>
-        <div class="mp-metric">
-            <span class="mp-metric-label">Comments/Day</span>
-            <span class="mp-metric-val">${commentsPerDay}</span>
-        </div>
-        <div class="mp-metric">
-            <span class="mp-metric-label">Engagement</span>
-            <span class="mp-metric-val">${ratio}</span>
-        </div>
         <div class="mp-metric mp-sparkline-wrap">
-            <span class="mp-metric-label">Trend</span>
             <svg class="mp-sparkline" width="${sparkW}" height="${sparkH}" viewBox="0 0 ${sparkW} ${sparkH}">
                 <polyline points="${sparkPoints}" fill="none" stroke="var(--primary)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
             </svg>
@@ -1730,14 +1717,28 @@ function renderPostMetrics(mp) {
     </div>`;
 }
 
-function renderKwHistory(kw) {
-    const hist = kw.history || [];
+const _kwHistOpen = {};
+function toggleKwHist(id) {
+    _kwHistOpen[id] = !_kwHistOpen[id];
+    const el = document.getElementById(id);
+    if (el) el.classList.toggle('hidden', !_kwHistOpen[id]);
+}
+
+function renderKwHistPanel(id, kw) {
+    const hist = (kw.history || []).slice().reverse();
     if (!hist.length) return '';
-    const entries = hist.slice(-5);
-    return `<span class="kw-history">${entries.map(h => {
-        const cls = h.rankType === 'google' ? 'kh-google' : h.rankType === 'reddit' ? 'kh-reddit' : 'kh-none';
-        return `<span class="kh-entry ${cls}" title="${fmtDateTime(h.date)}">${h.avgRank ? '#' + h.avgRank : '—'}</span>`;
-    }).join('')}</span>`;
+    const isOpen = !!_kwHistOpen[id];
+    return `<div class="kw-hist-panel ${isOpen ? '' : 'hidden'}" id="${id}">
+        <div class="kw-hist-title">Rank History</div>
+        ${hist.map(h => {
+            const cls = h.rankType === 'google' ? 'kh-google' : h.rankType === 'reddit' ? 'kh-reddit' : 'kh-none';
+            const label = h.rankType === 'google' ? 'Google' : h.rankType === 'reddit' ? 'Reddit' : 'N/A';
+            return `<div class="kw-hist-row">
+                <span class="kw-hist-date">${fmtDateTime(h.date)}</span>
+                <span class="kh-entry ${cls}">${label} ${h.avgRank ? '#' + h.avgRank : '—'}</span>
+            </div>`;
+        }).join('')}
+    </div>`;
 }
 
 // ==========================================
@@ -1805,43 +1806,26 @@ function renderMoneyPosts(sub) {
                 statusText = 'Not ranking';
             }
 
-            // Individual check pills
-            const pillsHtml = checks.length > 1 ? `<div class="gr-ranks-detail">
-                ${checks.map((c, j) => {
-                    if (c.type === 'google') return `<span class="gr-pill gr-pill-google" title="Profile ${j+1}: Google #${c.googleRank}">G#${c.googleRank}</span>`;
-                    if (c.type === 'reddit' && c.redditRank) return `<span class="gr-pill gr-pill-reddit" title="Profile ${j+1}: Reddit #${c.redditRank}">R#${c.redditRank}</span>`;
-                    if (c.type === 'captcha') return `<span class="gr-pill gr-pill-captcha" title="Profile ${j+1}: CAPTCHA">CAP</span>`;
-                    return `<span class="gr-pill gr-pill-none" title="Profile ${j+1}: Not found">—</span>`;
-                }).join('')}
-                <span class="gr-avg-label">AVG</span>
-            </div>` : '';
-
             const hasSerpData = kw.serpResults?.length || kw.redditSerpResults?.length;
             const serpId = `serp_${mp.id}_${i}`;
-
-            // SERP toggle: if we have stored results, show expandable panel; if rank exists but no SERP data, link to Google
-            const serpToggle = hasSerpData
-                ? `<button class="btn-icon" onclick="toggleSerp('${serpId}')" title="View full SERP results">
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="21" x2="9" y2="9"/></svg>
-                  </button>`
-                : (avg ? `<a class="btn-icon" href="https://www.google.com/search?q=${encodeURIComponent(rType === 'reddit' ? kw.keyword + ' site:www.reddit.com' : kw.keyword)}&gl=us&hl=en" target="_blank" rel="noopener" onclick="event.stopPropagation()" title="View on Google (SERP data not stored — re-check to capture)">
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="21" x2="9" y2="9"/></svg>
-                  </a>` : '');
+            const histId = `kwh_${mp.id}_${i}`;
+            const hasHistory = kw.history?.length > 0;
 
             return `<div class="google-rank-block">
                 <div class="google-rank-row">
                     <span class="gr-keyword">${esc(kw.keyword)}</span>
                     <span class="gr-type-badge ${badgeClass}">${rType === 'google' ? 'GOOGLE' : rType === 'reddit' ? 'REDDIT' : 'N/A'}</span>
                     <span class="gr-rank ${rankClass}">${avg ? '#' + avg : '—'}</span>
-                    ${pillsHtml}
-                    <span class="gr-note">${statusText}${kw.updatedAt ? ' · ' + fmtDateTime(kw.updatedAt) : ''}${kw.captchaCount ? ' · ' + kw.captchaCount + ' captcha' : ''}</span>
-                    ${renderKwHistory(kw)}
-                    ${serpToggle}
-                    ${hasDolphin ? `<button class="btn-icon" onclick="autoCheckRank(${mp.id},${i})" title="Check rank">
+                    <span class="gr-note">${kw.updatedAt ? fmtDateTime(kw.updatedAt) : ''}</span>
+                    ${hasHistory ? `<button class="btn-icon" onclick="toggleKwHist('${histId}')" title="Rank history">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                    </button>` : ''}
+                    ${hasSerpData ? `<button class="btn-icon" onclick="toggleSerp('${serpId}')" title="View SERP">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="21" x2="9" y2="9"/></svg>
+                    </button>` : ''}
+                    <button class="btn-icon" onclick="autoCheckRank(${mp.id},${i})" title="Check rank">
                         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg>
-                    </button>` : `<button class="btn-icon" onclick="updateKeywordRank(${mp.id},${i})" title="Update rank manually">
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg>
-                    </button>`}
+                    </button>
                     <a class="btn-icon" href="https://www.google.com/search?q=${encodeURIComponent(kw.keyword)}&gl=us&hl=en" target="_blank" rel="noopener" onclick="event.stopPropagation()" title="Search Google">
                         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
                     </a>
@@ -1849,6 +1833,7 @@ function renderMoneyPosts(sub) {
                         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
                     </button>
                 </div>
+                ${hasHistory ? renderKwHistPanel(histId, kw) : ''}
                 ${hasSerpData ? renderSerpResults(serpId, kw) : ''}
             </div>`;
         }).join('') : '';
@@ -3262,14 +3247,13 @@ async function refreshOrderStatuses() {
 // Full orders history panel
 function openOrdersHistory() {
     if (!getUpvoteShopKey()) return openSettings();
-    document.getElementById('ordersPanel').classList.remove('hidden');
+    document.getElementById('ordersPanel').classList.add('active');
     renderOrdersHistory();
-    // Refresh statuses in background
     refreshOrderStatuses().then(() => renderOrdersHistory());
 }
 
 function closeOrdersHistory() {
-    document.getElementById('ordersPanel').classList.add('hidden');
+    document.getElementById('ordersPanel').classList.remove('active');
 }
 
 function renderOrdersHistory() {

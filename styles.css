@@ -988,11 +988,15 @@ body {
 
 /* ===== Money Post Item ===== */
 .money-post-item {
-    border-bottom: 1px solid var(--border);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    margin-bottom: 16px;
+    background: var(--bg-card);
+    overflow: hidden;
 }
 
 .money-post-item:last-child {
-    border-bottom: none;
+    margin-bottom: 0;
 }
 
 .money-post-header {
@@ -1177,20 +1181,48 @@ body {
     display: block;
 }
 
-/* Keyword rank history */
-.kw-history {
-    display: inline-flex;
-    gap: 2px;
+/* Keyword rank history panel */
+.kw-hist-panel {
+    background: var(--bg-muted);
+    border-top: 1px solid var(--border);
+    padding: 8px 16px;
+    max-height: 200px;
+    overflow-y: auto;
+}
+
+.kw-hist-title {
+    font-size: 10px;
+    text-transform: uppercase;
+    font-weight: 700;
+    color: var(--text-muted);
+    letter-spacing: 0.3px;
+    margin-bottom: 6px;
+}
+
+.kw-hist-row {
+    display: flex;
     align-items: center;
+    gap: 10px;
+    padding: 3px 0;
+    font-size: 12px;
+    border-bottom: 1px solid var(--border);
+}
+
+.kw-hist-row:last-child { border-bottom: none; }
+
+.kw-hist-date {
+    font-size: 11px;
+    color: var(--text-muted);
+    min-width: 100px;
 }
 
 .kh-entry {
-    font-size: 9px;
+    font-size: 11px;
     font-weight: 700;
     font-family: 'Fira Code', monospace;
-    padding: 1px 4px;
-    border-radius: 2px;
-    background: var(--bg-muted);
+    padding: 2px 6px;
+    border-radius: 3px;
+    background: var(--bg-card);
     border: 1px solid var(--border);
 }
 
