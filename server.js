@@ -645,40 +645,56 @@ const server = http.createServer(async (req, res) => {
                 return;
             }
 
-            // Step 2: site:reddit.com search
-            console.log(`[SERP] Not on Google page 1, checking site:reddit.com...`);
-            const redditUrl = `https://serpapi.com/search.json?engine=google&q=${encodeURIComponent(keyword + ' site:www.reddit.com')}&gl=us&hl=en&location=United+States&google_domain=google.com&num=20&api_key=${apiKey}`;
-            const redditResult = JSON.parse(httpsRequest(redditUrl).data);
-
-            if (redditResult.error) throw new Error(redditResult.error);
-
-            const redditOrganic = redditResult.organic_results || [];
+            // Step 2: site:reddit.com search (up to 3 pages)
+            console.log(`[SERP] Not on Google page 1, checking site:reddit.com (up to 3 pages)...`);
+            const siteQuery = keyword + ' site:www.reddit.com';
+            let allRedditOrganic = [];
             let redditRank = null;
-
-            // All Reddit competitors above us
             const redditCompetitors = [];
-            for (const r of redditOrganic) {
-                const isOurs = postId && r.link?.toLowerCase().includes(`comments/${postId}`);
-                if (isOurs) {
-                    redditRank = r.position;
-                    break;
+
+            for (let page = 0; page < 3 && !redditRank; page++) {
+                const start = page * 10;
+                const redditUrl = `https://serpapi.com/search.json?engine=google&q=${encodeURIComponent(siteQuery)}&gl=us&hl=en&location=United+States&google_domain=google.com&num=10&start=${start}&api_key=${apiKey}`;
+                console.log(`[SERP] Reddit page ${page + 1} (start=${start})...`);
+
+                const redditResult = JSON.parse(httpsRequest(redditUrl).data);
+                if (redditResult.error) throw new Error(redditResult.error);
+
+                const pageResults = redditResult.organic_results || [];
+                if (!pageResults.length) break; // no more results
+
+                for (const r of pageResults) {
+                    // Assign absolute position across pages
+                    const absPos = allRedditOrganic.length + 1;
+                    const entry = { ...r, position: absPos };
+                    allRedditOrganic.push(entry);
+
+                    const isOurs = postId && r.link?.toLowerCase().includes(`comments/${postId}`);
+                    if (isOurs && !redditRank) {
+                        redditRank = absPos;
+                    } else if (!redditRank) {
+                        redditCompetitors.push({ position: absPos, url: r.link, title: r.title, snippet: r.snippet || '' });
+                    }
                 }
-                redditCompetitors.push({ position: r.position, url: r.link, title: r.title, snippet: r.snippet || '' });
+
+                if (redditRank) {
+                    console.log(`[SERP] Found on Reddit page ${page + 1} at position #${redditRank}`);
+                }
             }
 
             // Full Reddit SERP results for preview
-            const redditSerp = redditOrganic.map(r => ({
+            const redditSerp = allRedditOrganic.map(r => ({
                 position: r.position, url: r.link, title: r.title,
                 snippet: r.snippet || '', displayedLink: r.displayed_link || '',
                 source: r.source || '', favicon: r.favicon || '',
                 isTarget: !!(postId && r.link?.toLowerCase().includes(`comments/${postId}`))
             }));
 
-            console.log(`[SERP] Reddit rank: ${redditRank || 'not found'}, ${redditCompetitors.length} competitors above`);
+            console.log(`[SERP] Reddit rank: ${redditRank || 'not found'}, ${redditCompetitors.length} competitors, ${allRedditOrganic.length} total results`);
             res.writeHead(200, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify({
                 success: true, type: 'reddit', rank: null, redditRank,
-                totalResults: redditOrganic.length, competitors: redditCompetitors,
+                totalResults: allRedditOrganic.length, competitors: redditCompetitors,
                 serpResults: googleSerp, redditSerpResults: redditSerp,
                 serpQuery: keyword
             }));
