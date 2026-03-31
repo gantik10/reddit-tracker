@@ -928,6 +928,18 @@ function renderHome() {
                     <span class="label">Followers</span>
                     <span class="change ${diffClass}">${diffStr}</span>
                 </div>
+                ${(() => {
+                    // Growth rate: followers gained per day over last 7 entries
+                    if (fl.length >= 3) {
+                        const recent = fl.slice(-7);
+                        const days = Math.max(1, (new Date(recent[recent.length-1].date) - new Date(recent[0].date)) / 86400000);
+                        const gained = recent[recent.length-1].count - recent[0].count;
+                        const perDay = (gained / days).toFixed(1);
+                        const growthClass = gained > 0 ? 'up' : gained < 0 ? 'down' : 'neutral';
+                        return `<div class="sub-card-growth"><span class="growth-rate ${growthClass}">${gained > 0 ? '+' : ''}${perDay}/day</span></div>`;
+                    }
+                    return '';
+                })()}
                 <div class="home-mp-section">
                     <div class="home-mp-header">
                         <span class="home-mp-heading">Money Posts (${mps.length})</span>
@@ -1636,6 +1648,86 @@ function renderSerpResults(serpId, kw) {
 }
 
 // ==========================================
+//  POST METRICS & ANALYTICS
+// ==========================================
+function renderPostMetrics(mp) {
+    const history = mp.history || [];
+    if (history.length < 2) return '';
+
+    const latest = history[history.length - 1];
+    const prev = history[history.length - 2];
+    const first = history[0];
+
+    // Velocity: change per day
+    const daysTotal = Math.max(1, (new Date(latest.date) - new Date(first.date)) / 86400000);
+    const upvotesPerDay = ((latest.upvotes - first.upvotes) / daysTotal).toFixed(1);
+    const commentsPerDay = ((latest.comments - first.comments) / daysTotal).toFixed(1);
+
+    // Recent change
+    const upDiff = latest.upvotes - prev.upvotes;
+    const cmDiff = latest.comments - prev.comments;
+    const upClass = upDiff > 0 ? 'up' : upDiff < 0 ? 'down' : 'neutral';
+    const cmClass = cmDiff > 0 ? 'up' : cmDiff < 0 ? 'down' : 'neutral';
+
+    // Engagement ratio
+    const ratio = latest.upvotes ? (latest.comments / latest.upvotes).toFixed(2) : '—';
+
+    // Sparkline (last 10 upvote entries)
+    const sparkData = history.slice(-10).map(h => h.upvotes);
+    const sparkMin = Math.min(...sparkData);
+    const sparkMax = Math.max(...sparkData);
+    const sparkRange = sparkMax - sparkMin || 1;
+    const sparkH = 24;
+    const sparkW = 80;
+    const sparkPoints = sparkData.map((v, i) => {
+        const x = (i / (sparkData.length - 1)) * sparkW;
+        const y = sparkH - ((v - sparkMin) / sparkRange) * sparkH;
+        return `${x},${y}`;
+    }).join(' ');
+
+    return `<div class="mp-metrics">
+        <div class="mp-metric">
+            <span class="mp-metric-label">Upvotes</span>
+            <span class="mp-metric-val">${fmtNumAlways(latest.upvotes)}</span>
+            <span class="mp-metric-change ${upClass}">${upDiff > 0 ? '+' : ''}${upDiff}</span>
+        </div>
+        <div class="mp-metric">
+            <span class="mp-metric-label">Comments</span>
+            <span class="mp-metric-val">${fmtNumAlways(latest.comments)}</span>
+            <span class="mp-metric-change ${cmClass}">${cmDiff > 0 ? '+' : ''}${cmDiff}</span>
+        </div>
+        <div class="mp-metric">
+            <span class="mp-metric-label">Upvotes/Day</span>
+            <span class="mp-metric-val">${upvotesPerDay}</span>
+        </div>
+        <div class="mp-metric">
+            <span class="mp-metric-label">Comments/Day</span>
+            <span class="mp-metric-val">${commentsPerDay}</span>
+        </div>
+        <div class="mp-metric">
+            <span class="mp-metric-label">Engagement</span>
+            <span class="mp-metric-val">${ratio}</span>
+        </div>
+        <div class="mp-metric mp-sparkline-wrap">
+            <span class="mp-metric-label">Trend</span>
+            <svg class="mp-sparkline" width="${sparkW}" height="${sparkH}" viewBox="0 0 ${sparkW} ${sparkH}">
+                <polyline points="${sparkPoints}" fill="none" stroke="var(--primary)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+        </div>
+    </div>`;
+}
+
+function renderKwHistory(kw) {
+    const hist = kw.history || [];
+    if (!hist.length) return '';
+    const entries = hist.slice(-5);
+    return `<span class="kw-history">${entries.map(h => {
+        const cls = h.rankType === 'google' ? 'kh-google' : h.rankType === 'reddit' ? 'kh-reddit' : 'kh-none';
+        return `<span class="kh-entry ${cls}" title="${fmtDateTime(h.date)}">${h.avgRank ? '#' + h.avgRank : '—'}</span>`;
+    }).join('')}</span>`;
+}
+
+// ==========================================
 //  MONEY POSTS RENDERING
 // ==========================================
 function renderMoneyPosts(sub) {
@@ -1659,6 +1751,9 @@ function renderMoneyPosts(sub) {
         const tasksHtml = (mp.tasks || []).map(t => renderTaskRow(t, 'post', mp.id, team)).join('');
         const ah = mp.ahrefs || {};
         const keywords = mp.googleKeywords || [];
+
+        // Post metrics trends
+        const metricsHtml = renderPostMetrics(mp);
 
         // Ahrefs metrics bar for this post
         const ahrefsHtml = `<div class="mp-ahrefs-bar">
@@ -1727,6 +1822,7 @@ function renderMoneyPosts(sub) {
                     <span class="gr-rank ${rankClass}">${avg ? '#' + avg : '—'}</span>
                     ${pillsHtml}
                     <span class="gr-note">${statusText}${kw.updatedAt ? ' · ' + fmtDateTime(kw.updatedAt) : ''}${kw.captchaCount ? ' · ' + kw.captchaCount + ' captcha' : ''}</span>
+                    ${renderKwHistory(kw)}
                     ${serpToggle}
                     ${hasDolphin ? `<button class="btn-icon" onclick="autoCheckRank(${mp.id},${i})" title="Check rank">
                         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg>
@@ -1769,6 +1865,7 @@ function renderMoneyPosts(sub) {
                     </button>
                 </div>
             </div>
+            ${metricsHtml}
             ${ahrefsHtml}
             <div class="mp-google-section">
                 <div class="mp-tasks-header">
