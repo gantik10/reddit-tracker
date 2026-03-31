@@ -2827,6 +2827,113 @@ select.input {
     margin-top: 6px;
 }
 
+/* ===== Orders History ===== */
+.modal-lg {
+    max-width: 800px;
+    width: 95%;
+}
+
+.orders-body-wrap {
+    max-height: 60vh;
+    overflow-y: auto;
+}
+
+.orders-count {
+    font-size: 12px;
+    color: var(--text-muted);
+    font-weight: 500;
+    margin-left: auto;
+    margin-right: 12px;
+}
+
+.orders-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+}
+
+.orders-table th {
+    text-align: left;
+    font-size: 10px;
+    text-transform: uppercase;
+    font-weight: 700;
+    color: var(--text-muted);
+    letter-spacing: 0.3px;
+    padding: 8px 10px;
+    border-bottom: 2px solid var(--border);
+    position: sticky;
+    top: 0;
+    background: var(--bg-card);
+}
+
+.orders-table td {
+    padding: 8px 10px;
+    border-bottom: 1px solid var(--border);
+    vertical-align: middle;
+}
+
+.orders-table tr:hover td {
+    background: var(--bg-hover);
+}
+
+.orders-votes {
+    font-weight: 700;
+    color: var(--accent-green);
+}
+
+.orders-link {
+    color: var(--accent-blue);
+    text-decoration: none;
+    font-size: 11px;
+    max-width: 150px;
+    display: inline-block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.orders-link:hover {
+    text-decoration: underline;
+}
+
+.orders-id {
+    font-family: 'Fira Code', monospace;
+    color: var(--text-muted);
+    font-size: 11px;
+}
+
+.os-badge {
+    font-size: 9px;
+    font-weight: 700;
+    padding: 2px 6px;
+    border-radius: 3px;
+    text-transform: uppercase;
+    white-space: nowrap;
+}
+
+.os-done { background: rgba(70, 209, 96, 0.12); color: var(--accent-green); }
+.os-active { background: rgba(0, 121, 211, 0.12); color: var(--accent-blue); }
+.os-pending { background: rgba(255, 176, 0, 0.12); color: var(--accent-yellow); }
+.os-cancel { background: rgba(234, 0, 39, 0.1); color: var(--accent-red); }
+
+.uv-orders-all {
+    font-size: 11px;
+    color: var(--accent-blue);
+    cursor: pointer;
+    margin-left: 8px;
+    font-weight: 400;
+}
+
+.uv-orders-all:hover {
+    text-decoration: underline;
+}
+
+@media (max-width: 600px) {
+    .orders-table { font-size: 11px; }
+    .orders-table th, .orders-table td { padding: 6px 6px; }
+    .modal-lg { margin: 4px; }
+}
+
 /* ===== Money Post Tabs & Search ===== */
 .mp-tabs {
     display: flex;

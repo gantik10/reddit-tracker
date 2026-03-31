@@ -133,6 +133,15 @@ const S = {
                 const serverTeam = serverData.team || [];
                 const mergedTeam = S._mergeById(localTeam, serverTeam);
 
+                // Merge orders by ID
+                const localOrders = S.get('uv_orders');
+                const serverOrders = serverData.uv_orders || [];
+                const orderMap = new Map();
+                serverOrders.forEach(o => orderMap.set(o.id, o));
+                localOrders.forEach(o => orderMap.set(o.id, o));
+                const mergedOrders = Array.from(orderMap.values()).sort((a, b) => new Date(b.date) - new Date(a.date)).slice(0, 200);
+                localStorage.setItem('lk_uv_orders', JSON.stringify(mergedOrders));
+
                 // 3. Save merged result locally
                 localStorage.setItem('lk_subreddits', JSON.stringify(merged));
                 localStorage.setItem('lk_team', JSON.stringify(mergedTeam));
@@ -149,7 +158,7 @@ const S = {
                 await fetch(`${window.location.origin}/api/data`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ subreddits: merged, team: mergedTeam, keys })
+                    body: JSON.stringify({ subreddits: merged, team: mergedTeam, keys, uv_orders: mergedOrders })
                 });
             } catch (err) {
                 console.log('[Sync] Failed:', err.message);
@@ -206,6 +215,9 @@ const S = {
             }
             if (data.team?.length) {
                 localStorage.setItem('lk_team', JSON.stringify(data.team));
+            }
+            if (data.uv_orders?.length) {
+                localStorage.setItem('lk_uv_orders', JSON.stringify(data.uv_orders));
             }
             // Sync API keys: pull from server OR push local keys if server has none
             const keyNames = ['lk_ahrefs_key', 'lk_serp_key', 'lk_upvote_key', 'lk_dolphin_token', 'lk_dolphin_profiles'];
@@ -1139,8 +1151,9 @@ function saveSettings() {
     dolphinToken ? localStorage.setItem('lk_dolphin_token', dolphinToken) : localStorage.removeItem('lk_dolphin_token');
     localStorage.setItem('lk_dolphin_profiles', JSON.stringify(profiles));
 
-    // Show/hide Buy Votes button
+    // Show/hide Buy Votes + Orders buttons
     document.getElementById('upvoteNavBtn').style.display = upvoteKey ? '' : 'none';
+    document.getElementById('ordersNavBtn').style.display = upvoteKey ? '' : 'none';
 
     closeModal('settingsModal');
     toast('success', 'Settings saved', '');
@@ -3206,31 +3219,112 @@ async function placeUpvoteOrder() {
 }
 
 function saveOrderHistory(order) {
-    let orders = [];
-    try { orders = JSON.parse(localStorage.getItem('lk_uv_orders')) || []; } catch {}
+    let orders = S.get('uv_orders');
     orders.unshift(order);
-    if (orders.length > 50) orders = orders.slice(0, 50);
-    localStorage.setItem('lk_uv_orders', JSON.stringify(orders));
+    if (orders.length > 200) orders = orders.slice(0, 200);
+    S.set('uv_orders', orders);
 }
 
 function getOrderHistory() {
-    try { return JSON.parse(localStorage.getItem('lk_uv_orders')) || []; } catch { return []; }
+    return S.get('uv_orders');
 }
 
 const UV_TYPE_LABELS = { 1: 'Post Upvote', 6: 'Comment Upvote', 7: 'Comment Downvote', 8: 'Post Downvote', 10: 'TOP Ranking' };
+const UV_STATUS_LABELS = { processing: 'Processing', completed: 'Completed', canceled: 'Canceled', pending: 'Pending', partial: 'Partial' };
+
+// Check order status from API
+async function checkOrderStatus(orderId) {
+    try {
+        const data = await uvApi('GET', `order/${orderId}`);
+        return data;
+    } catch { return null; }
+}
+
+// Refresh statuses for recent orders
+async function refreshOrderStatuses() {
+    const orders = getOrderHistory();
+    const toCheck = orders.filter(o => !o.status || o.status === 'processing' || o.status === 'pending').slice(0, 10);
+    if (!toCheck.length) return;
+
+    let changed = false;
+    for (const o of toCheck) {
+        const data = await checkOrderStatus(o.id);
+        if (data?.status && data.status !== o.status) {
+            o.status = data.status;
+            o.rank = data.rank;
+            changed = true;
+        }
+        await new Promise(r => setTimeout(r, 500));
+    }
+    if (changed) S.set('uv_orders', orders);
+}
+
+// Full orders history panel
+function openOrdersHistory() {
+    if (!getUpvoteShopKey()) return openSettings();
+    document.getElementById('ordersPanel').classList.remove('hidden');
+    renderOrdersHistory();
+    // Refresh statuses in background
+    refreshOrderStatuses().then(() => renderOrdersHistory());
+}
+
+function closeOrdersHistory() {
+    document.getElementById('ordersPanel').classList.add('hidden');
+}
+
+function renderOrdersHistory() {
+    const orders = getOrderHistory();
+    const el = document.getElementById('ordersBody');
+    const countEl = document.getElementById('ordersCount');
+    countEl.textContent = `${orders.length} orders`;
+
+    if (!orders.length) {
+        el.innerHTML = '<div class="tb-empty">No orders yet</div>';
+        return;
+    }
+
+    el.innerHTML = `<table class="orders-table">
+        <thead><tr>
+            <th>Date</th>
+            <th>Type</th>
+            <th>Votes</th>
+            <th>Speed</th>
+            <th>Status</th>
+            <th>Link</th>
+            <th>ID</th>
+        </tr></thead>
+        <tbody>${orders.map(o => {
+            const statusClass = o.status === 'completed' ? 'os-done' : o.status === 'processing' ? 'os-active' : o.status === 'canceled' ? 'os-cancel' : 'os-pending';
+            const shortLink = (() => { try { return new URL(o.link).pathname.split('/').filter(Boolean).slice(-2).join('/'); } catch { return o.link?.slice(0, 25) || '—'; } })();
+            return `<tr>
+                <td>${fmtDateTime(o.date)}</td>
+                <td>${UV_TYPE_LABELS[o.type] || 'Vote'}</td>
+                <td class="orders-votes">${o.vote}</td>
+                <td>${o.speed || '—'}/min</td>
+                <td><span class="os-badge ${statusClass}">${UV_STATUS_LABELS[o.status] || o.status || 'Sent'}</span></td>
+                <td><a href="${esc(o.link || '')}" target="_blank" rel="noopener" class="orders-link" onclick="event.stopPropagation()">${esc(shortLink)}</a></td>
+                <td class="orders-id">#${o.id}</td>
+            </tr>`;
+        }).join('')}</tbody>
+    </table>`;
+}
 
 function loadRecentOrders() {
     const orders = getOrderHistory().slice(0, 5);
     const el = document.getElementById('uvOrders');
     if (!orders.length) { el.innerHTML = ''; return; }
 
-    el.innerHTML = `<div class="uv-orders-title">Recent Orders</div>` +
-        orders.map(o => `<div class="uv-order-row">
-            <span class="uv-order-type">${UV_TYPE_LABELS[o.type] || 'Vote'}</span>
-            <span class="uv-order-votes">${o.vote} votes</span>
-            <span class="uv-order-date">${fmtDate(o.date)}</span>
-            <span class="uv-order-id">#${o.id}</span>
-        </div>`).join('');
+    el.innerHTML = `<div class="uv-orders-title">Recent Orders <a class="uv-orders-all" onclick="closeModal('upvoteModal');openOrdersHistory()">View All</a></div>` +
+        orders.map(o => {
+            const statusClass = o.status === 'completed' ? 'os-done' : o.status === 'processing' ? 'os-active' : 'os-pending';
+            return `<div class="uv-order-row">
+                <span class="uv-order-type">${UV_TYPE_LABELS[o.type] || 'Vote'}</span>
+                <span class="uv-order-votes">${o.vote} votes</span>
+                <span class="os-badge ${statusClass}">${UV_STATUS_LABELS[o.status] || 'Sent'}</span>
+                <span class="uv-order-date">${fmtDate(o.date)}</span>
+                <span class="uv-order-id">#${o.id}</span>
+            </div>`;
+        }).join('');
 }
 
 // ==========================================
@@ -3309,7 +3403,10 @@ S.pullFromServer().then(() => {
     renderHome();
     startAutoRefresh();
     // Show Buy Votes button if key is set
-    if (getUpvoteShopKey()) document.getElementById('upvoteNavBtn').style.display = '';
+    if (getUpvoteShopKey()) {
+        document.getElementById('upvoteNavBtn').style.display = '';
+        document.getElementById('ordersNavBtn').style.display = '';
+    }
     // Re-pull from server every 30 seconds to pick up teammate changes
     setInterval(async () => {
         await S.pullFromServer();
