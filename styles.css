@@ -2951,7 +2951,9 @@ select.input {
 .os-done { background: rgba(70, 209, 96, 0.12); color: var(--accent-green); }
 .os-active { background: rgba(0, 121, 211, 0.12); color: var(--accent-blue); }
 .os-pending { background: rgba(255, 176, 0, 0.12); color: var(--accent-yellow); }
+.os-partial { background: rgba(255, 176, 0, 0.12); color: var(--accent-yellow); }
 .os-cancel { background: rgba(234, 0, 39, 0.1); color: var(--accent-red); }
+.os-failed { background: rgba(234, 0, 39, 0.1); color: var(--accent-red); }
 
 .uv-orders-all {
     font-size: 11px;

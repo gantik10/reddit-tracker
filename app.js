@@ -3228,7 +3228,21 @@ function getOrderHistory() {
 }
 
 const UV_TYPE_LABELS = { 1: 'Post Upvote', 6: 'Comment Upvote', 7: 'Comment Downvote', 8: 'Post Downvote', 10: 'TOP Ranking' };
-const UV_STATUS_LABELS = { processing: 'Processing', completed: 'Completed', canceled: 'Canceled', pending: 'Pending', partial: 'Partial' };
+const UV_STATUS_LABELS = {
+    processing: 'Processing', completed: 'Completed', canceled: 'Canceled',
+    pending: 'Pending', partial: 'Partial', partially: 'Partial',
+    finished: 'Finished', failed: 'Failed', refunded: 'Refunded',
+    queued: 'Queued', in_progress: 'In Progress'
+};
+
+function uvStatusClass(status) {
+    if (!status) return 'os-pending';
+    if (['completed', 'finished'].includes(status)) return 'os-done';
+    if (['processing', 'in_progress', 'queued'].includes(status)) return 'os-active';
+    if (['partially', 'partial'].includes(status)) return 'os-partial';
+    if (['canceled', 'failed', 'refunded'].includes(status)) return 'os-cancel';
+    return 'os-pending';
+}
 
 // Check order status from API
 async function checkOrderStatus(orderId) {
@@ -3238,19 +3252,24 @@ async function checkOrderStatus(orderId) {
     } catch { return null; }
 }
 
-// Refresh statuses for recent orders
+// Refresh statuses for ALL orders (not just processing)
 async function refreshOrderStatuses() {
     const orders = getOrderHistory();
-    const toCheck = orders.filter(o => !o.status || o.status === 'processing' || o.status === 'pending').slice(0, 10);
+    // Check all non-final orders (anything that isn't completed/finished/canceled/failed/refunded)
+    const finalStatuses = ['completed', 'finished', 'canceled', 'failed', 'refunded'];
+    const toCheck = orders.filter(o => !finalStatuses.includes(o.status)).slice(0, 20);
     if (!toCheck.length) return;
 
     let changed = false;
     for (const o of toCheck) {
         const data = await checkOrderStatus(o.id);
-        if (data?.status && data.status !== o.status) {
-            o.status = data.status;
-            o.rank = data.rank;
-            changed = true;
+        if (data && data.code === 1) {
+            if (data.status !== o.status) changed = true;
+            o.status = data.status || o.status;
+            o.rank = data.rank ?? o.rank;
+            o.subreddit = data.subreddit || o.subreddit;
+            o.author = data.author || o.author;
+            o.apiVote = data.vote ?? o.apiVote;
         }
         await new Promise(r => setTimeout(r, 500));
     }
@@ -3291,7 +3310,7 @@ function renderOrdersHistory() {
             <th>ID</th>
         </tr></thead>
         <tbody>${orders.map(o => {
-            const statusClass = o.status === 'completed' ? 'os-done' : o.status === 'processing' ? 'os-active' : o.status === 'canceled' ? 'os-cancel' : 'os-pending';
+            const statusClass = uvStatusClass(o.status);
             const shortLink = (() => { try { return new URL(o.link).pathname.split('/').filter(Boolean).slice(-2).join('/'); } catch { return o.link?.slice(0, 25) || '—'; } })();
             return `<tr>
                 <td>${fmtDateTime(o.date)}</td>
@@ -3313,7 +3332,7 @@ function loadRecentOrders() {
 
     el.innerHTML = `<div class="uv-orders-title">Recent Orders <a class="uv-orders-all" onclick="closeModal('upvoteModal');openOrdersHistory()">View All</a></div>` +
         orders.map(o => {
-            const statusClass = o.status === 'completed' ? 'os-done' : o.status === 'processing' ? 'os-active' : 'os-pending';
+            const statusClass = uvStatusClass(o.status);
             return `<div class="uv-order-row">
                 <span class="uv-order-type">${UV_TYPE_LABELS[o.type] || 'Vote'}</span>
                 <span class="uv-order-votes">${o.vote} votes</span>
