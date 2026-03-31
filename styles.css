@@ -988,15 +988,16 @@ body {
 
 /* ===== Money Post Item ===== */
 .money-post-item {
-    border: 1px solid var(--border);
-    border-radius: var(--radius-lg);
-    margin-bottom: 16px;
-    background: var(--bg-card);
-    overflow: hidden;
+    border-left: 3px solid var(--primary);
+    margin-bottom: 12px;
+    padding-bottom: 4px;
+    border-bottom: 2px solid var(--border);
 }
 
 .money-post-item:last-child {
+    border-bottom: none;
     margin-bottom: 0;
+    padding-bottom: 0;
 }
 
 .money-post-header {
