@@ -441,6 +441,35 @@ body {
     color: var(--text-muted);
 }
 
+.home-mp-block {
+    padding-bottom: 6px;
+    margin-bottom: 6px;
+    border-bottom: 1px solid var(--border);
+}
+
+.home-mp-block:last-child {
+    border-bottom: none;
+    margin-bottom: 0;
+    padding-bottom: 0;
+}
+
+.home-kw-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 2px 0 2px 12px;
+}
+
+.home-kw-name {
+    font-size: 11px;
+    color: var(--text-secondary);
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
 .home-mp-empty {
     font-size: 11px;
     color: var(--text-muted);

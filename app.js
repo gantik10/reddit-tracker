@@ -1006,38 +1006,39 @@ function renderHome() {
         const mps = sub.moneyPosts || [];
         const hasKeywords = mps.some(mp => mp.googleKeywords?.length > 0);
         const mpRowsHtml = mps.length > 0 ? mps.map(mp => {
-            // Best keyword rank
             const keywords = mp.googleKeywords || [];
-            let bestRank = null, bestType = 'none', bestKw = '';
-            keywords.forEach(kw => {
-                const r = kw.avgRank || kw.rank;
-                if (r && (!bestRank || (kw.rankType === 'google' && bestType !== 'google') || r < bestRank)) {
-                    bestRank = r;
-                    bestType = kw.rankType || 'none';
-                    bestKw = kw.keyword;
-                }
-            });
-
-            const rankBadge = bestType === 'google'
-                ? `<span class="home-rank home-rank-google" title="${esc(bestKw)}: Google #${bestRank}">G#${bestRank}</span>`
-                : bestType === 'reddit' && bestRank
-                ? `<span class="home-rank home-rank-reddit" title="${esc(bestKw)}: Reddit #${bestRank}">R#${bestRank}</span>`
-                : `<span class="home-rank home-rank-none">—</span>`;
 
             // Money comment position
             const mc = mp.moneyComment;
             const mcBadge = mc?.position
-                ? `<span class="home-mc ${mc.position === 1 ? 'home-mc-1' : mc.position <= 3 ? 'home-mc-top' : 'home-mc-bad'}" title="Money comment #${mc.position}">#${mc.position}</span>`
+                ? `<span class="home-mc ${mc.position === 1 ? 'home-mc-1' : mc.position <= 3 ? 'home-mc-top' : 'home-mc-bad'}" title="Money comment #${mc.position}">MC #${mc.position}</span>`
                 : mc?.commentId
-                ? `<span class="home-mc home-mc-none" title="Not checked yet">?</span>`
+                ? `<span class="home-mc home-mc-none">MC ?</span>`
                 : '';
 
-            return `<div class="home-mp-row">
-                <span class="home-mp-title" title="${esc(mp.title)}">${esc(mp.title.length > 45 ? mp.title.slice(0, 42) + '...' : mp.title)}</span>
-                <span class="home-mp-badges">
-                    ${rankBadge}
-                    ${mcBadge ? `<span class="home-mc-label">MC</span>${mcBadge}` : ''}
-                </span>
+            // Show each keyword with its rank
+            const kwRows = keywords.map(kw => {
+                const r = kw.avgRank || kw.rank;
+                const rType = kw.rankType || 'none';
+                const badge = rType === 'google'
+                    ? `<span class="home-rank home-rank-google">G#${r}</span>`
+                    : rType === 'reddit' && r
+                    ? `<span class="home-rank home-rank-reddit">R#${r}</span>`
+                    : `<span class="home-rank home-rank-none">—</span>`;
+                const kwShort = kw.keyword.length > 22 ? kw.keyword.slice(0, 20) + '..' : kw.keyword;
+                return `<div class="home-kw-row">
+                    <span class="home-kw-name">${esc(kwShort)}</span>
+                    ${badge}
+                </div>`;
+            }).join('');
+
+            const titleShort = mp.title.length > 40 ? mp.title.slice(0, 37) + '...' : mp.title;
+            return `<div class="home-mp-block">
+                <div class="home-mp-row">
+                    <span class="home-mp-title" title="${esc(mp.title)}">${esc(titleShort)}</span>
+                    ${mcBadge}
+                </div>
+                ${kwRows}
             </div>`;
         }).join('') : '<div class="home-mp-empty">No money posts yet</div>';
 
