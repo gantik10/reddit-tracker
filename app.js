@@ -851,9 +851,12 @@ function openAddGeneralTask() {
     document.getElementById('taskEditId').value = '';
     document.getElementById('taskModalTitle').textContent = 'Add General Task';
     document.getElementById('taskTitle').value = '';
+    document.getElementById('taskDesc').value = '';
     document.getElementById('taskPriority').value = 'Medium';
     document.getElementById('taskStatus').value = 'To Do';
     document.getElementById('taskDueDate').value = '';
+    document.getElementById('taskRecurring').checked = false;
+    _taskImage = null; clearTaskImg();
     populateAssigneeDropdown();
     openModal('taskModal');
 }
@@ -907,47 +910,44 @@ function openGeneralTaskLog(taskId) {
 }
 
 function renderGeneralTasks() {
-    const box = document.getElementById('generalTasksBox');
+    // Rendered inside the subreddit grid as the first card
+    // Called from renderHome which inserts it into the grid
+}
+
+function buildGeneralTasksCard() {
     const tasks = getGeneralTasks();
     const team = S.get('team');
     const active = tasks.filter(t => t.status !== 'Done');
     const done = tasks.filter(t => t.status === 'Done');
 
-    // Always show the box (even empty — with add button)
-    const taskRows = active.slice(0, 5).map(t => {
+    // Show last 4 tasks (most recent first, active priority)
+    const recent = [...active, ...done].slice(0, 4);
+
+    const taskRows = recent.map(t => {
         const member = team.find(m => m.id === t.assigneeId);
         const checkClass = t.status === 'Done' ? 'done' : t.status === 'In Progress' ? 'in-progress' : '';
         const logCount = (t.logs || []).length;
+        const isRecurring = t.recurring;
         return `<div class="gt-row">
-            <div class="task-checkbox ${checkClass}" onclick="toggleGeneralTaskStatus(${t.id})"></div>
-            <span class="gt-title">${esc(t.title)}</span>
-            ${t.priority && t.priority !== 'Medium' ? `<span class="badge priority-${t.priority}" style="font-size:9px">${t.priority}</span>` : ''}
-            ${logCount ? `<span class="task-log-badge" onclick="openGeneralTaskLog(${t.id})">${logCount}</span>` : ''}
+            <div class="task-checkbox ${checkClass}" onclick="event.stopPropagation();toggleGeneralTaskStatus(${t.id})"></div>
+            <span class="gt-title ${t.status === 'Done' ? 'done-text' : ''}">${esc(t.title)}</span>
+            ${isRecurring ? '<span class="gt-recurring">Monthly</span>' : ''}
+            ${logCount ? `<span class="task-log-badge" onclick="event.stopPropagation();openGeneralTaskLog(${t.id})">${logCount}</span>` : ''}
             ${member ? `<span class="home-task-avatar" style="background:${member.color || 'var(--primary)'}">${initials(member.name)}</span>` : ''}
-            <span class="gt-actions">
-                <button class="btn-icon" onclick="openGeneralTaskLog(${t.id})" title="Log">
-                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
-                </button>
-                <button class="btn-icon" onclick="editGeneralTask(${t.id})" title="Edit">
-                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-                </button>
-                <button class="btn-icon danger" onclick="deleteGeneralTask(${t.id})" title="Delete">
-                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-                </button>
-            </span>
         </div>`;
     }).join('');
 
-    const moreCount = active.length - 5;
-
-    box.innerHTML = `<div class="gt-box">
-        <div class="gt-header">
-            <span class="gt-heading">General Tasks</span>
-            <span class="gt-stats">${active.length} active${done.length ? ` · ${done.length} done` : ''}</span>
-            <button class="btn btn-sm btn-primary" onclick="openAddGeneralTask()">+ Add Task</button>
+    return `<div class="sub-card" onclick="openTaskBoard()">
+        <div class="sub-card-banner" style="background:linear-gradient(135deg, var(--primary), #FF6934);height:80px;display:flex;align-items:center;justify-content:center;">
+            <span style="color:#fff;font-size:28px;font-weight:800;opacity:0.9;">General Tasks</span>
         </div>
-        ${taskRows || '<div class="gt-empty">No general tasks</div>'}
-        ${moreCount > 0 ? `<div class="gt-more">+${moreCount} more — open Tasks to see all</div>` : ''}
+        <div class="sub-card-body" style="padding:14px 18px;">
+            <div class="home-mp-header" style="margin-bottom:8px;">
+                <span class="home-mp-heading">${active.length} active${done.length ? ` · ${done.length} done` : ''}</span>
+                <button class="btn btn-xs btn-primary" onclick="event.stopPropagation();openAddGeneralTask()">+ Add</button>
+            </div>
+            ${taskRows || '<div style="font-size:12px;color:var(--text-muted);padding:6px 0;">No tasks yet</div>'}
+        </div>
     </div>`;
 }
 
@@ -956,10 +956,9 @@ function renderHome() {
     const grid = document.getElementById('subredditGrid');
     const empty = document.getElementById('emptyHome');
 
-    // Render general tasks box
-    renderGeneralTasks();
+    document.getElementById('generalTasksBox').innerHTML = ''; // not used separately
 
-    if (subs.length === 0) {
+    if (subs.length === 0 && getGeneralTasks().length === 0) {
         grid.innerHTML = '';
         grid.style.display = 'none';
         empty.style.display = '';
@@ -969,7 +968,9 @@ function renderHome() {
     empty.style.display = 'none';
     grid.style.display = '';
 
-    grid.innerHTML = subs.map(sub => {
+    // General tasks card first, then subreddit cards
+    const generalCard = buildGeneralTasksCard();
+    grid.innerHTML = generalCard + subs.map(sub => {
         const fl = sub.followerHistory || [];
         const currentF = fl.length ? fl[fl.length - 1].count : 0;
         const prevF = fl.length > 1 ? fl[fl.length - 2].count : currentF;
@@ -1905,8 +1906,11 @@ function renderMoneyPosts(sub) {
     const revColors = { 'Direct Sale': 'badge-green', 'Affiliate': 'badge-orange', 'Lead Gen': 'badge-blue', 'Brand Awareness': 'badge-yellow', 'Traffic Driver': 'badge-yellow' };
 
     list.innerHTML = posts.map(mp => {
-        const activeTasks = (mp.tasks || []).filter(t => t.status !== 'Done').length;
-        const tasksHtml = (mp.tasks || []).map(t => renderTaskRow(t, 'post', mp.id, team)).join('');
+        const allPostTasks = mp.tasks || [];
+        const activeTasks = allPostTasks.filter(t => t.status !== 'Done').length;
+        const donePostTasks = allPostTasks.filter(t => t.status === 'Done').length;
+        const tasksHtml = allPostTasks.filter(t => t.status !== 'Done').map(t => renderTaskRow(t, 'post', mp.id, team)).join('')
+            + (donePostTasks > 0 ? `<div class="show-done-toggle" style="padding:6px 20px;font-size:11px;">${donePostTasks} completed</div>` : '');
         const ah = mp.ahrefs || {};
         const keywords = mp.googleKeywords || [];
 
@@ -2489,11 +2493,44 @@ function removeKeyword(mpId, kwIndex) {
 function openAddTask(type, parentId) {
     document.getElementById('taskType').value = type;
     document.getElementById('taskParentId').value = parentId || '';
+    document.getElementById('taskEditId').value = '';
     document.getElementById('taskModalTitle').textContent = type === 'post' ? 'Add Post Task' : 'Add Subreddit Task';
+    document.getElementById('taskTitle').value = '';
+    document.getElementById('taskDesc').value = '';
+    document.getElementById('taskRecurring').checked = false;
+    _taskImage = null; clearTaskImg();
     populateAssigneeDropdown();
     openModal('taskModal');
 }
 function openAddSubredditTask() { openAddTask('sub', ''); }
+
+// Task modal image paste
+let _taskImage = null;
+
+function clearTaskImg() {
+    _taskImage = null;
+    document.getElementById('taskImgAttach').classList.add('hidden');
+}
+
+document.addEventListener('paste', e => {
+    if (!document.getElementById('taskModal').classList.contains('active')) return;
+    if (document.getElementById('taskLogModal').classList.contains('active')) return; // don't conflict
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    for (const item of items) {
+        if (item.type.startsWith('image/')) {
+            e.preventDefault();
+            _taskImage = item.getAsFile();
+            const reader = new FileReader();
+            reader.onload = ev => {
+                document.getElementById('taskImgPreview').src = ev.target.result;
+                document.getElementById('taskImgAttach').classList.remove('hidden');
+            };
+            reader.readAsDataURL(_taskImage);
+            break;
+        }
+    }
+});
 
 function populateAssigneeDropdown() {
     const sel = document.getElementById('taskAssignee');
@@ -2502,20 +2539,33 @@ function populateAssigneeDropdown() {
         team.map(m => `<option value="${m.id}">${esc(m.name)}</option>`).join('');
 }
 
-function saveTask() {
+async function saveTask() {
     const editId = document.getElementById('taskEditId').value;
     const type = document.getElementById('taskType').value;
     const parentId = Number(document.getElementById('taskParentId').value) || null;
     const title = document.getElementById('taskTitle').value.trim();
     if (!title) return toast('warning', 'Missing title', 'Enter a task title.');
 
+    // Upload image if pasted
+    let imageUrl = null;
+    if (_taskImage) {
+        try {
+            const res = await fetch(`${SERVER}/api/upload`, { method: 'POST', headers: { 'Content-Type': 'application/octet-stream' }, body: _taskImage });
+            const data = await res.json();
+            if (data.url) imageUrl = data.url;
+        } catch {}
+    }
+
     const taskData = {
         title,
+        description: document.getElementById('taskDesc').value.trim(),
         assigneeId: Number(document.getElementById('taskAssignee').value) || null,
         priority: document.getElementById('taskPriority').value,
         status: document.getElementById('taskStatus').value,
-        dueDate: document.getElementById('taskDueDate').value
+        dueDate: document.getElementById('taskDueDate').value,
+        recurring: document.getElementById('taskRecurring').checked ? 'monthly' : null,
     };
+    if (imageUrl) taskData.image = imageUrl;
 
     if (type === 'general') {
         // General tasks — stored separately
@@ -2579,9 +2629,17 @@ function editTask(type, parentId, taskId) {
     document.getElementById('taskType').value = type;
     document.getElementById('taskParentId').value = parentId || '';
     document.getElementById('taskTitle').value = task.title;
+    document.getElementById('taskDesc').value = task.description || '';
     document.getElementById('taskPriority').value = task.priority;
     document.getElementById('taskStatus').value = task.status;
     document.getElementById('taskDueDate').value = task.dueDate || '';
+    document.getElementById('taskRecurring').checked = !!task.recurring;
+    _taskImage = null;
+    clearTaskImg();
+    if (task.image) {
+        document.getElementById('taskImgPreview').src = task.image;
+        document.getElementById('taskImgAttach').classList.remove('hidden');
+    }
     populateAssigneeDropdown();
     document.getElementById('taskAssignee').value = task.assigneeId || '';
     document.getElementById('taskModalTitle').textContent = 'Edit Task';
@@ -2659,18 +2717,21 @@ function setTaskView(view) {
     if (sub) renderSubredditTasks(sub);
 }
 
+let _showDoneTasks = false;
+
 function renderSubredditTasks(sub) {
     const list = document.getElementById('subredditTasksList');
     const kanban = document.getElementById('kanbanBoard');
     const empty = document.getElementById('emptySubTasks');
-    const tasks = sub.tasks || [];
+    const allTasks = sub.tasks || [];
     const team = S.get('team');
+    const activeTasks = allTasks.filter(t => t.status !== 'Done');
+    const doneTasks = allTasks.filter(t => t.status === 'Done');
 
-    // Update toggle buttons
     document.getElementById('listViewBtn')?.classList.toggle('active', currentTaskView === 'list');
     document.getElementById('kanbanViewBtn')?.classList.toggle('active', currentTaskView === 'kanban');
 
-    if (tasks.length === 0) {
+    if (allTasks.length === 0) {
         list.innerHTML = '';
         kanban.classList.add('hidden');
         list.style.display = 'none';
@@ -2683,16 +2744,21 @@ function renderSubredditTasks(sub) {
     if (currentTaskView === 'kanban') {
         list.style.display = 'none';
         kanban.classList.remove('hidden');
-        renderKanban(tasks, team);
+        renderKanban(allTasks, team);
     } else {
         kanban.classList.add('hidden');
         list.style.display = '';
-        // List view with drag-and-drop
-        list.innerHTML = tasks.map((t, i) => {
+        const visibleTasks = _showDoneTasks ? allTasks : activeTasks;
+        let html = visibleTasks.map((t, i) => {
             const row = renderTaskRow(t, 'sub', null, team);
-            // Add draggable + data attributes
             return row.replace('<div class="task-row">', `<div class="task-row" draggable="true" data-task-index="${i}" ondragstart="taskDragStart(event,${i})" ondragover="taskDragOver(event,${i})" ondragend="taskDragEnd(event)" ondrop="taskDrop(event,${i})">`);
         }).join('');
+        if (doneTasks.length && !_showDoneTasks) {
+            html += `<div class="show-done-toggle" onclick="_showDoneTasks=true;renderDetail();">${doneTasks.length} completed task${doneTasks.length > 1 ? 's' : ''} — show</div>`;
+        } else if (doneTasks.length && _showDoneTasks) {
+            html += `<div class="show-done-toggle" onclick="_showDoneTasks=false;renderDetail();">Hide completed</div>`;
+        }
+        list.innerHTML = html;
     }
 }
 
@@ -3313,6 +3379,46 @@ openSubreddit = function(id) {
 };
 
 // ==========================================
+//  MONTHLY RECURRING TASK RESET
+// ==========================================
+function checkMonthlyReset() {
+    const now = new Date();
+    const monthKey = `${now.getFullYear()}-${now.getMonth()}`;
+    const lastReset = localStorage.getItem('lk_last_monthly_reset');
+    if (lastReset === monthKey) return; // already reset this month
+
+    console.log('[Monthly] Resetting recurring tasks...');
+    let count = 0;
+
+    // Reset general tasks
+    let gt = getGeneralTasks();
+    gt.forEach(t => {
+        if (t.recurring === 'monthly' && t.status === 'Done') {
+            t.status = 'To Do';
+            count++;
+        }
+    });
+    if (count) S.set('general_tasks', gt);
+
+    // Reset subreddit + post tasks
+    let subs = S.get('subreddits');
+    subs.forEach(sub => {
+        (sub.tasks || []).forEach(t => {
+            if (t.recurring === 'monthly' && t.status === 'Done') { t.status = 'To Do'; count++; }
+        });
+        (sub.moneyPosts || []).forEach(mp => {
+            (mp.tasks || []).forEach(t => {
+                if (t.recurring === 'monthly' && t.status === 'Done') { t.status = 'To Do'; count++; }
+            });
+        });
+    });
+    if (count) S.set('subreddits', subs);
+
+    localStorage.setItem('lk_last_monthly_reset', monthKey);
+    if (count) toast('info', 'Monthly reset', `${count} recurring task${count > 1 ? 's' : ''} reset to To Do`);
+}
+
+// ==========================================
 //  TASK LOG
 // ==========================================
 let _tlType = null, _tlParentId = null, _tlTaskId = null, _tlImage = null;
@@ -3748,6 +3854,7 @@ async function autoCheckAllMoneyComments() {
 // ==========================================
 // Pull shared data from server, then render
 S.pullFromServer().then(() => {
+    checkMonthlyReset();
     renderHome();
     startAutoRefresh();
     // Show Buy Votes button if key is set

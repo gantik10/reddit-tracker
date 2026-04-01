@@ -511,7 +511,7 @@
 
     <!-- Task Modal -->
     <div class="modal-overlay" id="taskModal">
-        <div class="modal modal-sm">
+        <div class="modal">
             <div class="modal-header">
                 <h3 id="taskModalTitle">Add Task</h3>
                 <button class="modal-close" onclick="closeModal('taskModal')">&times;</button>
@@ -521,8 +521,21 @@
                 <input type="hidden" id="taskType">
                 <input type="hidden" id="taskParentId">
                 <div class="form-group">
-                    <label>Task</label>
-                    <input type="text" class="input" id="taskTitle" placeholder="What needs to be done?">
+                    <label>Task Title</label>
+                    <input type="text" class="input" id="taskTitle" placeholder="What needs to be done?" style="font-size:15px;padding:12px;">
+                </div>
+                <div class="form-group">
+                    <label>Description (optional)</label>
+                    <textarea class="input" id="taskDesc" placeholder="Add details, notes, or context..." rows="4" style="font-size:13px;"></textarea>
+                </div>
+                <div class="form-group">
+                    <label>Screenshot (Ctrl+V to paste)</label>
+                    <div class="task-img-attach hidden" id="taskImgAttach">
+                        <img id="taskImgPreview" class="tl-attach-img" style="max-width:300px;">
+                        <button class="btn-icon danger" onclick="clearTaskImg()" title="Remove" style="position:absolute;top:4px;right:4px;">
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                        </button>
+                    </div>
                 </div>
                 <div class="form-row">
                     <div class="form-group">
@@ -551,6 +564,14 @@
                     <div class="form-group">
                         <label>Due Date</label>
                         <input type="date" class="input" id="taskDueDate">
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>
+                            <input type="checkbox" id="taskRecurring"> Monthly recurring task
+                        </label>
+                        <p class="settings-hint" style="margin-top:4px;">Task resets to "To Do" on the 1st of each month</p>
                     </div>
                 </div>
             </div>
@@ -786,6 +807,6 @@
         <div class="rank-panel-result hidden" id="rankPanelResult"></div>
     </div>
 
-    <script src="app.js?v=20260401b"></script>
+    <script src="app.js?v=20260401c"></script>
 </body>
 </html>

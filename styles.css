@@ -284,48 +284,20 @@ body {
     font-weight: 600;
 }
 
-/* ===== General Tasks Box ===== */
-.gt-box {
-    background: var(--bg-card);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-lg);
-    margin-bottom: 24px;
-    padding: 16px 20px;
-}
-
-.gt-header {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    margin-bottom: 10px;
-}
-
-.gt-heading {
-    font-size: 16px;
-    font-weight: 700;
-}
-
-.gt-stats {
-    font-size: 11px;
-    color: var(--text-muted);
-    margin-right: auto;
-}
-
+/* ===== General Tasks Card (in grid) ===== */
 .gt-row {
     display: flex;
     align-items: center;
     gap: 8px;
-    padding: 6px 0;
+    padding: 5px 0;
     border-bottom: 1px solid var(--border);
 }
 
-.gt-row:last-child {
-    border-bottom: none;
-}
+.gt-row:last-child { border-bottom: none; }
 
 .gt-title {
     flex: 1;
-    font-size: 13px;
+    font-size: 12px;
     font-weight: 500;
     min-width: 0;
     overflow: hidden;
@@ -340,25 +312,19 @@ body {
     transition: opacity 0.15s;
 }
 
-.gt-row:hover .gt-actions {
-    opacity: 1;
-}
+.gt-row:hover .gt-actions { opacity: 1; }
 
-.gt-empty {
-    font-size: 12px;
-    color: var(--text-muted);
-    padding: 8px 0;
-}
-
-.gt-more {
-    font-size: 11px;
-    color: var(--text-muted);
-    padding-top: 6px;
+.gt-recurring {
+    font-size: 9px;
+    font-weight: 700;
+    color: var(--accent-blue);
+    background: rgba(0,121,211,0.08);
+    padding: 1px 4px;
+    border-radius: 2px;
 }
 
 @media (max-width: 600px) {
     .gt-actions { opacity: 1; }
-    .gt-box { padding: 12px 14px; }
 }
 
 /* ===== Home Money Post Rows ===== */
@@ -2862,6 +2828,24 @@ select.input {
     border-radius: 3px;
     background: var(--bg-card);
     border: 1px solid var(--border);
+}
+
+.show-done-toggle {
+    font-size: 11px;
+    color: var(--text-muted);
+    cursor: pointer;
+    padding: 8px 20px;
+    text-align: center;
+}
+
+.show-done-toggle:hover {
+    color: var(--accent-blue);
+    text-decoration: underline;
+}
+
+.task-img-attach {
+    position: relative;
+    display: inline-block;
 }
 
 /* ===== Task Log ===== */
