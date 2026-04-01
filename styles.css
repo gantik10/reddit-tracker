@@ -284,6 +284,83 @@ body {
     font-weight: 600;
 }
 
+/* ===== General Tasks Box ===== */
+.gt-box {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    margin-bottom: 24px;
+    padding: 16px 20px;
+}
+
+.gt-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 10px;
+}
+
+.gt-heading {
+    font-size: 16px;
+    font-weight: 700;
+}
+
+.gt-stats {
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-right: auto;
+}
+
+.gt-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 0;
+    border-bottom: 1px solid var(--border);
+}
+
+.gt-row:last-child {
+    border-bottom: none;
+}
+
+.gt-title {
+    flex: 1;
+    font-size: 13px;
+    font-weight: 500;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.gt-actions {
+    display: flex;
+    gap: 2px;
+    opacity: 0;
+    transition: opacity 0.15s;
+}
+
+.gt-row:hover .gt-actions {
+    opacity: 1;
+}
+
+.gt-empty {
+    font-size: 12px;
+    color: var(--text-muted);
+    padding: 8px 0;
+}
+
+.gt-more {
+    font-size: 11px;
+    color: var(--text-muted);
+    padding-top: 6px;
+}
+
+@media (max-width: 600px) {
+    .gt-actions { opacity: 1; }
+    .gt-box { padding: 12px 14px; }
+}
+
 /* ===== Home Money Post Rows ===== */
 .home-mp-section {
     border-top: 1px solid var(--border);

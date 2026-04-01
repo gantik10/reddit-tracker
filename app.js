@@ -158,7 +158,7 @@ const S = {
                 await fetch(`${window.location.origin}/api/data`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ subreddits: merged, team: mergedTeam, keys, uv_orders: mergedOrders })
+                    body: JSON.stringify({ subreddits: merged, team: mergedTeam, keys, uv_orders: mergedOrders, general_tasks: S.get('general_tasks') })
                 });
             } catch (err) {
                 console.log('[Sync] Failed:', err.message);
@@ -222,6 +222,13 @@ const S = {
             }
             if (data.team?.length) {
                 localStorage.setItem('lk_team', JSON.stringify(data.team));
+            }
+            if (data.general_tasks?.length) {
+                const localGt = S.get('general_tasks');
+                const gtMap = new Map();
+                data.general_tasks.forEach(t => gtMap.set(t.id, t));
+                localGt.forEach(t => gtMap.set(t.id, t));
+                localStorage.setItem('lk_general_tasks', JSON.stringify(Array.from(gtMap.values())));
             }
             if (data.uv_orders?.length) {
                 const localOrders = S.get('uv_orders');
@@ -823,10 +830,134 @@ function deleteMoneyPost(mpId) {
 // ==========================================
 //  HOME — SUBREDDIT CARDS
 // ==========================================
+// ==========================================
+//  GENERAL TASKS (not tied to any subreddit)
+// ==========================================
+function getGeneralTasks() { return S.get('general_tasks'); }
+
+function addGeneralTask() {
+    const title = prompt('Task title:'); // simple for now, will use modal
+    if (!title?.trim()) return;
+    const tasks = getGeneralTasks();
+    const id = tasks.length ? Math.max(...tasks.map(t => t.id)) + 1 : 1;
+    tasks.push({ id, title: title.trim(), status: 'To Do', priority: 'Medium', assigneeId: null, dueDate: '', logs: [] });
+    S.set('general_tasks', tasks);
+    renderHome();
+}
+
+function openAddGeneralTask() {
+    document.getElementById('taskType').value = 'general';
+    document.getElementById('taskParentId').value = '';
+    document.getElementById('taskEditId').value = '';
+    document.getElementById('taskModalTitle').textContent = 'Add General Task';
+    document.getElementById('taskTitle').value = '';
+    document.getElementById('taskPriority').value = 'Medium';
+    document.getElementById('taskStatus').value = 'To Do';
+    document.getElementById('taskDueDate').value = '';
+    populateAssigneeDropdown();
+    openModal('taskModal');
+}
+
+function toggleGeneralTaskStatus(taskId) {
+    let tasks = getGeneralTasks();
+    const t = tasks.find(x => x.id === taskId);
+    if (!t) return;
+    if (t.status === 'Done') t.status = 'To Do';
+    else if (t.status === 'To Do') t.status = 'In Progress';
+    else t.status = 'Done';
+    S.set('general_tasks', tasks);
+    renderHome();
+}
+
+function deleteGeneralTask(taskId) {
+    S.set('general_tasks', getGeneralTasks().filter(t => t.id !== taskId));
+    renderHome();
+}
+
+function editGeneralTask(taskId) {
+    const task = getGeneralTasks().find(t => t.id === taskId);
+    if (!task) return;
+    document.getElementById('taskEditId').value = task.id;
+    document.getElementById('taskType').value = 'general';
+    document.getElementById('taskParentId').value = '';
+    document.getElementById('taskTitle').value = task.title;
+    document.getElementById('taskPriority').value = task.priority || 'Medium';
+    document.getElementById('taskStatus').value = task.status || 'To Do';
+    document.getElementById('taskDueDate').value = task.dueDate || '';
+    populateAssigneeDropdown();
+    document.getElementById('taskAssignee').value = task.assigneeId || '';
+    document.getElementById('taskModalTitle').textContent = 'Edit General Task';
+    openModal('taskModal');
+}
+
+function openGeneralTaskLog(taskId) {
+    const task = getGeneralTasks().find(t => t.id === taskId);
+    if (!task) return;
+    _tlType = 'general';
+    _tlParentId = null;
+    _tlTaskId = taskId;
+    _tlImage = null;
+    document.getElementById('taskLogTitle').textContent = task.title;
+    document.getElementById('tlText').value = '';
+    document.getElementById('tlAttach').classList.add('hidden');
+    const logs = task.logs || [];
+    document.getElementById('taskLogCount').textContent = `${logs.length} entr${logs.length === 1 ? 'y' : 'ies'}`;
+    renderTaskLogHistory(logs);
+    openModal('taskLogModal');
+}
+
+function renderGeneralTasks() {
+    const box = document.getElementById('generalTasksBox');
+    const tasks = getGeneralTasks();
+    const team = S.get('team');
+    const active = tasks.filter(t => t.status !== 'Done');
+    const done = tasks.filter(t => t.status === 'Done');
+
+    // Always show the box (even empty — with add button)
+    const taskRows = active.slice(0, 5).map(t => {
+        const member = team.find(m => m.id === t.assigneeId);
+        const checkClass = t.status === 'Done' ? 'done' : t.status === 'In Progress' ? 'in-progress' : '';
+        const logCount = (t.logs || []).length;
+        return `<div class="gt-row">
+            <div class="task-checkbox ${checkClass}" onclick="toggleGeneralTaskStatus(${t.id})"></div>
+            <span class="gt-title">${esc(t.title)}</span>
+            ${t.priority && t.priority !== 'Medium' ? `<span class="badge priority-${t.priority}" style="font-size:9px">${t.priority}</span>` : ''}
+            ${logCount ? `<span class="task-log-badge" onclick="openGeneralTaskLog(${t.id})">${logCount}</span>` : ''}
+            ${member ? `<span class="home-task-avatar" style="background:${member.color || 'var(--primary)'}">${initials(member.name)}</span>` : ''}
+            <span class="gt-actions">
+                <button class="btn-icon" onclick="openGeneralTaskLog(${t.id})" title="Log">
+                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                </button>
+                <button class="btn-icon" onclick="editGeneralTask(${t.id})" title="Edit">
+                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                </button>
+                <button class="btn-icon danger" onclick="deleteGeneralTask(${t.id})" title="Delete">
+                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                </button>
+            </span>
+        </div>`;
+    }).join('');
+
+    const moreCount = active.length - 5;
+
+    box.innerHTML = `<div class="gt-box">
+        <div class="gt-header">
+            <span class="gt-heading">General Tasks</span>
+            <span class="gt-stats">${active.length} active${done.length ? ` · ${done.length} done` : ''}</span>
+            <button class="btn btn-sm btn-primary" onclick="openAddGeneralTask()">+ Add Task</button>
+        </div>
+        ${taskRows || '<div class="gt-empty">No general tasks</div>'}
+        ${moreCount > 0 ? `<div class="gt-more">+${moreCount} more — open Tasks to see all</div>` : ''}
+    </div>`;
+}
+
 function renderHome() {
     const subs = S.get('subreddits');
     const grid = document.getElementById('subredditGrid');
     const empty = document.getElementById('emptyHome');
+
+    // Render general tasks box
+    renderGeneralTasks();
 
     if (subs.length === 0) {
         grid.innerHTML = '';
@@ -2386,35 +2517,50 @@ function saveTask() {
         dueDate: document.getElementById('taskDueDate').value
     };
 
-    updateSub(sub => {
-        if (type === 'post') {
-            const mp = (sub.moneyPosts || []).find(p => p.id === parentId);
-            if (!mp) return;
-            if (!mp.tasks) mp.tasks = [];
-            if (editId) {
-                const t = mp.tasks.find(t => t.id === Number(editId));
-                if (t) Object.assign(t, taskData);
-            } else {
-                const id = mp.tasks.length ? Math.max(...mp.tasks.map(t => t.id)) + 1 : 1;
-                mp.tasks.push({ id, ...taskData });
-            }
+    if (type === 'general') {
+        // General tasks — stored separately
+        let tasks = getGeneralTasks();
+        if (editId) {
+            const t = tasks.find(x => x.id === Number(editId));
+            if (t) Object.assign(t, taskData);
         } else {
-            if (!sub.tasks) sub.tasks = [];
-            if (editId) {
-                const t = sub.tasks.find(t => t.id === Number(editId));
-                if (t) Object.assign(t, taskData);
-            } else {
-                const id = sub.tasks.length ? Math.max(...sub.tasks.map(t => t.id)) + 1 : 1;
-                sub.tasks.push({ id, ...taskData });
-            }
+            const id = tasks.length ? Math.max(...tasks.map(t => t.id)) + 1 : 1;
+            tasks.push({ id, ...taskData, logs: [] });
         }
-    });
+        S.set('general_tasks', tasks);
+    } else {
+        updateSub(sub => {
+            if (type === 'post') {
+                const mp = (sub.moneyPosts || []).find(p => p.id === parentId);
+                if (!mp) return;
+                if (!mp.tasks) mp.tasks = [];
+                if (editId) {
+                    const t = mp.tasks.find(t => t.id === Number(editId));
+                    if (t) Object.assign(t, taskData);
+                } else {
+                    const id = mp.tasks.length ? Math.max(...mp.tasks.map(t => t.id)) + 1 : 1;
+                    mp.tasks.push({ id, ...taskData });
+                }
+            } else {
+                if (!sub.tasks) sub.tasks = [];
+                if (editId) {
+                    const t = sub.tasks.find(t => t.id === Number(editId));
+                    if (t) Object.assign(t, taskData);
+                } else {
+                    const id = sub.tasks.length ? Math.max(...sub.tasks.map(t => t.id)) + 1 : 1;
+                    sub.tasks.push({ id, ...taskData });
+                }
+            }
+        });
+    }
     closeModal('taskModal');
     // Re-render whichever view is active
     if (!document.getElementById('taskBoardView').classList.contains('hidden')) {
         renderTaskBoard();
-    } else {
+    } else if (currentSubId) {
         renderDetail();
+    } else {
+        renderHome();
     }
 }
 
@@ -2854,7 +3000,7 @@ function populateTbFilters() {
     const team = S.get('team');
 
     const subSel = document.getElementById('tbFilterSub');
-    subSel.innerHTML = '<option value="">All Subreddits</option>' +
+    subSel.innerHTML = '<option value="">All Subreddits</option><option value="0">General</option>' +
         subs.map(s => `<option value="${s.id}">r/${esc(s.name)}</option>`).join('');
 
     const assigneeSel = document.getElementById('tbFilterAssignee');
@@ -2893,6 +3039,19 @@ function gatherAllTasks() {
                     _key: `s${sub.id}_p${mp.id}_t${t.id}`
                 });
             });
+        });
+    });
+
+    // General tasks (not tied to any subreddit)
+    getGeneralTasks().forEach(t => {
+        tasks.push({
+            ...t,
+            subId: 0,
+            subName: 'General',
+            type: 'general',
+            parentId: null,
+            postTitle: null,
+            _key: `g_t${t.id}`
         });
     });
 
@@ -3034,7 +3193,15 @@ function tbKanbanDrop(e) {
     if (!col) return;
     const newStatus = col.dataset.status;
 
-    // Parse key to find the task: s{subId}_t{taskId} or s{subId}_p{mpId}_t{taskId}
+    // Parse key: g_t{id} or s{subId}_t{taskId} or s{subId}_p{mpId}_t{taskId}
+    const gMatch = tbDragKey.match(/^g_t(\d+)$/);
+    if (gMatch) {
+        let tasks = getGeneralTasks();
+        const t = tasks.find(x => x.id === Number(gMatch[1]));
+        if (t) { t.status = newStatus; S.set('general_tasks', tasks); }
+        tbDragKey = null; renderTaskBoard(); return;
+    }
+
     const keyMatch = tbDragKey.match(/^s(\d+)(?:_p(\d+))?_t(\d+)$/);
     if (!keyMatch) return;
 
@@ -3062,9 +3229,10 @@ function tbKanbanDrop(e) {
 
 // Open task log from task board
 function tbOpenLog(key) {
+    const gMatch = key.match(/^g_t(\d+)$/);
+    if (gMatch) { openGeneralTaskLog(Number(gMatch[1])); return; }
     const keyMatch = key.match(/^s(\d+)(?:_p(\d+))?_t(\d+)$/);
     if (!keyMatch) return;
-    const prevSubId = currentSubId;
     currentSubId = Number(keyMatch[1]);
     const mpId = keyMatch[2] ? Number(keyMatch[2]) : null;
     const taskId = Number(keyMatch[3]);
@@ -3170,6 +3338,7 @@ function openTaskLog(type, parentId, taskId) {
 }
 
 function findTask(type, parentId, taskId) {
+    if (type === 'general') return getGeneralTasks().find(t => t.id === taskId);
     const sub = getSub();
     if (!sub) return null;
     if (type === 'post') {
@@ -3219,21 +3388,29 @@ async function addTaskLog() {
         }
     }
 
-    updateSub(s => {
-        let task;
-        if (_tlType === 'post') {
-            task = (s.moneyPosts || []).find(p => p.id === _tlParentId)?.tasks?.find(t => t.id === _tlTaskId);
-        } else {
-            task = (s.tasks || []).find(t => t.id === _tlTaskId);
+    const logEntry = { text: text || '', image: imageUrl, date: new Date().toISOString() };
+
+    if (_tlType === 'general') {
+        let tasks = getGeneralTasks();
+        const t = tasks.find(x => x.id === _tlTaskId);
+        if (t) {
+            if (!t.logs) t.logs = [];
+            t.logs.push(logEntry);
+            S.set('general_tasks', tasks);
         }
-        if (!task) return;
-        if (!task.logs) task.logs = [];
-        task.logs.push({
-            text: text || '',
-            image: imageUrl,
-            date: new Date().toISOString()
+    } else {
+        updateSub(s => {
+            let task;
+            if (_tlType === 'post') {
+                task = (s.moneyPosts || []).find(p => p.id === _tlParentId)?.tasks?.find(t => t.id === _tlTaskId);
+            } else {
+                task = (s.tasks || []).find(t => t.id === _tlTaskId);
+            }
+            if (!task) return;
+            if (!task.logs) task.logs = [];
+            task.logs.push(logEntry);
         });
-    });
+    }
 
     // Refresh
     _tlImage = null;
