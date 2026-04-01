@@ -2474,6 +2474,7 @@ function renderTaskRow(task, type, parentId, team) {
     const member = team.find(m => m.id === task.assigneeId);
     const checkClass = task.status === 'Done' ? 'done' : task.status === 'In Progress' ? 'in-progress' : '';
     const titleClass = task.status === 'Done' ? 'done-text' : '';
+    const logCount = (task.logs || []).length;
 
     return `<div class="task-row">
         <div class="task-checkbox ${checkClass}" onclick="toggleTaskStatus('${type}',${parentId || 'null'},${task.id})"></div>
@@ -2483,10 +2484,14 @@ function renderTaskRow(task, type, parentId, team) {
                 ${task.priority ? `<span class="badge priority-${task.priority}">${task.priority}</span>` : ''}
                 ${task.dueDate ? `<span>${task.dueDate}</span>` : ''}
                 ${member ? `<span>${esc(member.name)}</span>` : ''}
+                ${logCount > 0 ? `<span class="task-log-badge" onclick="event.stopPropagation();openTaskLog('${type}',${parentId || 'null'},${task.id})">${logCount} log${logCount > 1 ? 's' : ''}</span>` : ''}
             </div>
         </div>
         ${member ? `<div class="task-assignee-badge" style="background:${member.color || 'var(--primary)'}" title="${esc(member.name)}">${initials(member.name)}</div>` : ''}
         <div class="task-row-actions">
+            <button class="btn-icon" onclick="openTaskLog('${type}',${parentId || 'null'},${task.id})" title="Task log">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+            </button>
             <button class="btn-icon" onclick="editTask('${type}',${parentId || 'null'},${task.id})" title="Edit">
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
             </button>
@@ -2956,12 +2961,14 @@ function tbTaskCard(t, team, showStatus) {
     const isOverdue = t.dueDate && t.status !== 'Done' && t.dueDate < new Date().toISOString().slice(0, 10);
     const isDueSoon = t.dueDate && t.status !== 'Done' && !isOverdue && t.dueDate <= new Date(Date.now() + 2 * 86400000).toISOString().slice(0, 10);
     const doneClass = t.status === 'Done' ? 'tb-card-done' : '';
+    const logCount = (t.logs || []).length;
 
     return `<div class="tb-card ${doneClass}" draggable="true" data-key="${t._key}"
         ondragstart="tbDragStart(event,'${t._key}')" ondragend="tbDragEnd(event)">
         <div class="tb-card-top">
             <span class="badge priority-${t.priority}" style="font-size:9px;">${t.priority}</span>
             ${showStatus ? `<span class="tb-card-status tb-status-${t.status.replace(/\s/g, '')}">${t.status}</span>` : ''}
+            ${logCount ? `<span class="task-log-badge" onclick="tbOpenLog('${t._key}')">${logCount} log${logCount > 1 ? 's' : ''}</span>` : ''}
             <span class="tb-card-sub">r/${esc(t.subName)}</span>
         </div>
         <div class="tb-card-title ${t.status === 'Done' ? 'done-text' : ''}">${esc(t.title)}</div>
@@ -2969,6 +2976,9 @@ function tbTaskCard(t, team, showStatus) {
         <div class="tb-card-bottom">
             ${t.dueDate ? `<span class="tb-card-due ${isOverdue ? 'overdue' : isDueSoon ? 'due-soon' : ''}">${isOverdue ? 'OVERDUE ' : ''}${fmtDate(t.dueDate)}</span>` : '<span></span>'}
             <div class="tb-card-right">
+                <button class="btn-icon" onclick="tbOpenLog('${t._key}')" title="Task log">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+                </button>
                 <button class="btn-icon" onclick="tbEditTask('${t._key}')" title="Edit">
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
                 </button>
@@ -3050,6 +3060,17 @@ function tbKanbanDrop(e) {
     renderTaskBoard();
 }
 
+// Open task log from task board
+function tbOpenLog(key) {
+    const keyMatch = key.match(/^s(\d+)(?:_p(\d+))?_t(\d+)$/);
+    if (!keyMatch) return;
+    const prevSubId = currentSubId;
+    currentSubId = Number(keyMatch[1]);
+    const mpId = keyMatch[2] ? Number(keyMatch[2]) : null;
+    const taskId = Number(keyMatch[3]);
+    openTaskLog(mpId ? 'post' : 'sub', mpId, taskId);
+}
+
 // Edit task from task board
 function tbEditTask(key) {
     const keyMatch = key.match(/^s(\d+)(?:_p(\d+))?_t(\d+)$/);
@@ -3122,6 +3143,140 @@ openSubreddit = function(id) {
     document.getElementById('taskBoardView').classList.add('hidden');
     _origOpenSub(id);
 };
+
+// ==========================================
+//  TASK LOG
+// ==========================================
+let _tlType = null, _tlParentId = null, _tlTaskId = null, _tlImage = null;
+
+function openTaskLog(type, parentId, taskId) {
+    _tlType = type;
+    _tlParentId = parentId;
+    _tlTaskId = taskId;
+    _tlImage = null;
+
+    const task = findTask(type, parentId, taskId);
+    if (!task) return;
+
+    document.getElementById('taskLogTitle').textContent = task.title;
+    document.getElementById('tlText').value = '';
+    document.getElementById('tlAttach').classList.add('hidden');
+
+    const logs = task.logs || [];
+    document.getElementById('taskLogCount').textContent = `${logs.length} entr${logs.length === 1 ? 'y' : 'ies'}`;
+
+    renderTaskLogHistory(logs);
+    openModal('taskLogModal');
+}
+
+function findTask(type, parentId, taskId) {
+    const sub = getSub();
+    if (!sub) return null;
+    if (type === 'post') {
+        return (sub.moneyPosts || []).find(p => p.id === parentId)?.tasks?.find(t => t.id === taskId);
+    }
+    return (sub.tasks || []).find(t => t.id === taskId);
+}
+
+function renderTaskLogHistory(logs) {
+    const el = document.getElementById('tlHistory');
+    if (!logs.length) {
+        el.innerHTML = '<div class="tl-empty">No log entries yet. Add an update to track progress.</div>';
+        return;
+    }
+    el.innerHTML = logs.slice().reverse().map((log, i) => {
+        const num = logs.length - i;
+        return `<div class="tl-entry">
+            <div class="tl-entry-header">
+                <span class="tl-entry-num">${num}/${logs.length}</span>
+                <span class="tl-entry-date">${fmtDateTime(log.date)}</span>
+            </div>
+            ${log.text ? `<div class="tl-entry-text">${esc(log.text)}</div>` : ''}
+            ${log.image ? `<div class="tl-entry-img-wrap"><img src="${esc(log.image)}" class="tl-entry-img" onclick="window.open('${esc(log.image)}','_blank')"></div>` : ''}
+        </div>`;
+    }).join('');
+}
+
+async function addTaskLog() {
+    const text = document.getElementById('tlText').value.trim();
+    if (!text && !_tlImage) return toast('warning', 'Empty', 'Add text or paste an image.');
+
+    let imageUrl = null;
+    if (_tlImage) {
+        try {
+            toast('info', 'Uploading image...', '', 2000);
+            const res = await fetch(`${SERVER}/api/upload`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/octet-stream' },
+                body: _tlImage
+            });
+            const data = await res.json();
+            if (data.url) imageUrl = data.url;
+            else throw new Error(data.error || 'Upload failed');
+        } catch (err) {
+            toast('error', 'Upload failed', err.message);
+            return;
+        }
+    }
+
+    updateSub(s => {
+        let task;
+        if (_tlType === 'post') {
+            task = (s.moneyPosts || []).find(p => p.id === _tlParentId)?.tasks?.find(t => t.id === _tlTaskId);
+        } else {
+            task = (s.tasks || []).find(t => t.id === _tlTaskId);
+        }
+        if (!task) return;
+        if (!task.logs) task.logs = [];
+        task.logs.push({
+            text: text || '',
+            image: imageUrl,
+            date: new Date().toISOString()
+        });
+    });
+
+    // Refresh
+    _tlImage = null;
+    document.getElementById('tlText').value = '';
+    document.getElementById('tlAttach').classList.add('hidden');
+
+    const task = findTask(_tlType, _tlParentId, _tlTaskId);
+    const logs = task?.logs || [];
+    document.getElementById('taskLogCount').textContent = `${logs.length} entr${logs.length === 1 ? 'y' : 'ies'}`;
+    renderTaskLogHistory(logs);
+
+    toast('success', 'Log added', `Entry ${logs.length}`);
+}
+
+function clearTlAttach() {
+    _tlImage = null;
+    document.getElementById('tlAttach').classList.add('hidden');
+}
+
+// Paste image handler
+document.addEventListener('paste', e => {
+    // Only handle when task log modal is open
+    if (!document.getElementById('taskLogModal').classList.contains('active')) return;
+
+    const items = e.clipboardData?.items;
+    if (!items) return;
+
+    for (const item of items) {
+        if (item.type.startsWith('image/')) {
+            e.preventDefault();
+            const blob = item.getAsFile();
+            _tlImage = blob;
+
+            const reader = new FileReader();
+            reader.onload = ev => {
+                document.getElementById('tlAttachPreview').src = ev.target.result;
+                document.getElementById('tlAttach').classList.remove('hidden');
+            };
+            reader.readAsDataURL(blob);
+            break;
+        }
+    }
+});
 
 // ==========================================
 //  UPVOTE SHOP

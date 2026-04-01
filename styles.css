@@ -2787,6 +2787,141 @@ select.input {
     border: 1px solid var(--border);
 }
 
+/* ===== Task Log ===== */
+.task-log-badge {
+    font-size: 10px;
+    font-weight: 600;
+    color: var(--accent-blue);
+    cursor: pointer;
+    padding: 1px 5px;
+    border-radius: 3px;
+    background: rgba(0,121,211,0.08);
+}
+
+.task-log-badge:hover {
+    background: rgba(0,121,211,0.15);
+}
+
+.task-log-count {
+    font-size: 12px;
+    color: var(--text-muted);
+    margin-left: auto;
+    margin-right: 12px;
+}
+
+.tl-add {
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 12px;
+    margin-bottom: 16px;
+}
+
+.tl-textarea {
+    width: 100%;
+    resize: vertical;
+    min-height: 60px;
+    font-size: 13px !important;
+    margin-bottom: 8px;
+}
+
+.tl-add-actions {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.tl-hint {
+    font-size: 11px;
+    color: var(--text-muted);
+}
+
+.tl-attach {
+    margin-bottom: 8px;
+    position: relative;
+    display: inline-block;
+}
+
+.tl-attach-img {
+    max-width: 200px;
+    max-height: 120px;
+    border-radius: var(--radius);
+    border: 1px solid var(--border);
+}
+
+.tl-attach .btn-icon {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    background: var(--bg-card);
+    border-radius: 50%;
+    width: 20px;
+    height: 20px;
+}
+
+.tl-history {
+    max-height: 400px;
+    overflow-y: auto;
+}
+
+.tl-empty {
+    text-align: center;
+    padding: 30px;
+    color: var(--text-muted);
+    font-size: 13px;
+}
+
+.tl-entry {
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 12px;
+    margin-bottom: 8px;
+}
+
+.tl-entry-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 6px;
+}
+
+.tl-entry-num {
+    font-size: 11px;
+    font-weight: 700;
+    font-family: 'Fira Code', monospace;
+    color: var(--primary);
+    background: rgba(255,69,0,0.08);
+    padding: 2px 6px;
+    border-radius: 3px;
+}
+
+.tl-entry-date {
+    font-size: 11px;
+    color: var(--text-muted);
+}
+
+.tl-entry-text {
+    font-size: 13px;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+.tl-entry-img-wrap {
+    margin-top: 8px;
+}
+
+.tl-entry-img {
+    max-width: 100%;
+    max-height: 300px;
+    border-radius: var(--radius-lg);
+    border: 1px solid var(--border);
+    cursor: pointer;
+}
+
+.tl-entry-img:hover {
+    border-color: var(--primary);
+}
+
 /* ===== Upvote Shop ===== */
 .uv-balance-bar {
     margin-bottom: 12px;

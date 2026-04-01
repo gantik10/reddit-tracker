@@ -715,6 +715,36 @@
         </div>
     </div>
 
+    <!-- Task Log Modal -->
+    <div class="modal-overlay" id="taskLogModal">
+        <div class="modal modal-lg">
+            <div class="modal-header">
+                <h3 id="taskLogTitle">Task Log</h3>
+                <span class="task-log-count" id="taskLogCount"></span>
+                <button class="modal-close" onclick="closeModal('taskLogModal')">&times;</button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="tlTaskKey">
+                <!-- Add log entry -->
+                <div class="tl-add">
+                    <textarea class="input tl-textarea" id="tlText" placeholder="What happened? Paste a screenshot here or type an update..." rows="3"></textarea>
+                    <div class="tl-attach hidden" id="tlAttach">
+                        <img id="tlAttachPreview" class="tl-attach-img">
+                        <button class="btn-icon danger" onclick="clearTlAttach()" title="Remove image">
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                        </button>
+                    </div>
+                    <div class="tl-add-actions">
+                        <span class="tl-hint">Ctrl+V to paste screenshot</span>
+                        <button class="btn btn-primary btn-sm" onclick="addTaskLog()">Add Log Entry</button>
+                    </div>
+                </div>
+                <!-- Log history -->
+                <div class="tl-history" id="tlHistory"></div>
+            </div>
+        </div>
+    </div>
+
     <!-- Orders History Panel -->
     <div class="modal-overlay" id="ordersPanel">
         <div class="modal modal-lg">
@@ -755,6 +785,6 @@
         <div class="rank-panel-result hidden" id="rankPanelResult"></div>
     </div>
 
-    <script src="app.js?v=20260331k"></script>
+    <script src="app.js?v=20260401a"></script>
 </body>
 </html>

@@ -569,6 +569,43 @@ const server = http.createServer(async (req, res) => {
         return;
     }
 
+    // --- Image upload for task logs ---
+    if (parsed.pathname === '/api/upload' && req.method === 'POST') {
+        const uploadsDir = path.join(__dirname, 'uploads');
+        if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir);
+
+        const chunks = [];
+        req.on('data', c => chunks.push(c));
+        req.on('end', () => {
+            try {
+                const buf = Buffer.concat(chunks);
+                const fileName = `log_${Date.now()}_${Math.random().toString(36).slice(2, 8)}.png`;
+                fs.writeFileSync(path.join(uploadsDir, fileName), buf);
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ success: true, url: `/uploads/${fileName}` }));
+            } catch (err) {
+                res.writeHead(500, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ error: err.message }));
+            }
+        });
+        return;
+    }
+
+    // --- Serve uploaded images ---
+    if (parsed.pathname.startsWith('/uploads/')) {
+        const filePath2 = path.join(__dirname, parsed.pathname);
+        if (!filePath2.startsWith(path.join(__dirname, 'uploads'))) {
+            res.writeHead(403); res.end('Forbidden'); return;
+        }
+        fs.readFile(filePath2, (err, data) => {
+            if (err) { res.writeHead(404); res.end('Not Found'); return; }
+            const ext2 = path.extname(filePath2);
+            res.writeHead(200, { 'Content-Type': MIME[ext2] || 'application/octet-stream' });
+            res.end(data);
+        });
+        return;
+    }
+
     // --- Proxy endpoint (Reddit, Ahrefs) ---
     if (parsed.pathname === '/api/proxy') {
         const targetUrl = parsed.searchParams.get('url');
