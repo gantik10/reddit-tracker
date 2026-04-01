@@ -606,6 +606,140 @@ const server = http.createServer(async (req, res) => {
         return;
     }
 
+    // --- DataForSEO SERP check (Live mode — instant) ---
+    if (parsed.pathname === '/api/df-live' && req.method === 'POST') {
+        const body = await readBody(req);
+        const { keyword, targetUrl, login, password } = body;
+        if (!keyword || !targetUrl || !login || !password) {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: 'Missing params' }));
+            return;
+        }
+
+        const postId = targetUrl.match(/comments\/([A-Za-z0-9]+)/i)?.[1]?.toLowerCase();
+        const auth = Buffer.from(`${login}:${password}`).toString('base64');
+        console.log(`[DataForSEO] Live check "${keyword}"...`);
+
+        try {
+            // Step 1: Regular Google search
+            const googleBody = JSON.stringify([{ keyword, location_code: 2840, language_code: 'en', depth: 10, device: 'desktop' }]);
+            const googleRaw = execSync(`curl -sL -X POST "https://api.dataforseo.com/v3/serp/google/organic/live/advanced" -H "Authorization: Basic ${auth}" -H "Content-Type: application/json" -d '${googleBody.replace(/'/g, "'\\''")}'`, { encoding: 'utf8', maxBuffer: 10*1024*1024, timeout: 30000 });
+            const googleData = JSON.parse(googleRaw);
+
+            if (googleData.status_code !== 20000) throw new Error(googleData.status_message || 'DataForSEO error');
+
+            const items = googleData.tasks?.[0]?.result?.[0]?.items || [];
+            const organic = items.filter(i => i.type === 'organic');
+
+            let googleRank = null;
+            const googleSerp = [];
+            const googleCompetitors = [];
+
+            organic.forEach((r, idx) => {
+                const pos = r.rank_group || (idx + 1);
+                const isTarget = !!(postId && r.url?.toLowerCase().includes(`comments/${postId}`));
+                if (isTarget && !googleRank) googleRank = pos;
+                googleSerp.push({ position: pos, url: r.url, title: r.title, snippet: r.description || '', displayedLink: r.breadcrumb || '', source: r.domain || '', favicon: '', isTarget });
+                if (r.url?.includes('reddit.com/r/') && r.url?.includes('/comments/')) {
+                    googleCompetitors.push({ position: pos, url: r.url, title: r.title, snippet: r.description || '' });
+                }
+            });
+
+            if (googleRank) {
+                console.log(`[DataForSEO] Found on Google #${googleRank}`);
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ success: true, type: 'google', rank: googleRank, redditRank: null, totalResults: organic.length, competitors: googleCompetitors, serpResults: googleSerp, serpQuery: keyword }));
+                return;
+            }
+
+            // Step 2: site:reddit.com (up to 30 results = 3 pages worth)
+            console.log(`[DataForSEO] Not on Google, checking site:reddit.com...`);
+            const redditBody = JSON.stringify([{ keyword: keyword + ' site:www.reddit.com', location_code: 2840, language_code: 'en', depth: 30, device: 'desktop' }]);
+            const redditRaw = execSync(`curl -sL -X POST "https://api.dataforseo.com/v3/serp/google/organic/live/advanced" -H "Authorization: Basic ${auth}" -H "Content-Type: application/json" -d '${redditBody.replace(/'/g, "'\\''")}'`, { encoding: 'utf8', maxBuffer: 10*1024*1024, timeout: 30000 });
+            const redditData = JSON.parse(redditRaw);
+
+            const redditItems = redditData.tasks?.[0]?.result?.[0]?.items || [];
+            const redditOrganic = redditItems.filter(i => i.type === 'organic');
+            let redditRank = null;
+            const redditCompetitors = [];
+            const redditSerp = [];
+
+            redditOrganic.forEach((r, idx) => {
+                const pos = r.rank_group || (idx + 1);
+                const isTarget = !!(postId && r.url?.toLowerCase().includes(`comments/${postId}`));
+                if (isTarget && !redditRank) redditRank = pos;
+                else if (!redditRank) redditCompetitors.push({ position: pos, url: r.url, title: r.title, snippet: r.description || '' });
+                redditSerp.push({ position: pos, url: r.url, title: r.title, snippet: r.description || '', displayedLink: r.breadcrumb || '', source: r.domain || '', favicon: '', isTarget });
+            });
+
+            console.log(`[DataForSEO] Reddit rank: ${redditRank || 'not found'}`);
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ success: true, type: 'reddit', rank: null, redditRank, totalResults: redditOrganic.length, competitors: redditCompetitors, serpResults: googleSerp, redditSerpResults: redditSerp, serpQuery: keyword }));
+        } catch (err) {
+            console.error(`[DataForSEO] Error: ${err.message}`);
+            res.writeHead(500, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: err.message }));
+        }
+        return;
+    }
+
+    // --- DataForSEO Queue check (Standard Queue — cheap, for auto-checks) ---
+    if (parsed.pathname === '/api/df-queue' && req.method === 'POST') {
+        const body = await readBody(req);
+        const { keyword, targetUrl, login, password } = body;
+        if (!keyword || !targetUrl || !login || !password) {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: 'Missing params' }));
+            return;
+        }
+
+        const auth = Buffer.from(`${login}:${password}`).toString('base64');
+        console.log(`[DataForSEO] Queue task "${keyword}"...`);
+
+        try {
+            // Post both tasks: regular + site:reddit.com
+            const tasks = [
+                { keyword, location_code: 2840, language_code: 'en', depth: 10, tag: `google|${targetUrl}` },
+                { keyword: keyword + ' site:www.reddit.com', location_code: 2840, language_code: 'en', depth: 30, tag: `reddit|${targetUrl}` }
+            ];
+            const raw = execSync(`curl -sL -X POST "https://api.dataforseo.com/v3/serp/google/organic/task_post" -H "Authorization: Basic ${auth}" -H "Content-Type: application/json" -d '${JSON.stringify(tasks).replace(/'/g, "'\\''")}'`, { encoding: 'utf8', maxBuffer: 5*1024*1024, timeout: 20000 });
+            const data = JSON.parse(raw);
+
+            const taskIds = (data.tasks || []).map(t => t.id).filter(Boolean);
+            console.log(`[DataForSEO] Queued ${taskIds.length} tasks: ${taskIds.join(', ')}`);
+
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ success: true, taskIds }));
+        } catch (err) {
+            res.writeHead(500, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: err.message }));
+        }
+        return;
+    }
+
+    // --- DataForSEO get queue results ---
+    if (parsed.pathname === '/api/df-result' && req.method === 'POST') {
+        const body = await readBody(req);
+        const { taskId, login, password } = body;
+        if (!taskId || !login || !password) {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: 'Missing params' }));
+            return;
+        }
+
+        const auth = Buffer.from(`${login}:${password}`).toString('base64');
+        try {
+            const raw = execSync(`curl -sL "https://api.dataforseo.com/v3/serp/google/organic/task_get/regular/${taskId}" -H "Authorization: Basic ${auth}"`, { encoding: 'utf8', maxBuffer: 10*1024*1024, timeout: 20000 });
+            const data = JSON.parse(raw);
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify(data));
+        } catch (err) {
+            res.writeHead(500, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: err.message }));
+        }
+        return;
+    }
+
     // --- Proxy endpoint (Reddit, Ahrefs) ---
     if (parsed.pathname === '/api/proxy') {
         const targetUrl = parsed.searchParams.get('url');
@@ -986,11 +1120,141 @@ server.listen(PORT, '0.0.0.0', () => {
   ╔══════════════════════════════════════════════╗
   ║   LK Media Group — Reddit Tracker           ║
   ║   → http://localhost:${PORT}                    ║
-  ║                                              ║
-  ║   Rank checker: Chromium + SOCKS5 proxy      ║
-  ║   3 parallel checks with fresh profiles      ║
-  ║                                              ║
+  ║   Auto rank check: every hour (DataForSEO)  ║
   ║   Press Ctrl+C to stop                       ║
   ╚══════════════════════════════════════════════╝
 `);
+    // Start hourly auto-check after 2 minutes, then every hour
+    setTimeout(autoRankCheck, 2 * 60 * 1000);
+    setInterval(autoRankCheck, 60 * 60 * 1000);
 });
+
+// ==========================================
+//  HOURLY AUTO RANK CHECK (Standard Queue)
+// ==========================================
+async function autoRankCheck() {
+    const DATA_FILE = path.join(__dirname, 'data.json');
+    let data;
+    try { data = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8')); } catch { return; }
+
+    const login = data.keys?.lk_df_login;
+    const password = data.keys?.lk_df_password;
+    if (!login || !password) {
+        console.log('[AutoRank] No DataForSEO credentials, skipping');
+        return;
+    }
+
+    const subs = data.subreddits || [];
+    const allKeywords = [];
+
+    subs.forEach(sub => {
+        (sub.moneyPosts || []).forEach(mp => {
+            (mp.googleKeywords || []).forEach((kw, kwIdx) => {
+                allKeywords.push({ subId: sub.id, subName: sub.name, mpId: mp.id, mpUrl: mp.url, kwIdx, keyword: kw.keyword });
+            });
+        });
+    });
+
+    if (!allKeywords.length) { console.log('[AutoRank] No keywords to check'); return; }
+    console.log(`[AutoRank] Checking ${allKeywords.length} keywords via Standard Queue...`);
+
+    const auth = Buffer.from(`${login}:${password}`).toString('base64');
+    const pendingTasks = [];
+
+    // Queue all tasks (2 per keyword: google + reddit)
+    for (const kw of allKeywords) {
+        try {
+            const tasks = [
+                { keyword: kw.keyword, location_code: 2840, language_code: 'en', depth: 10, tag: `google|${kw.mpUrl}|${kw.subId}|${kw.mpId}|${kw.kwIdx}` },
+                { keyword: kw.keyword + ' site:www.reddit.com', location_code: 2840, language_code: 'en', depth: 30, tag: `reddit|${kw.mpUrl}|${kw.subId}|${kw.mpId}|${kw.kwIdx}` }
+            ];
+            const raw = execSync(`curl -sL -X POST "https://api.dataforseo.com/v3/serp/google/organic/task_post" -H "Authorization: Basic ${auth}" -H "Content-Type: application/json" -d '${JSON.stringify(tasks).replace(/'/g, "'\\''")}'`, { encoding: 'utf8', maxBuffer: 5*1024*1024, timeout: 20000 });
+            const result = JSON.parse(raw);
+            (result.tasks || []).forEach(t => {
+                if (t.id) pendingTasks.push({ id: t.id, tag: t.data?.tag || '', keyword: kw.keyword });
+            });
+        } catch (e) {
+            console.log(`[AutoRank] Queue failed for "${kw.keyword}": ${e.message}`);
+        }
+        await new Promise(r => setTimeout(r, 200));
+    }
+
+    console.log(`[AutoRank] Queued ${pendingTasks.length} tasks, waiting 6 minutes for results...`);
+
+    // Wait for Standard Queue to process (avg 5 min)
+    await new Promise(r => setTimeout(r, 6 * 60 * 1000));
+
+    // Fetch results and update data.json
+    try { data = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8')); } catch { return; }
+
+    let updated = 0;
+    for (const task of pendingTasks) {
+        try {
+            const raw = execSync(`curl -sL "https://api.dataforseo.com/v3/serp/google/organic/task_get/regular/${task.id}" -H "Authorization: Basic ${auth}"`, { encoding: 'utf8', maxBuffer: 10*1024*1024, timeout: 20000 });
+            const result = JSON.parse(raw);
+            const items = result.tasks?.[0]?.result?.[0]?.items?.filter(i => i.type === 'organic') || [];
+            if (!items.length) continue;
+
+            const tagParts = task.tag.split('|');
+            const searchType = tagParts[0]; // google or reddit
+            const targetUrl = tagParts[1];
+            const subId = Number(tagParts[2]);
+            const mpId = Number(tagParts[3]);
+            const kwIdx = Number(tagParts[4]);
+            const postId = targetUrl?.match(/comments\/([A-Za-z0-9]+)/i)?.[1]?.toLowerCase();
+
+            const sub = data.subreddits?.find(s => s.id === subId);
+            const mp = sub?.moneyPosts?.find(p => p.id === mpId);
+            const kw = mp?.googleKeywords?.[kwIdx];
+            if (!kw) continue;
+
+            if (searchType === 'google') {
+                // Check if found on Google
+                let rank = null;
+                for (const item of items) {
+                    if (postId && item.url?.toLowerCase().includes(`comments/${postId}`)) {
+                        rank = item.rank_group || items.indexOf(item) + 1;
+                        break;
+                    }
+                }
+                if (rank) {
+                    if (!kw.history) kw.history = [];
+                    if (kw.rankType) kw.history.push({ rankType: kw.rankType, avgRank: kw.avgRank, date: kw.updatedAt });
+                    kw.rankType = 'google';
+                    kw.avgRank = rank;
+                    kw.rank = rank;
+                    kw.updatedAt = new Date().toISOString();
+                    updated++;
+                    console.log(`[AutoRank] "${kw.keyword}": Google #${rank}`);
+                }
+            } else if (searchType === 'reddit' && !kw.rankType?.includes('google') || (kw.updatedAt && new Date(kw.updatedAt) < new Date(Date.now() - 3600000))) {
+                // Only update reddit rank if we didn't already find it on Google in this cycle
+                let rank = null;
+                for (const item of items) {
+                    if (postId && item.url?.toLowerCase().includes(`comments/${postId}`)) {
+                        rank = item.rank_group || items.indexOf(item) + 1;
+                        break;
+                    }
+                }
+                if (!kw.history) kw.history = [];
+                if (kw.rankType && kw.avgRank) kw.history.push({ rankType: kw.rankType, avgRank: kw.avgRank, date: kw.updatedAt });
+                kw.rankType = rank ? 'reddit' : 'none';
+                kw.avgRank = rank;
+                kw.rank = rank;
+                kw.updatedAt = new Date().toISOString();
+                updated++;
+                console.log(`[AutoRank] "${kw.keyword}": ${rank ? 'Reddit #' + rank : 'Not found'}`);
+            }
+        } catch (e) {
+            console.log(`[AutoRank] Result fetch failed for ${task.id}: ${e.message}`);
+        }
+        await new Promise(r => setTimeout(r, 100));
+    }
+
+    if (updated) {
+        fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2), 'utf8');
+        console.log(`[AutoRank] Updated ${updated} keyword positions`);
+    } else {
+        console.log('[AutoRank] No updates');
+    }
+}

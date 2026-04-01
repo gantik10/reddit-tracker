@@ -148,7 +148,7 @@ const S = {
 
                 // 4. Collect API keys (shared across team)
                 const keys = {};
-                ['lk_ahrefs_key', 'lk_serp_key', 'lk_upvote_key', 'lk_dolphin_token', 'lk_dolphin_profiles'].forEach(k => {
+                ['lk_ahrefs_key', 'lk_serp_key', 'lk_df_login', 'lk_df_password', 'lk_upvote_key', 'lk_dolphin_token', 'lk_dolphin_profiles'].forEach(k => {
                     const v = localStorage.getItem(k);
                     if (v) keys[k] = v;
                     else if (serverData.keys?.[k]) keys[k] = serverData.keys[k]; // keep server key if local is empty
@@ -255,7 +255,7 @@ const S = {
                 ));
             }
             // Sync API keys: pull from server OR push local keys if server has none
-            const keyNames = ['lk_ahrefs_key', 'lk_serp_key', 'lk_upvote_key', 'lk_dolphin_token', 'lk_dolphin_profiles'];
+            const keyNames = ['lk_ahrefs_key', 'lk_serp_key', 'lk_df_login', 'lk_df_password', 'lk_upvote_key', 'lk_dolphin_token', 'lk_dolphin_profiles'];
             if (data.keys && Object.keys(data.keys).length) {
                 // Server has keys — restore to local
                 Object.entries(data.keys).forEach(([k, v]) => {
@@ -1261,6 +1261,8 @@ function deleteCurrentSubreddit() {
 function getAhrefsKey() { return localStorage.getItem('lk_ahrefs_key') || ''; }
 function getSerpApiKey() { return localStorage.getItem('lk_serp_key') || ''; }
 function getUpvoteShopKey() { return localStorage.getItem('lk_upvote_key') || ''; }
+function getDfLogin() { return localStorage.getItem('lk_df_login') || ''; }
+function getDfPassword() { return localStorage.getItem('lk_df_password') || ''; }
 function getDolphinToken() { return localStorage.getItem('lk_dolphin_token') || ''; }
 function getDolphinProfiles() {
     try { return JSON.parse(localStorage.getItem('lk_dolphin_profiles')) || []; } catch { return []; }
@@ -1269,13 +1271,16 @@ function getDolphinProfiles() {
 function openSettings() {
     document.getElementById('ahrefsKeyInput').value = getAhrefsKey();
     document.getElementById('serpApiKeyInput').value = getSerpApiKey();
+    document.getElementById('dfLoginInput').value = getDfLogin();
+    document.getElementById('dfPasswordInput').value = getDfPassword();
     document.getElementById('upvoteShopKeyInput').value = getUpvoteShopKey();
     document.getElementById('dolphinTokenInput').value = getDolphinToken();
 
     const status = document.getElementById('settingsStatus');
     const parts = [];
     if (getAhrefsKey()) parts.push('Ahrefs');
-    if (getSerpApiKey()) parts.push('SERP API');
+    if (getDfLogin()) parts.push('DataForSEO');
+    else if (getSerpApiKey()) parts.push('SerpAPI');
     if (getUpvoteShopKey()) parts.push('Upvote Shop');
     const profiles = getDolphinProfiles();
     if (getDolphinToken() && profiles.length) parts.push(`Dolphin (${profiles.length})`);
@@ -1304,10 +1309,14 @@ function saveSettings() {
         document.getElementById('dolphinProfile3').value,
     ].filter(p => p);
 
+    const dfLogin = document.getElementById('dfLoginInput').value.trim();
+    const dfPassword = document.getElementById('dfPasswordInput').value.trim();
     const upvoteKey = document.getElementById('upvoteShopKeyInput').value.trim();
 
     ahrefsKey ? localStorage.setItem('lk_ahrefs_key', ahrefsKey) : localStorage.removeItem('lk_ahrefs_key');
     serpKey ? localStorage.setItem('lk_serp_key', serpKey) : localStorage.removeItem('lk_serp_key');
+    dfLogin ? localStorage.setItem('lk_df_login', dfLogin) : localStorage.removeItem('lk_df_login');
+    dfPassword ? localStorage.setItem('lk_df_password', dfPassword) : localStorage.removeItem('lk_df_password');
     upvoteKey ? localStorage.setItem('lk_upvote_key', upvoteKey) : localStorage.removeItem('lk_upvote_key');
     dolphinToken ? localStorage.setItem('lk_dolphin_token', dolphinToken) : localStorage.removeItem('lk_dolphin_token');
     localStorage.setItem('lk_dolphin_profiles', JSON.stringify(profiles));
@@ -1435,7 +1444,21 @@ const NUM_CHECKS = 3; // 3 parallel checks with different proxy ports
 async function checkRankWithProxy(keyword, targetUrl, proxyIndex) {
     const serpKey = getSerpApiKey();
 
-    // Use SERP API if key is set (faster, no browser needed)
+    // DataForSEO Live mode (preferred — fast + cheap)
+    const dfLogin = getDfLogin();
+    const dfPassword = getDfPassword();
+    if (dfLogin && dfPassword) {
+        const res = await fetch(`${SERVER}/api/df-live`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ keyword, targetUrl, login: dfLogin, password: dfPassword })
+        });
+        const data = await res.json();
+        if (data.error) throw new Error(data.error);
+        return data;
+    }
+
+    // SerpAPI fallback
     if (serpKey) {
         const res = await fetch(`${SERVER}/api/serp-check`, {
             method: 'POST',

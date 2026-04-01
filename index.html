@@ -456,7 +456,22 @@
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
                         </button>
                     </div>
-                    <p class="settings-hint">For automated Google rank checking without any browser. Works from any device. Get a key from <a href="https://serpapi.com" target="_blank" style="color:var(--primary)">serpapi.com</a> or <a href="https://www.valueserp.com" target="_blank" style="color:var(--primary)">valueserp.com</a></p>
+                    <p class="settings-hint">For manual rank checks (fallback). Get a key from <a href="https://serpapi.com" target="_blank" style="color:var(--primary)">serpapi.com</a></p>
+                </div>
+                <div class="settings-divider-or"><span>DataForSEO (recommended)</span></div>
+                <div class="form-group">
+                    <label>DataForSEO Login</label>
+                    <input type="text" class="input" id="dfLoginInput" placeholder="your@email.com">
+                </div>
+                <div class="form-group">
+                    <label>DataForSEO Password</label>
+                    <div class="api-key-input-row">
+                        <input type="password" class="input" id="dfPasswordInput" placeholder="API password">
+                        <button class="btn-icon" onclick="toggleKeyVisibility('dfPasswordInput')" title="Show/hide">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                        </button>
+                    </div>
+                    <p class="settings-hint">Hourly auto-checks use Standard Queue ($0.0006/search). Manual checks use Live mode ($0.002/search). Get credentials from <a href="https://app.dataforseo.com/api-access" target="_blank" style="color:var(--primary)">app.dataforseo.com</a></p>
                 </div>
                 <div class="settings-divider-or"><span>Upvote Shop</span></div>
                 <div class="form-group">
@@ -821,6 +836,6 @@
         <div class="rank-panel-result hidden" id="rankPanelResult"></div>
     </div>
 
-    <script src="app.js?v=20260401f"></script>
+    <script src="app.js?v=20260401g"></script>
 </body>
 </html>
