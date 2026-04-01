@@ -170,27 +170,37 @@ const S = {
     // Merge subreddits: union by ID, local version wins if both exist
     _mergeSubs(local, server) {
         const byId = new Map();
-        // Server items first (will be overwritten by local)
         server.forEach(s => byId.set(s.id, s));
-        // Local items overwrite server
         local.forEach(s => byId.set(s.id, s));
-        // But for money posts within each sub, also merge by ID
+        // Deep merge money posts and their keyword histories
         for (const [id, localSub] of byId) {
             const serverSub = server.find(s => s.id === id);
             if (serverSub && localSub !== serverSub) {
-                // Merge money posts: keep all from both sides
+                // Merge money posts by ID
                 const localMps = localSub.moneyPosts || [];
                 const serverMps = serverSub.moneyPosts || [];
                 const mpMap = new Map();
-                serverMps.forEach(mp => mpMap.set(mp.id, mp));
-                localMps.forEach(mp => mpMap.set(mp.id, mp));
+                serverMps.forEach(mp => mpMap.set(mp.id, JSON.parse(JSON.stringify(mp))));
+                localMps.forEach(mp => {
+                    const serverMp = mpMap.get(mp.id);
+                    if (serverMp) {
+                        // Merge keyword histories: keep longer history
+                        const localKws = mp.googleKeywords || [];
+                        const serverKws = serverMp.googleKeywords || [];
+                        localKws.forEach((lk, ki) => {
+                            const sk = serverKws[ki];
+                            if (sk && sk.history?.length > (lk.history?.length || 0)) {
+                                lk.history = sk.history;
+                            }
+                        });
+                    }
+                    mpMap.set(mp.id, mp);
+                });
                 localSub.moneyPosts = Array.from(mpMap.values());
                 // Merge tasks
-                const localTasks = localSub.tasks || [];
-                const serverTasks = serverSub.tasks || [];
                 const taskMap = new Map();
-                serverTasks.forEach(t => taskMap.set(t.id, t));
-                localTasks.forEach(t => taskMap.set(t.id, t));
+                (serverSub.tasks || []).forEach(t => taskMap.set(t.id, t));
+                (localSub.tasks || []).forEach(t => taskMap.set(t.id, t));
                 localSub.tasks = Array.from(taskMap.values());
             }
         }
@@ -207,6 +217,11 @@ const S = {
 
     // Pull from server on load — merge, don't overwrite
     async pullFromServer() {
+        // Skip if a sync push is pending — local data is fresher
+        if (S._syncTimer || S._syncing) {
+            console.log('[Sync] Skip pull — push pending');
+            return true;
+        }
         try {
             const res = await fetch(`${window.location.origin}/api/data`);
             const data = await res.json();
