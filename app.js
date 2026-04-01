@@ -931,7 +931,7 @@ function buildGeneralTasksCard() {
         return `<div class="gt-row">
             <div class="task-checkbox ${checkClass}" onclick="event.stopPropagation();toggleGeneralTaskStatus(${t.id})"></div>
             <span class="gt-title ${t.status === 'Done' ? 'done-text' : ''}">${esc(t.title)}</span>
-            ${isRecurring ? '<span class="gt-recurring">Monthly</span>' : ''}
+            ${isRecurring ? `<span class="gt-recurring">${t.recurringDay === 'last' ? 'Last day' : t.recurringDay ? 'Day ' + t.recurringDay : 'Monthly'}</span>` : ''}
             ${logCount ? `<span class="task-log-badge" onclick="event.stopPropagation();openGeneralTaskLog(${t.id})">${logCount}</span>` : ''}
             ${member ? `<span class="home-task-avatar" style="background:${member.color || 'var(--primary)'}">${initials(member.name)}</span>` : ''}
         </div>`;
@@ -2564,6 +2564,7 @@ async function saveTask() {
         status: document.getElementById('taskStatus').value,
         dueDate: document.getElementById('taskDueDate').value,
         recurring: document.getElementById('taskRecurring').checked ? 'monthly' : null,
+        recurringDay: document.getElementById('taskRecurring').checked ? document.getElementById('taskRecurringDay').value : null,
     };
     if (imageUrl) taskData.image = imageUrl;
 
@@ -2634,6 +2635,8 @@ function editTask(type, parentId, taskId) {
     document.getElementById('taskStatus').value = task.status;
     document.getElementById('taskDueDate').value = task.dueDate || '';
     document.getElementById('taskRecurring').checked = !!task.recurring;
+    document.getElementById('recurringDay').style.display = task.recurring ? '' : 'none';
+    document.getElementById('taskRecurringDay').value = task.recurringDay || '1';
     _taskImage = null;
     clearTaskImg();
     if (task.image) {
@@ -3383,38 +3386,40 @@ openSubreddit = function(id) {
 // ==========================================
 function checkMonthlyReset() {
     const now = new Date();
-    const monthKey = `${now.getFullYear()}-${now.getMonth()}`;
+    const today = now.getDate();
+    const dayKey = `${now.getFullYear()}-${now.getMonth()}-${today}`;
     const lastReset = localStorage.getItem('lk_last_monthly_reset');
-    if (lastReset === monthKey) return; // already reset this month
+    if (lastReset === dayKey) return; // already checked today
 
-    console.log('[Monthly] Resetting recurring tasks...');
+    function shouldReset(task) {
+        if (task.recurring !== 'monthly' || task.status !== 'Done') return false;
+        const day = task.recurringDay || '1';
+        if (day === 'last') {
+            // Last day of month: check if today is last day
+            const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+            return today === lastDay;
+        }
+        return today === Number(day);
+    }
+
     let count = 0;
 
     // Reset general tasks
     let gt = getGeneralTasks();
-    gt.forEach(t => {
-        if (t.recurring === 'monthly' && t.status === 'Done') {
-            t.status = 'To Do';
-            count++;
-        }
-    });
+    gt.forEach(t => { if (shouldReset(t)) { t.status = 'To Do'; count++; } });
     if (count) S.set('general_tasks', gt);
 
     // Reset subreddit + post tasks
     let subs = S.get('subreddits');
     subs.forEach(sub => {
-        (sub.tasks || []).forEach(t => {
-            if (t.recurring === 'monthly' && t.status === 'Done') { t.status = 'To Do'; count++; }
-        });
+        (sub.tasks || []).forEach(t => { if (shouldReset(t)) { t.status = 'To Do'; count++; } });
         (sub.moneyPosts || []).forEach(mp => {
-            (mp.tasks || []).forEach(t => {
-                if (t.recurring === 'monthly' && t.status === 'Done') { t.status = 'To Do'; count++; }
-            });
+            (mp.tasks || []).forEach(t => { if (shouldReset(t)) { t.status = 'To Do'; count++; } });
         });
     });
-    if (count) S.set('subreddits', subs);
+    if (count > 0) S.set('subreddits', subs);
 
-    localStorage.setItem('lk_last_monthly_reset', monthKey);
+    localStorage.setItem('lk_last_monthly_reset', dayKey);
     if (count) toast('info', 'Monthly reset', `${count} recurring task${count > 1 ? 's' : ''} reset to To Do`);
 }
 

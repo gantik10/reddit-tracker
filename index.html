@@ -569,9 +569,23 @@
                 <div class="form-row">
                     <div class="form-group">
                         <label>
-                            <input type="checkbox" id="taskRecurring"> Monthly recurring task
+                            <input type="checkbox" id="taskRecurring" onchange="document.getElementById('recurringDay').style.display=this.checked?'':'none'"> Monthly recurring task
                         </label>
-                        <p class="settings-hint" style="margin-top:4px;">Task resets to "To Do" on the 1st of each month</p>
+                    </div>
+                    <div class="form-group" id="recurringDay" style="display:none">
+                        <label>Repeats on day</label>
+                        <select class="input" id="taskRecurringDay">
+                            <option value="1">1st</option><option value="2">2nd</option><option value="3">3rd</option>
+                            <option value="4">4th</option><option value="5">5th</option><option value="6">6th</option>
+                            <option value="7">7th</option><option value="8">8th</option><option value="9">9th</option>
+                            <option value="10">10th</option><option value="11">11th</option><option value="12">12th</option>
+                            <option value="13">13th</option><option value="14">14th</option><option value="15">15th</option>
+                            <option value="16">16th</option><option value="17">17th</option><option value="18">18th</option>
+                            <option value="19">19th</option><option value="20">20th</option><option value="21">21st</option>
+                            <option value="22">22nd</option><option value="23">23rd</option><option value="24">24th</option>
+                            <option value="25">25th</option><option value="26">26th</option><option value="27">27th</option>
+                            <option value="28">28th</option><option value="last">Last day</option>
+                        </select>
                     </div>
                 </div>
             </div>
@@ -807,6 +821,6 @@
         <div class="rank-panel-result hidden" id="rankPanelResult"></div>
     </div>
 
-    <script src="app.js?v=20260401c"></script>
+    <script src="app.js?v=20260401d"></script>
 </body>
 </html>
