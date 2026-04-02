@@ -1319,8 +1319,10 @@ async function autoRankCheck() {
                 updated++;
                 console.log(`[AutoRank] "${kw.keyword}": Google #${rank}`);
 
-                // Telegram: only notify ONCE when first appearing on Google
-                if (prevType !== 'google') {
+                // Track consecutive Google appearances — only alert after 3 in a row
+                kw._googleStreak = (kw._googleStreak || 0) + 1;
+                kw._notGoogleStreak = 0;
+                if (prevType !== 'google' && kw._googleStreak >= 3) {
                     await sendTelegramAlert(data,
                         `🟢 *GOOGLE RANKING*\n\n` +
                         `Keyword: *${escMd(kw.keyword)}*\n` +
@@ -1332,8 +1334,11 @@ async function autoRankCheck() {
                 }
 
             } else if (searchType === 'google' && !rank) {
-                // Mark that Google was lost — will send alert after Reddit result
-                if (kw.rankType === 'google') {
+                // Track consecutive non-Google checks
+                kw._notGoogleStreak = (kw._notGoogleStreak || 0) + 1;
+                kw._googleStreak = 0;
+                // Only alert loss after 3 consecutive misses
+                if (kw.rankType === 'google' && kw._notGoogleStreak >= 3) {
                     kw._lostGoogle = kw.avgRank;
                 }
 
@@ -1578,18 +1583,25 @@ async function serverCheckMoneyComments() {
 
                 console.log(`[MC-Server] r/${sub.name} "${mp.title?.slice(0, 30)}": #${position || '?'}/${totalTopLevel}`);
 
-                // Telegram alert if lost #1
+                // Telegram alert if lost #1 — only after 2 consecutive checks not at #1
                 if (position && position > 1) {
-                    const commentLink = mp.url.replace(/\/$/, '') + '/' + mc.commentId + '/';
-                    await sendTelegramAlert(data,
-                        `🔴 *MONEY COMMENT NOT #1*\n\n` +
-                        `Position: #${oldPos || '?'} ➜ *#${position}*\n` +
-                        `Post: ${escMd(mp.title?.slice(0, 60))}\n` +
-                        `Subreddit: r/${escMd(sub.name)}\n` +
-                        `Author: u/${escMd(commentData?.author || '?')}\n` +
-                        `Upvotes: ${commentData?.upvotes || 0}\n` +
-                        `🔗 ${commentLink}`
-                    );
+                    mc._notFirstStreak = (mc._notFirstStreak || 0) + 1;
+                    if (mc._notFirstStreak >= 2 && mc._lastAlertPos !== position) {
+                        mc._lastAlertPos = position;
+                        const commentLink = mp.url.replace(/\/$/, '') + '/' + mc.commentId + '/';
+                        await sendTelegramAlert(data,
+                            `🔴 *MONEY COMMENT NOT #1*\n\n` +
+                            `Position: #${oldPos || '?'} ➜ *#${position}*\n` +
+                            `Post: ${escMd(mp.title?.slice(0, 60))}\n` +
+                            `Subreddit: r/${escMd(sub.name)}\n` +
+                            `Author: u/${escMd(commentData?.author || '?')}\n` +
+                            `Upvotes: ${commentData?.upvotes || 0}\n` +
+                            `🔗 ${commentLink}`
+                        );
+                    }
+                } else if (position === 1) {
+                    mc._notFirstStreak = 0;
+                    delete mc._lastAlertPos;
                 }
 
             } catch (e) {
