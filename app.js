@@ -478,7 +478,7 @@ async function proxyFetch(targetUrl, extraHeaders = {}) {
 }
 
 async function redditFetch(endpoint) {
-    return proxyFetch(`https://www.reddit.com${endpoint}`);
+    return proxyFetch(`https://oauth.reddit.com${endpoint}`);
 }
 
 // ==========================================
