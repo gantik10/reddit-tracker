@@ -293,54 +293,80 @@
                         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>
                         Home
                     </button>
-                    <h1 class="tb-title">Comment Generator</h1>
+                    <h1 class="tb-title">Comment Workspace</h1>
                 </div>
             </div>
 
-            <!-- Step 1: Select post -->
-            <div class="cg-section" id="cgStep1">
-                <div class="cg-step-header">
-                    <span class="cg-step-num">1</span>
-                    <span class="cg-step-title">Select a post</span>
+            <div class="cg-layout">
+                <!-- Sidebar: subreddits & posts -->
+                <div class="cg-sidebar">
+                    <div class="cg-sidebar-header">Posts</div>
+                    <div class="cg-sidebar-list" id="cgSidebarList"></div>
                 </div>
-                <select class="input" id="cgPostSelect" onchange="cgLoadComments()" style="max-width:600px;">
-                    <option value="">Choose a money post...</option>
-                </select>
-            </div>
 
-            <!-- Step 2: Pick reference comments -->
-            <div class="cg-section hidden" id="cgStep2">
-                <div class="cg-step-header">
-                    <span class="cg-step-num">2</span>
-                    <span class="cg-step-title">Select reference comments (AI will learn from these)</span>
-                </div>
-                <div class="cg-ref-list" id="cgRefList"></div>
-            </div>
-
-            <!-- Step 3: Style guide -->
-            <div class="cg-section hidden" id="cgStep3">
-                <div class="cg-step-header">
-                    <span class="cg-step-num">3</span>
-                    <span class="cg-step-title">Style instructions (optional)</span>
-                </div>
-                <textarea class="input cg-style-input" id="cgStyleGuide" rows="3" placeholder="e.g. Mix short and long comments. Some should ask follow-up questions. Include personal experience stories. Mention the product naturally..."></textarea>
-                <div class="cg-gen-row">
-                    <div class="form-group" style="max-width:120px;">
-                        <label>How many?</label>
-                        <input type="number" class="input" id="cgCount" value="10" min="1" max="50">
+                <!-- Main workspace -->
+                <div class="cg-workspace" id="cgWorkspace">
+                    <div class="cg-empty-ws" id="cgEmptyWs">
+                        <p>Select a post from the sidebar to manage its comments</p>
                     </div>
-                    <button class="btn btn-primary" onclick="cgGenerate()" id="cgGenBtn">Generate Comments</button>
-                </div>
-            </div>
 
-            <!-- Step 4: Generated comments -->
-            <div class="cg-section hidden" id="cgStep4">
-                <div class="cg-step-header">
-                    <span class="cg-step-num">4</span>
-                    <span class="cg-step-title">Generated Comments</span>
-                    <span class="cg-stats" id="cgStats"></span>
+                    <!-- Post workspace (hidden until post selected) -->
+                    <div class="hidden" id="cgPostWs">
+                        <div class="cg-post-header" id="cgPostHeader"></div>
+
+                        <!-- Tabs: Our Comments / Live Comments / Generate -->
+                        <div class="cg-tabs">
+                            <button class="cg-tab active" onclick="cgSetTab('our')" id="cgTabOur">Our Comments</button>
+                            <button class="cg-tab" onclick="cgSetTab('live')" id="cgTabLive">Live Comments</button>
+                            <button class="cg-tab" onclick="cgSetTab('generate')" id="cgTabGen">Generate</button>
+                        </div>
+
+                        <!-- Tab: Our Comments (managed comment plan) -->
+                        <div class="cg-tab-content" id="cgTabContentOur">
+                            <div class="cg-toolbar">
+                                <button class="btn btn-sm btn-primary" onclick="cgAddComment()">+ Add Comment</button>
+                                <button class="btn btn-sm btn-ghost" onclick="cgImportPlan()">Import Plan (paste text)</button>
+                                <span class="cg-stats" id="cgOurStats"></span>
+                            </div>
+                            <div id="cgOurList"></div>
+                        </div>
+
+                        <!-- Tab: Live Comments (from Reddit) -->
+                        <div class="cg-tab-content hidden" id="cgTabContentLive">
+                            <div class="cg-toolbar">
+                                <button class="btn btn-sm btn-ghost" onclick="cgFetchLive()">Refresh from Reddit</button>
+                                <span class="cg-stats" id="cgLiveStats"></span>
+                            </div>
+                            <div id="cgLiveList"></div>
+                        </div>
+
+                        <!-- Tab: Generate -->
+                        <div class="cg-tab-content hidden" id="cgTabContentGen">
+                            <div class="cg-section">
+                                <div class="cg-step-header">
+                                    <span class="cg-step-title">Style reference (paste existing comments or style guide)</span>
+                                </div>
+                                <textarea class="input cg-style-input" id="cgStyleGuide" rows="5" placeholder="Paste your comment plan here, or describe the style you want..."></textarea>
+                            </div>
+                            <div class="cg-gen-row">
+                                <div class="form-group" style="max-width:120px;">
+                                    <label>How many?</label>
+                                    <input type="number" class="input" id="cgCount" value="10" min="1" max="50">
+                                </div>
+                                <div class="form-group" style="max-width:180px;">
+                                    <label>Type</label>
+                                    <select class="input" id="cgGenType">
+                                        <option value="standalone">Standalone comments</option>
+                                        <option value="dialogue">Dialogue pairs (debate)</option>
+                                        <option value="mix">Mix of both</option>
+                                    </select>
+                                </div>
+                                <button class="btn btn-primary" onclick="cgGenerate()" id="cgGenBtn">Generate</button>
+                            </div>
+                            <div id="cgGenResults"></div>
+                        </div>
+                    </div>
                 </div>
-                <div class="cg-gen-list" id="cgGenList"></div>
             </div>
         </main>
 
@@ -923,6 +949,6 @@
         <div class="rank-panel-result hidden" id="rankPanelResult"></div>
     </div>
 
-    <script src="app.js?v=20260402e"></script>
+    <script src="app.js?v=20260402f"></script>
 </body>
 </html>
