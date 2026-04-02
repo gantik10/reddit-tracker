@@ -1206,6 +1206,9 @@ server.listen(PORT, '0.0.0.0', () => {
     // Start hourly auto-check after 2 minutes, then every hour
     setTimeout(autoRankCheck, 2 * 60 * 1000);
     setInterval(autoRankCheck, 60 * 60 * 1000);
+    // Money comment check: every hour, starts 3 min after boot
+    setTimeout(serverCheckMoneyComments, 3 * 60 * 1000);
+    setInterval(serverCheckMoneyComments, 60 * 60 * 1000);
 });
 
 // ==========================================
@@ -1510,5 +1513,95 @@ async function sendTelegramAlert(data, message) {
         console.log(`[Telegram] Sent: ${message.slice(0, 60)}`);
     } catch (e) {
         console.log(`[Telegram] Failed: ${e.message}`);
+    }
+}
+
+// ==========================================
+//  SERVER-SIDE MONEY COMMENT CHECK (hourly)
+// ==========================================
+async function serverCheckMoneyComments() {
+    const DATA_FILE = path.join(__dirname, 'data.json');
+    let data;
+    try { data = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8')); } catch { return; }
+
+    const subs = data.subreddits || [];
+    let updated = 0;
+
+    for (const sub of subs) {
+        for (const mp of (sub.moneyPosts || [])) {
+            if (!mp.moneyComment?.commentId || !mp.url) continue;
+            const postId = mp.url.match(/comments\/([A-Za-z0-9]+)/i)?.[1];
+            if (!postId) continue;
+
+            try {
+                const raw = httpsRequest(`https://oauth.reddit.com/comments/${postId}.json?limit=25`).data;
+                const jsonData = JSON.parse(raw);
+                const comments = jsonData?.[1]?.data?.children || [];
+
+                let position = null;
+                let totalTopLevel = 0;
+                let commentData = null;
+
+                for (let i = 0; i < comments.length; i++) {
+                    const c = comments[i];
+                    if (c.kind !== 't1') continue;
+                    totalTopLevel++;
+                    if (c.data.id === mp.moneyComment.commentId || c.data.name === `t1_${mp.moneyComment.commentId}`) {
+                        position = totalTopLevel;
+                        commentData = {
+                            author: c.data.author,
+                            upvotes: c.data.ups || c.data.score || 0,
+                            replies: c.data.replies?.data?.children?.length || 0,
+                        };
+                    }
+                }
+
+                const mc = mp.moneyComment;
+                const oldPos = mc.position;
+
+                // Save to history
+                if (mc.position) {
+                    if (!mc.history) mc.history = [];
+                    mc.history.push({
+                        position: mc.position, upvotes: mc.upvotes,
+                        totalTopLevel: mc.totalTopLevel, date: mc.checkedAt
+                    });
+                }
+
+                mc.position = position;
+                mc.totalTopLevel = totalTopLevel;
+                mc.upvotes = commentData?.upvotes || 0;
+                mc.author = commentData?.author || mc.author;
+                mc.replies = commentData?.replies || 0;
+                mc.checkedAt = new Date().toISOString();
+                updated++;
+
+                console.log(`[MC-Server] r/${sub.name} "${mp.title?.slice(0, 30)}": #${position || '?'}/${totalTopLevel}`);
+
+                // Telegram alert if lost #1
+                if (position && position > 1) {
+                    const commentLink = mp.url.replace(/\/$/, '') + '/' + mc.commentId + '/';
+                    await sendTelegramAlert(data,
+                        `🔴 *MONEY COMMENT NOT #1*\n\n` +
+                        `Position: #${oldPos || '?'} ➜ *#${position}*\n` +
+                        `Post: ${escMd(mp.title?.slice(0, 60))}\n` +
+                        `Subreddit: r/${escMd(sub.name)}\n` +
+                        `Author: u/${escMd(commentData?.author || '?')}\n` +
+                        `Upvotes: ${commentData?.upvotes || 0}\n` +
+                        `🔗 ${commentLink}`
+                    );
+                }
+
+            } catch (e) {
+                console.log(`[MC-Server] Failed r/${sub.name} post ${mp.id}: ${e.message}`);
+            }
+
+            await new Promise(r => setTimeout(r, 2000));
+        }
+    }
+
+    if (updated) {
+        fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2), 'utf8');
+        console.log(`[MC-Server] Checked ${updated} money comments`);
     }
 }
