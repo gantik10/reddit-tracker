@@ -35,6 +35,7 @@
             <div class="header-actions">
                 <button class="btn btn-primary" id="addSubredditBtn" onclick="openAddSubreddit()">+ Add Subreddit</button>
                 <button class="btn btn-ghost" id="tasksNavBtn" onclick="openTaskBoard()">Tasks</button>
+                <button class="btn btn-ghost" onclick="openCommentGen()">Comments</button>
                 <button class="btn btn-ghost" onclick="openUpvoteShop()" id="upvoteNavBtn" style="display:none">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
                     Buy Votes
@@ -284,6 +285,65 @@
             </div>
         </main>
 
+        <!-- COMMENT GENERATOR -->
+        <main class="main-content hidden" id="commentGenView">
+            <div class="tb-header">
+                <div class="tb-header-left">
+                    <button class="btn-back" onclick="goHome()">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>
+                        Home
+                    </button>
+                    <h1 class="tb-title">Comment Generator</h1>
+                </div>
+            </div>
+
+            <!-- Step 1: Select post -->
+            <div class="cg-section" id="cgStep1">
+                <div class="cg-step-header">
+                    <span class="cg-step-num">1</span>
+                    <span class="cg-step-title">Select a post</span>
+                </div>
+                <select class="input" id="cgPostSelect" onchange="cgLoadComments()" style="max-width:600px;">
+                    <option value="">Choose a money post...</option>
+                </select>
+            </div>
+
+            <!-- Step 2: Pick reference comments -->
+            <div class="cg-section hidden" id="cgStep2">
+                <div class="cg-step-header">
+                    <span class="cg-step-num">2</span>
+                    <span class="cg-step-title">Select reference comments (AI will learn from these)</span>
+                </div>
+                <div class="cg-ref-list" id="cgRefList"></div>
+            </div>
+
+            <!-- Step 3: Style guide -->
+            <div class="cg-section hidden" id="cgStep3">
+                <div class="cg-step-header">
+                    <span class="cg-step-num">3</span>
+                    <span class="cg-step-title">Style instructions (optional)</span>
+                </div>
+                <textarea class="input cg-style-input" id="cgStyleGuide" rows="3" placeholder="e.g. Mix short and long comments. Some should ask follow-up questions. Include personal experience stories. Mention the product naturally..."></textarea>
+                <div class="cg-gen-row">
+                    <div class="form-group" style="max-width:120px;">
+                        <label>How many?</label>
+                        <input type="number" class="input" id="cgCount" value="10" min="1" max="50">
+                    </div>
+                    <button class="btn btn-primary" onclick="cgGenerate()" id="cgGenBtn">Generate Comments</button>
+                </div>
+            </div>
+
+            <!-- Step 4: Generated comments -->
+            <div class="cg-section hidden" id="cgStep4">
+                <div class="cg-step-header">
+                    <span class="cg-step-num">4</span>
+                    <span class="cg-step-title">Generated Comments</span>
+                    <span class="cg-stats" id="cgStats"></span>
+                </div>
+                <div class="cg-gen-list" id="cgGenList"></div>
+            </div>
+        </main>
+
     <!-- ===== MODALS ===== -->
 
     <!-- Add Subreddit — SIMPLE: just paste a link -->
@@ -484,6 +544,17 @@
                     </div>
                     <p class="settings-hint">For buying upvotes/downvotes directly from the dashboard. Get token from <a href="https://panel.upvote.shop/settings" target="_blank" style="color:var(--primary)">panel.upvote.shop/settings</a></p>
                     <div class="upvote-balance" id="upvoteBalance"></div>
+                </div>
+                <div class="settings-divider-or"><span>AI Comment Generator</span></div>
+                <div class="form-group">
+                    <label>Claude API Key (for comment generation)</label>
+                    <div class="api-key-input-row">
+                        <input type="password" class="input" id="claudeKeyInput" placeholder="sk-ant-...">
+                        <button class="btn-icon" onclick="toggleKeyVisibility('claudeKeyInput')" title="Show/hide">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                        </button>
+                    </div>
+                    <p class="settings-hint">Get from <a href="https://console.anthropic.com/settings/keys" target="_blank" style="color:var(--primary)">console.anthropic.com</a></p>
                 </div>
                 <div class="settings-divider-or"><span>Telegram Notifications</span></div>
                 <div class="form-group">
@@ -852,6 +923,6 @@
         <div class="rank-panel-result hidden" id="rankPanelResult"></div>
     </div>
 
-    <script src="app.js?v=20260402d"></script>
+    <script src="app.js?v=20260402e"></script>
 </body>
 </html>

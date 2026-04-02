@@ -761,6 +761,81 @@ const server = http.createServer(async (req, res) => {
         return;
     }
 
+    // --- Comment Generator (Claude API) ---
+    if (parsed.pathname === '/api/generate-comments' && req.method === 'POST') {
+        const body = await readBody(req);
+        const { referenceComments, postTitle, postBody, subreddit, count, styleGuide, apiKey } = body;
+
+        if (!referenceComments?.length || !postTitle || !apiKey) {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: 'Missing required fields' }));
+            return;
+        }
+
+        console.log(`[CommentGen] Generating ${count} comments for "${postTitle.slice(0, 40)}..."`);
+
+        try {
+            const refText = referenceComments.map((c, i) => `Comment ${i + 1} (by u/${c.author}, ${c.upvotes} upvotes):\n${c.body}`).join('\n\n');
+
+            const prompt = `You are generating Reddit comments for a post in r/${subreddit}.
+
+POST TITLE: ${postTitle}
+${postBody ? `POST BODY: ${postBody.slice(0, 500)}` : ''}
+
+REFERENCE COMMENTS (match this style, tone, and quality):
+${refText}
+
+${styleGuide ? `STYLE INSTRUCTIONS: ${styleGuide}` : ''}
+
+RULES:
+- Generate exactly ${count} unique comments
+- Each comment must be from a DIFFERENT fictional persona with a unique voice
+- Comments should feel like real Reddit users — casual, authentic, not salesy
+- Mix comment lengths: some short (1-2 sentences), some medium (3-4), some longer
+- Include personal experiences, opinions, questions, recommendations naturally
+- Some comments should agree, some should add nuance, some ask questions
+- Use Reddit-style language (e.g. "honestly", "ngl", "in my experience", etc.)
+- The comments should help the post rank in Google — include relevant keywords naturally
+- Do NOT make comments sound like they're from the same person
+- Do NOT use marketing language or be too promotional
+- Each persona should have a believable Reddit-style username
+
+Return as a JSON array of objects with fields: "username", "comment"
+Return ONLY the JSON array, no other text.`;
+
+            const claudeBody = JSON.stringify({
+                model: 'claude-sonnet-4-20250514',
+                max_tokens: 4096,
+                messages: [{ role: 'user', content: prompt }]
+            });
+
+            const tmpFile = `/tmp/cg_${Date.now()}.json`;
+            fs.writeFileSync(tmpFile, claudeBody);
+
+            const raw = execSync(`curl -sL -X POST "https://api.anthropic.com/v1/messages" -H "x-api-key: ${apiKey}" -H "anthropic-version: 2023-06-01" -H "Content-Type: application/json" -d @${tmpFile}`, { encoding: 'utf8', maxBuffer: 10*1024*1024, timeout: 60000 });
+            fs.unlinkSync(tmpFile);
+
+            const result = JSON.parse(raw);
+            if (result.error) throw new Error(result.error.message || JSON.stringify(result.error));
+
+            const content = result.content?.[0]?.text || '';
+            // Extract JSON array from response
+            const jsonMatch = content.match(/\[[\s\S]*\]/);
+            if (!jsonMatch) throw new Error('Failed to parse AI response');
+
+            const comments = JSON.parse(jsonMatch[0]);
+            console.log(`[CommentGen] Generated ${comments.length} comments`);
+
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ success: true, comments }));
+        } catch (err) {
+            console.error(`[CommentGen] Error: ${err.message}`);
+            res.writeHead(500, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: err.message }));
+        }
+        return;
+    }
+
     // --- Proxy endpoint (Reddit, Ahrefs) ---
     if (parsed.pathname === '/api/proxy') {
         const targetUrl = parsed.searchParams.get('url');

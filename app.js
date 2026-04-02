@@ -148,7 +148,7 @@ const S = {
 
                 // 4. Collect API keys (shared across team)
                 const keys = {};
-                ['lk_ahrefs_key', 'lk_serp_key', 'lk_df_login', 'lk_df_password', 'lk_telegram_bot', 'lk_telegram_chat', 'lk_upvote_key', 'lk_dolphin_token', 'lk_dolphin_profiles'].forEach(k => {
+                ['lk_ahrefs_key', 'lk_serp_key', 'lk_df_login', 'lk_df_password', 'lk_claude_key', 'lk_telegram_bot', 'lk_telegram_chat', 'lk_upvote_key', 'lk_dolphin_token', 'lk_dolphin_profiles'].forEach(k => {
                     const v = localStorage.getItem(k);
                     if (v) keys[k] = v;
                     else if (serverData.keys?.[k]) keys[k] = serverData.keys[k]; // keep server key if local is empty
@@ -158,7 +158,7 @@ const S = {
                 await fetch(`${window.location.origin}/api/data`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ subreddits: merged, team: mergedTeam, keys, uv_orders: mergedOrders, general_tasks: S.get('general_tasks') })
+                    body: JSON.stringify({ subreddits: merged, team: mergedTeam, keys, uv_orders: mergedOrders, general_tasks: S.get('general_tasks'), cg_batches: S.get('cg_batches') })
                 });
             } catch (err) {
                 console.log('[Sync] Failed:', err.message);
@@ -264,6 +264,9 @@ const S = {
                 localGt.forEach(t => gtMap.set(t.id, t));
                 localStorage.setItem('lk_general_tasks', JSON.stringify(Array.from(gtMap.values())));
             }
+            if (data.cg_batches?.length) {
+                localStorage.setItem('lk_cg_batches', JSON.stringify(data.cg_batches));
+            }
             if (data.uv_orders?.length) {
                 const localOrders = S.get('uv_orders');
                 const orderMap = new Map();
@@ -274,7 +277,7 @@ const S = {
                 ));
             }
             // Sync API keys: pull from server OR push local keys if server has none
-            const keyNames = ['lk_ahrefs_key', 'lk_serp_key', 'lk_df_login', 'lk_df_password', 'lk_telegram_bot', 'lk_telegram_chat', 'lk_upvote_key', 'lk_dolphin_token', 'lk_dolphin_profiles'];
+            const keyNames = ['lk_ahrefs_key', 'lk_serp_key', 'lk_df_login', 'lk_df_password', 'lk_claude_key', 'lk_telegram_bot', 'lk_telegram_chat', 'lk_upvote_key', 'lk_dolphin_token', 'lk_dolphin_profiles'];
             if (data.keys && Object.keys(data.keys).length) {
                 // Server has keys — restore to local
                 Object.entries(data.keys).forEach(([k, v]) => {
@@ -1291,6 +1294,7 @@ function getSerpApiKey() { return localStorage.getItem('lk_serp_key') || ''; }
 function getUpvoteShopKey() { return localStorage.getItem('lk_upvote_key') || ''; }
 function getDfLogin() { return localStorage.getItem('lk_df_login') || ''; }
 function getDfPassword() { return localStorage.getItem('lk_df_password') || ''; }
+function getClaudeKey() { return localStorage.getItem('lk_claude_key') || ''; }
 function getDolphinToken() { return localStorage.getItem('lk_dolphin_token') || ''; }
 function getDolphinProfiles() {
     try { return JSON.parse(localStorage.getItem('lk_dolphin_profiles')) || []; } catch { return []; }
@@ -1301,6 +1305,7 @@ function openSettings() {
     document.getElementById('serpApiKeyInput').value = getSerpApiKey();
     document.getElementById('dfLoginInput').value = getDfLogin();
     document.getElementById('dfPasswordInput').value = getDfPassword();
+    document.getElementById('claudeKeyInput').value = getClaudeKey();
     document.getElementById('telegramBotInput').value = localStorage.getItem('lk_telegram_bot') || '';
     document.getElementById('telegramChatInput').value = localStorage.getItem('lk_telegram_chat') || '';
     document.getElementById('upvoteShopKeyInput').value = getUpvoteShopKey();
@@ -1347,6 +1352,8 @@ function saveSettings() {
     serpKey ? localStorage.setItem('lk_serp_key', serpKey) : localStorage.removeItem('lk_serp_key');
     dfLogin ? localStorage.setItem('lk_df_login', dfLogin) : localStorage.removeItem('lk_df_login');
     dfPassword ? localStorage.setItem('lk_df_password', dfPassword) : localStorage.removeItem('lk_df_password');
+    const claudeKey = document.getElementById('claudeKeyInput').value.trim();
+    claudeKey ? localStorage.setItem('lk_claude_key', claudeKey) : localStorage.removeItem('lk_claude_key');
     const tgBot = document.getElementById('telegramBotInput').value.trim();
     const tgChat = document.getElementById('telegramChatInput').value.trim();
     tgBot ? localStorage.setItem('lk_telegram_bot', tgBot) : localStorage.removeItem('lk_telegram_bot');
@@ -3444,6 +3451,7 @@ function openAddGlobalTask() {
 const _origGoHome = goHome;
 goHome = function() {
     document.getElementById('taskBoardView').classList.add('hidden');
+    document.getElementById('commentGenView').classList.add('hidden');
     _origGoHome();
 };
 
@@ -3451,8 +3459,289 @@ goHome = function() {
 const _origOpenSub = openSubreddit;
 openSubreddit = function(id) {
     document.getElementById('taskBoardView').classList.add('hidden');
+    document.getElementById('commentGenView').classList.add('hidden');
     _origOpenSub(id);
 };
+
+// ==========================================
+//  COMMENT GENERATOR
+// ==========================================
+let _cgSelectedRefs = [];
+let _cgPostData = null;
+
+function openCommentGen() {
+    currentSubId = null;
+    document.getElementById('homeView').classList.add('hidden');
+    document.getElementById('detailView').classList.add('hidden');
+    document.getElementById('taskBoardView').classList.add('hidden');
+    document.getElementById('commentGenView').classList.add('hidden');
+    document.getElementById('commentGenView').classList.remove('hidden');
+    document.getElementById('addSubredditBtn').classList.add('hidden');
+
+    // Populate post dropdown
+    const sel = document.getElementById('cgPostSelect');
+    const subs = S.get('subreddits');
+    sel.innerHTML = '<option value="">Choose a money post...</option>';
+    subs.forEach(sub => {
+        (sub.moneyPosts || []).forEach(mp => {
+            sel.innerHTML += `<option value="${sub.id}|${mp.id}">r/${esc(sub.name)} — ${esc(mp.title.slice(0, 50))}</option>`;
+        });
+    });
+
+    // Load saved style guide
+    document.getElementById('cgStyleGuide').value = localStorage.getItem('lk_cg_style') || '';
+
+    // Hide steps 2-4
+    document.getElementById('cgStep2').classList.add('hidden');
+    document.getElementById('cgStep3').classList.add('hidden');
+    document.getElementById('cgStep4').classList.add('hidden');
+
+    // Load previous generated comments if any
+    renderCgSaved();
+}
+
+async function cgLoadComments() {
+    const val = document.getElementById('cgPostSelect').value;
+    if (!val) return;
+    const [subId, mpId] = val.split('|').map(Number);
+    const subs = S.get('subreddits');
+    const sub = subs.find(s => s.id === subId);
+    const mp = sub?.moneyPosts?.find(p => p.id === mpId);
+    if (!mp?.url) return;
+
+    _cgSelectedRefs = [];
+    _cgPostData = { subId, mpId, subName: sub.name, title: mp.title, url: mp.url };
+
+    const refList = document.getElementById('cgRefList');
+    refList.innerHTML = '<div class="fetch-status loading"><span class="spinner"></span> Loading comments...</div>';
+    document.getElementById('cgStep2').classList.remove('hidden');
+    document.getElementById('cgStep3').classList.add('hidden');
+
+    try {
+        const parsed = parsePostUrl(mp.url);
+        if (!parsed) throw new Error('Invalid URL');
+        const data = await redditFetch(`/comments/${parsed.postId}.json?limit=25`);
+        const comments = (data?.[1]?.data?.children || []).filter(c => c.kind === 't1');
+
+        refList.innerHTML = comments.map((c, i) => {
+            const d = c.data;
+            return `<div class="cg-ref-item" id="cgRef${i}" onclick="cgToggleRef(${i}, this)">
+                <div class="cg-ref-check"></div>
+                <div class="cg-ref-body">
+                    <div class="cg-ref-meta">u/${esc(d.author)} · ${d.ups || 0} upvotes · ${(d.body || '').length} chars</div>
+                    <div class="cg-ref-text">${esc((d.body || '').slice(0, 200))}${(d.body || '').length > 200 ? '...' : ''}</div>
+                </div>
+            </div>`;
+        }).join('') || '<div class="tl-empty">No comments found</div>';
+
+        // Store comment data for reference
+        window._cgCommentsData = comments.map(c => ({
+            author: c.data.author,
+            body: c.data.body || '',
+            upvotes: c.data.ups || 0,
+        }));
+    } catch (err) {
+        refList.innerHTML = `<div class="fetch-status error">${err.message}</div>`;
+    }
+}
+
+function cgToggleRef(idx, el) {
+    el.classList.toggle('cg-ref-selected');
+    if (_cgSelectedRefs.includes(idx)) {
+        _cgSelectedRefs = _cgSelectedRefs.filter(i => i !== idx);
+    } else {
+        _cgSelectedRefs.push(idx);
+    }
+    // Show step 3 when at least 1 selected
+    document.getElementById('cgStep3').classList.toggle('hidden', _cgSelectedRefs.length === 0);
+}
+
+async function cgGenerate() {
+    const apiKey = getClaudeKey();
+    if (!apiKey) return toast('warning', 'No Claude API key', 'Add your Claude API key in Settings.');
+    if (!_cgSelectedRefs.length) return toast('warning', 'No references', 'Select at least one comment as reference.');
+    if (!_cgPostData) return;
+
+    const count = Number(document.getElementById('cgCount').value) || 10;
+    const styleGuide = document.getElementById('cgStyleGuide').value.trim();
+
+    // Save style guide for next time
+    localStorage.setItem('lk_cg_style', styleGuide);
+
+    const refComments = _cgSelectedRefs.map(i => window._cgCommentsData[i]).filter(Boolean);
+    const btn = document.getElementById('cgGenBtn');
+    btn.disabled = true;
+    btn.textContent = 'Generating...';
+
+    try {
+        const res = await fetch(`${SERVER}/api/generate-comments`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                referenceComments: refComments,
+                postTitle: _cgPostData.title,
+                postBody: '',
+                subreddit: _cgPostData.subName,
+                count,
+                styleGuide,
+                apiKey
+            })
+        });
+        const data = await res.json();
+        if (data.error) throw new Error(data.error);
+
+        // Save generated comments
+        const saved = getCgSaved();
+        const batch = {
+            id: Date.now(),
+            postTitle: _cgPostData.title,
+            subName: _cgPostData.subName,
+            postUrl: _cgPostData.url,
+            date: new Date().toISOString(),
+            comments: data.comments.map((c, i) => ({
+                id: i + 1,
+                username: c.username,
+                comment: c.comment,
+                status: 'pending' // pending, posted
+            }))
+        };
+        saved.unshift(batch);
+        if (saved.length > 20) saved.length = 20;
+        S.set('cg_batches', saved);
+
+        document.getElementById('cgStep4').classList.remove('hidden');
+        renderCgBatch(batch);
+        toast('success', 'Generated', `${data.comments.length} comments ready`);
+    } catch (err) {
+        toast('error', 'Generation failed', err.message);
+    }
+
+    btn.disabled = false;
+    btn.textContent = 'Generate Comments';
+}
+
+function getCgSaved() { return S.get('cg_batches'); }
+
+function renderCgSaved() {
+    const saved = getCgSaved();
+    if (!saved.length) return;
+    // Show the latest batch
+    document.getElementById('cgStep4').classList.remove('hidden');
+    renderCgBatch(saved[0]);
+}
+
+function renderCgBatch(batch) {
+    const list = document.getElementById('cgGenList');
+    const posted = batch.comments.filter(c => c.status === 'posted').length;
+    const total = batch.comments.length;
+    document.getElementById('cgStats').textContent = `${posted}/${total} posted · ${batch.subName} · ${fmtDateTime(batch.date)}`;
+
+    list.innerHTML = batch.comments.map((c, i) => {
+        const isPosted = c.status === 'posted';
+        return `<div class="cg-comment ${isPosted ? 'cg-posted' : ''}">
+            <div class="cg-comment-header">
+                <span class="cg-username">u/${esc(c.username)}</span>
+                <span class="cg-comment-status ${isPosted ? 'cg-status-posted' : 'cg-status-pending'}">${isPosted ? 'Posted' : 'Pending'}</span>
+                <div class="cg-comment-actions">
+                    ${!isPosted ? `<button class="btn btn-xs btn-primary" onclick="cgMarkPosted(${batch.id},${c.id})">Mark Posted</button>` : `<button class="btn btn-xs btn-ghost" onclick="cgMarkPending(${batch.id},${c.id})">Undo</button>`}
+                    <button class="btn btn-xs btn-ghost" onclick="cgEditComment(${batch.id},${c.id})">Edit</button>
+                    <button class="btn btn-xs btn-ghost" onclick="cgRegenOne(${batch.id},${c.id})">Regenerate</button>
+                    <button class="btn btn-xs btn-ghost" onclick="cgCopyComment(${batch.id},${c.id})" title="Copy">Copy</button>
+                </div>
+            </div>
+            <div class="cg-comment-body" id="cgBody_${batch.id}_${c.id}">${esc(c.comment)}</div>
+        </div>`;
+    }).join('');
+}
+
+function cgMarkPosted(batchId, commentId) {
+    const saved = getCgSaved();
+    const batch = saved.find(b => b.id === batchId);
+    const c = batch?.comments?.find(x => x.id === commentId);
+    if (c) c.status = 'posted';
+    S.set('cg_batches', saved);
+    renderCgBatch(batch);
+}
+
+function cgMarkPending(batchId, commentId) {
+    const saved = getCgSaved();
+    const batch = saved.find(b => b.id === batchId);
+    const c = batch?.comments?.find(x => x.id === commentId);
+    if (c) c.status = 'pending';
+    S.set('cg_batches', saved);
+    renderCgBatch(batch);
+}
+
+function cgEditComment(batchId, commentId) {
+    const saved = getCgSaved();
+    const batch = saved.find(b => b.id === batchId);
+    const c = batch?.comments?.find(x => x.id === commentId);
+    if (!c) return;
+
+    const el = document.getElementById(`cgBody_${batchId}_${commentId}`);
+    el.innerHTML = `<textarea class="input cg-edit-textarea" id="cgEdit_${batchId}_${commentId}" rows="4">${esc(c.comment)}</textarea>
+        <div style="margin-top:6px;display:flex;gap:6px;">
+            <button class="btn btn-xs btn-primary" onclick="cgSaveEdit(${batchId},${commentId})">Save</button>
+            <button class="btn btn-xs btn-ghost" onclick="renderCgBatch(getCgSaved().find(b=>b.id===${batchId}))">Cancel</button>
+        </div>`;
+}
+
+function cgSaveEdit(batchId, commentId) {
+    const saved = getCgSaved();
+    const batch = saved.find(b => b.id === batchId);
+    const c = batch?.comments?.find(x => x.id === commentId);
+    if (!c) return;
+    c.comment = document.getElementById(`cgEdit_${batchId}_${commentId}`).value.trim();
+    S.set('cg_batches', saved);
+    renderCgBatch(batch);
+}
+
+async function cgRegenOne(batchId, commentId) {
+    const apiKey = getClaudeKey();
+    if (!apiKey) return toast('warning', 'No API key', '');
+
+    const saved = getCgSaved();
+    const batch = saved.find(b => b.id === batchId);
+    const c = batch?.comments?.find(x => x.id === commentId);
+    if (!c) return;
+
+    toast('info', 'Regenerating...', '', 3000);
+
+    try {
+        const res = await fetch(`${SERVER}/api/generate-comments`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                referenceComments: [{ author: 'example', body: c.comment, upvotes: 5 }],
+                postTitle: batch.postTitle,
+                subreddit: batch.subName,
+                count: 1,
+                styleGuide: 'Generate one alternative version of this comment with a different persona and different wording but similar intent.',
+                apiKey
+            })
+        });
+        const data = await res.json();
+        if (data.error) throw new Error(data.error);
+
+        if (data.comments?.[0]) {
+            c.username = data.comments[0].username;
+            c.comment = data.comments[0].comment;
+            S.set('cg_batches', saved);
+            renderCgBatch(batch);
+            toast('success', 'Regenerated', '');
+        }
+    } catch (err) {
+        toast('error', 'Failed', err.message);
+    }
+}
+
+function cgCopyComment(batchId, commentId) {
+    const saved = getCgSaved();
+    const batch = saved.find(b => b.id === batchId);
+    const c = batch?.comments?.find(x => x.id === commentId);
+    if (!c) return;
+    navigator.clipboard.writeText(c.comment).then(() => toast('success', 'Copied', '', 2000));
+}
 
 // ==========================================
 //  MONTHLY RECURRING TASK RESET
