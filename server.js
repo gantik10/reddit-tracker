@@ -742,18 +742,22 @@ const server = http.createServer(async (req, res) => {
 
     // --- Telegram notification endpoint ---
     if (parsed.pathname === '/api/telegram' && req.method === 'POST') {
-        const body = await readBody(req);
-        const { message } = body;
-        const DATA_FILE2 = path.join(__dirname, 'data.json');
-        try {
-            const d = JSON.parse(fs.readFileSync(DATA_FILE2, 'utf8'));
-            await sendTelegramAlert(d, message || 'No message');
-            res.writeHead(200, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ success: true }));
-        } catch (e) {
-            res.writeHead(500, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ error: e.message }));
-        }
+        let rawBody = '';
+        req.on('data', c => rawBody += c);
+        req.on('end', async () => {
+            try {
+                const body = JSON.parse(rawBody || '{}');
+                const msg = body.message || 'No message';
+                const DATA_FILE2 = path.join(__dirname, 'data.json');
+                const d = JSON.parse(fs.readFileSync(DATA_FILE2, 'utf8'));
+                await sendTelegramAlert(d, msg);
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ success: true }));
+            } catch (e) {
+                res.writeHead(500, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ error: e.message }));
+            }
+        });
         return;
     }
 
@@ -1410,7 +1414,7 @@ async function sendTelegramAlert(data, message) {
     try {
         const text = `🔔 *LK Media Tracker*\n\n${message}`;
         const url = `https://api.telegram.org/bot${botToken}/sendMessage`;
-        const payload = JSON.stringify({ chat_id: chatId, text, parse_mode: 'Markdown' });
+        const payload = JSON.stringify({ chat_id: chatId, text });
         const tmpFile = `/tmp/tg_${Date.now()}.json`;
         fs.writeFileSync(tmpFile, payload);
         execSync(`curl -sL -X POST "${url}" -H "Content-Type: application/json" -d @${tmpFile}`, { timeout: 10000 });
