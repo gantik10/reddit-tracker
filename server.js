@@ -1296,6 +1296,112 @@ async function autoRankCheck() {
 // ==========================================
 //  TELEGRAM NOTIFICATIONS
 // ==========================================
+// Telegram bot polling for commands
+let tgOffset = 0;
+
+async function pollTelegramCommands() {
+    const DATA_FILE = path.join(__dirname, 'data.json');
+    let data;
+    try { data = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8')); } catch { return; }
+    const botToken = data.keys?.lk_telegram_bot;
+    const chatId = data.keys?.lk_telegram_chat;
+    if (!botToken || !chatId) return;
+
+    try {
+        const raw = execSync(`curl -sL "https://api.telegram.org/bot${botToken}/getUpdates?offset=${tgOffset}&timeout=1&limit=10"`, { encoding: 'utf8', timeout: 15000 });
+        const result = JSON.parse(raw);
+        if (!result.ok || !result.result?.length) return;
+
+        for (const update of result.result) {
+            tgOffset = update.update_id + 1;
+            const msg = update.message;
+            if (!msg?.text) continue;
+
+            const text = msg.text.toLowerCase().trim();
+
+            // Respond to /check or /status
+            if (text === '/check' || text === '/status' || text.includes('check')) {
+                // Gather all keyword positions
+                const subs = data.subreddits || [];
+                const lines = [];
+
+                subs.forEach(sub => {
+                    const kwLines = [];
+                    (sub.moneyPosts || []).forEach(mp => {
+                        (mp.googleKeywords || []).forEach(kw => {
+                            if (!kw.keyword) return;
+                            const pos = kw.rankType === 'google' ? `🟢 Google #${kw.avgRank}`
+                                : kw.rankType === 'reddit' && kw.avgRank ? `🟠 Reddit #${kw.avgRank}`
+                                : '⚪ 10+';
+                            const time = kw.updatedAt ? new Date(kw.updatedAt).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false }) : '';
+                            kwLines.push(`  ${pos}  *${kw.keyword}*  ${time}`);
+                        });
+
+                        // Money comment
+                        const mc = mp.moneyComment;
+                        if (mc?.commentId) {
+                            const mcPos = mc.position === 1 ? '🟢 #1' : mc.position ? `🔴 #${mc.position}` : '⚪ ?';
+                            kwLines.push(`  💬 MC ${mcPos}`);
+                        }
+                    });
+
+                    if (kwLines.length) {
+                        lines.push(`\n📌 *r/${sub.name}*`);
+                        lines.push(...kwLines);
+                    }
+                });
+
+                const reply = lines.length
+                    ? `📊 *Current Positions*\n${lines.join('\n')}`
+                    : '📊 No keywords being tracked yet.';
+
+                await sendTelegramAlert(data, reply);
+            }
+
+            // Check specific keyword: /kw buy tiktok views
+            if (text.startsWith('/kw ')) {
+                const searchKw = msg.text.slice(4).trim();
+                if (!searchKw) continue;
+
+                // Find this keyword in tracked data
+                let found = false;
+                const subs = data.subreddits || [];
+                subs.forEach(sub => {
+                    (sub.moneyPosts || []).forEach(mp => {
+                        (mp.googleKeywords || []).forEach(kw => {
+                            if (kw.keyword?.toLowerCase() === searchKw.toLowerCase()) {
+                                found = true;
+                                const pos = kw.rankType === 'google' ? `🟢 Google #${kw.avgRank}`
+                                    : kw.rankType === 'reddit' && kw.avgRank ? `🟠 Reddit #${kw.avgRank}`
+                                    : '⚪ Not in top 10';
+                                const time = kw.updatedAt ? new Date(kw.updatedAt).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false }) : 'never';
+                                sendTelegramAlert(data,
+                                    `🔍 *Keyword Check*\n\n` +
+                                    `Keyword: *${kw.keyword}*\n` +
+                                    `Position: ${pos}\n` +
+                                    `Last checked: ${time}\n` +
+                                    `Subreddit: r/${sub.name}\n` +
+                                    `🔗 ${mp.url || ''}`
+                                );
+                            }
+                        });
+                    });
+                });
+
+                if (!found) {
+                    await sendTelegramAlert(data, `🔍 Keyword "*${searchKw}*" is not being tracked.`);
+                }
+            }
+        }
+    } catch (e) {
+        // Silent — polling errors are normal
+    }
+}
+
+// Poll every 10 seconds
+setInterval(pollTelegramCommands, 10000);
+setTimeout(pollTelegramCommands, 5000);
+
 async function sendTelegramAlert(data, message) {
     const botToken = data.keys?.lk_telegram_bot;
     const chatId = data.keys?.lk_telegram_chat;
@@ -1304,8 +1410,12 @@ async function sendTelegramAlert(data, message) {
     try {
         const text = `🔔 *LK Media Tracker*\n\n${message}`;
         const url = `https://api.telegram.org/bot${botToken}/sendMessage`;
-        execSync(`curl -sL -X POST "${url}" -H "Content-Type: application/json" -d '${JSON.stringify({ chat_id: chatId, text, parse_mode: 'Markdown' }).replace(/'/g, "'\\''")}'`, { timeout: 10000 });
-        console.log(`[Telegram] Sent: ${message}`);
+        const payload = JSON.stringify({ chat_id: chatId, text, parse_mode: 'Markdown' });
+        const tmpFile = `/tmp/tg_${Date.now()}.json`;
+        fs.writeFileSync(tmpFile, payload);
+        execSync(`curl -sL -X POST "${url}" -H "Content-Type: application/json" -d @${tmpFile}`, { timeout: 10000 });
+        fs.unlinkSync(tmpFile);
+        console.log(`[Telegram] Sent: ${message.slice(0, 60)}`);
     } catch (e) {
         console.log(`[Telegram] Failed: ${e.message}`);
     }
