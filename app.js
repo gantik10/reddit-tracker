@@ -148,7 +148,7 @@ const S = {
 
                 // 4. Collect API keys (shared across team)
                 const keys = {};
-                ['lk_ahrefs_key', 'lk_serp_key', 'lk_df_login', 'lk_df_password', 'lk_upvote_key', 'lk_dolphin_token', 'lk_dolphin_profiles'].forEach(k => {
+                ['lk_ahrefs_key', 'lk_serp_key', 'lk_df_login', 'lk_df_password', 'lk_telegram_bot', 'lk_telegram_chat', 'lk_upvote_key', 'lk_dolphin_token', 'lk_dolphin_profiles'].forEach(k => {
                     const v = localStorage.getItem(k);
                     if (v) keys[k] = v;
                     else if (serverData.keys?.[k]) keys[k] = serverData.keys[k]; // keep server key if local is empty
@@ -255,7 +255,7 @@ const S = {
                 ));
             }
             // Sync API keys: pull from server OR push local keys if server has none
-            const keyNames = ['lk_ahrefs_key', 'lk_serp_key', 'lk_df_login', 'lk_df_password', 'lk_upvote_key', 'lk_dolphin_token', 'lk_dolphin_profiles'];
+            const keyNames = ['lk_ahrefs_key', 'lk_serp_key', 'lk_df_login', 'lk_df_password', 'lk_telegram_bot', 'lk_telegram_chat', 'lk_upvote_key', 'lk_dolphin_token', 'lk_dolphin_profiles'];
             if (data.keys && Object.keys(data.keys).length) {
                 // Server has keys — restore to local
                 Object.entries(data.keys).forEach(([k, v]) => {
@@ -1282,6 +1282,8 @@ function openSettings() {
     document.getElementById('serpApiKeyInput').value = getSerpApiKey();
     document.getElementById('dfLoginInput').value = getDfLogin();
     document.getElementById('dfPasswordInput').value = getDfPassword();
+    document.getElementById('telegramBotInput').value = localStorage.getItem('lk_telegram_bot') || '';
+    document.getElementById('telegramChatInput').value = localStorage.getItem('lk_telegram_chat') || '';
     document.getElementById('upvoteShopKeyInput').value = getUpvoteShopKey();
     document.getElementById('dolphinTokenInput').value = getDolphinToken();
 
@@ -1326,6 +1328,10 @@ function saveSettings() {
     serpKey ? localStorage.setItem('lk_serp_key', serpKey) : localStorage.removeItem('lk_serp_key');
     dfLogin ? localStorage.setItem('lk_df_login', dfLogin) : localStorage.removeItem('lk_df_login');
     dfPassword ? localStorage.setItem('lk_df_password', dfPassword) : localStorage.removeItem('lk_df_password');
+    const tgBot = document.getElementById('telegramBotInput').value.trim();
+    const tgChat = document.getElementById('telegramChatInput').value.trim();
+    tgBot ? localStorage.setItem('lk_telegram_bot', tgBot) : localStorage.removeItem('lk_telegram_bot');
+    tgChat ? localStorage.setItem('lk_telegram_chat', tgChat) : localStorage.removeItem('lk_telegram_chat');
     upvoteKey ? localStorage.setItem('lk_upvote_key', upvoteKey) : localStorage.removeItem('lk_upvote_key');
     dolphinToken ? localStorage.setItem('lk_dolphin_token', dolphinToken) : localStorage.removeItem('lk_dolphin_token');
     localStorage.setItem('lk_dolphin_profiles', JSON.stringify(profiles));
@@ -3879,13 +3885,16 @@ async function autoCheckAllMoneyComments() {
                 mc.checkedAt = new Date().toISOString();
                 S.set('subreddits', allSubs);
 
-                // CRITICAL ALERT if lost #1 — persistent toast, no auto-dismiss
+                // CRITICAL ALERT if lost #1 — persistent toast + Telegram
                 if (mcData.position && mcData.position > 1) {
-                    toast('error',
-                        'CRITICAL: Money comment lost #1!',
-                        `"${p.title?.slice(0, 40)}..." in r/${sub.name} dropped to #${mcData.position}. Was ${oldPos ? '#' + oldPos : 'unchecked'}. Immediate action needed.`,
-                        0  // 0 = no auto-dismiss, stays until manually closed
-                    );
+                    const alertMsg = `"${p.title?.slice(0, 40)}..." in r/${sub.name} dropped to #${mcData.position}. Was ${oldPos ? '#' + oldPos : 'unchecked'}.`;
+                    toast('error', 'CRITICAL: Money comment lost #1!', alertMsg + ' Immediate action needed.', 0);
+                    // Send Telegram notification
+                    fetch(`${SERVER}/api/telegram`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ message: `⚠️ Money comment lost #1!\n${alertMsg}` })
+                    }).catch(() => {});
                 }
 
                 console.log(`[MC] r/${sub.name} "${p.title?.slice(0, 30)}": comment #${mcData.position || '?'}/${mcData.totalTopLevel}`);

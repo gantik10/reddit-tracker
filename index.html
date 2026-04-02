@@ -485,6 +485,22 @@
                     <p class="settings-hint">For buying upvotes/downvotes directly from the dashboard. Get token from <a href="https://panel.upvote.shop/settings" target="_blank" style="color:var(--primary)">panel.upvote.shop/settings</a></p>
                     <div class="upvote-balance" id="upvoteBalance"></div>
                 </div>
+                <div class="settings-divider-or"><span>Telegram Notifications</span></div>
+                <div class="form-group">
+                    <label>Telegram Bot Token</label>
+                    <div class="api-key-input-row">
+                        <input type="password" class="input" id="telegramBotInput" placeholder="123456:ABC-DEF...">
+                        <button class="btn-icon" onclick="toggleKeyVisibility('telegramBotInput')" title="Show/hide">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                        </button>
+                    </div>
+                    <p class="settings-hint">Create a bot via <a href="https://t.me/BotFather" target="_blank" style="color:var(--primary)">@BotFather</a> on Telegram</p>
+                </div>
+                <div class="form-group">
+                    <label>Telegram Chat ID</label>
+                    <input type="text" class="input" id="telegramChatInput" placeholder="-1001234567890 or your user ID">
+                    <p class="settings-hint">Add the bot to your group, then get the chat ID via <a href="https://t.me/getidsbot" target="_blank" style="color:var(--primary)">@getidsbot</a></p>
+                </div>
                 <div class="settings-divider-or"><span>or use Dolphin Anty (local only)</span></div>
                 <div class="form-group">
                     <label>Dolphin Anty API Token</label>
@@ -836,6 +852,6 @@
         <div class="rank-panel-result hidden" id="rankPanelResult"></div>
     </div>
 
-    <script src="app.js?v=20260402a"></script>
+    <script src="app.js?v=20260402b"></script>
 </body>
 </html>

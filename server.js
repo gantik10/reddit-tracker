@@ -740,6 +740,23 @@ const server = http.createServer(async (req, res) => {
         return;
     }
 
+    // --- Telegram notification endpoint ---
+    if (parsed.pathname === '/api/telegram' && req.method === 'POST') {
+        const body = await readBody(req);
+        const { message } = body;
+        const DATA_FILE2 = path.join(__dirname, 'data.json');
+        try {
+            const d = JSON.parse(fs.readFileSync(DATA_FILE2, 'utf8'));
+            await sendTelegramAlert(d, message || 'No message');
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ success: true }));
+        } catch (e) {
+            res.writeHead(500, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: e.message }));
+        }
+        return;
+    }
+
     // --- Proxy endpoint (Reddit, Ahrefs) ---
     if (parsed.pathname === '/api/proxy') {
         const targetUrl = parsed.searchParams.get('url');
@@ -1193,42 +1210,39 @@ async function autoRankCheck() {
             const kw = mp?.googleKeywords?.[kwIdx];
             if (!kw) continue;
 
-            if (searchType === 'google') {
-                // Check if found on Google
-                let rank = null;
-                for (const item of items) {
-                    if (postId && item.url?.toLowerCase().includes(`comments/${postId}`)) {
-                        rank = item.rank_group || items.indexOf(item) + 1;
-                        break;
-                    }
+            let rank = null;
+            for (const item of items) {
+                if (postId && item.url?.toLowerCase().includes(`comments/${postId}`)) {
+                    rank = item.rank_group || items.indexOf(item) + 1;
+                    break;
                 }
-                if (rank) {
-                    if (!kw.history) kw.history = [];
-                    if (kw.rankType) kw.history.push({ rankType: kw.rankType, avgRank: kw.avgRank, date: kw.updatedAt });
-                    kw.rankType = 'google';
-                    kw.avgRank = rank;
-                    kw.rank = rank;
-                    kw.updatedAt = new Date().toISOString();
-                    updated++;
-                    console.log(`[AutoRank] "${kw.keyword}": Google #${rank}`);
-                }
-            } else if (searchType === 'reddit' && !kw.rankType?.includes('google') || (kw.updatedAt && new Date(kw.updatedAt) < new Date(Date.now() - 3600000))) {
-                // Only update reddit rank if we didn't already find it on Google in this cycle
-                let rank = null;
-                for (const item of items) {
-                    if (postId && item.url?.toLowerCase().includes(`comments/${postId}`)) {
-                        rank = item.rank_group || items.indexOf(item) + 1;
-                        break;
-                    }
-                }
+            }
+
+            if (searchType === 'google' && rank) {
+                // Found on Google — save and mark so reddit result is skipped
                 if (!kw.history) kw.history = [];
-                if (kw.rankType && kw.avgRank) kw.history.push({ rankType: kw.rankType, avgRank: kw.avgRank, date: kw.updatedAt });
+                if (kw.updatedAt) kw.history.push({ rankType: kw.rankType || 'none', avgRank: kw.avgRank, date: kw.updatedAt });
+                kw.rankType = 'google';
+                kw.avgRank = rank;
+                kw.rank = rank;
+                kw.updatedAt = new Date().toISOString();
+                kw._googleFoundThisCycle = true;
+                updated++;
+                console.log(`[AutoRank] "${kw.keyword}": Google #${rank}`);
+
+                // Telegram: notify if newly on Google
+                await sendTelegramAlert(data, `Google ranking: "${kw.keyword}" is now on Google #${rank}`);
+
+            } else if (searchType === 'reddit' && !kw._googleFoundThisCycle) {
+                // Only save reddit result if Google didn't find it this cycle
+                if (!kw.history) kw.history = [];
+                if (kw.updatedAt) kw.history.push({ rankType: kw.rankType || 'none', avgRank: kw.avgRank, date: kw.updatedAt });
                 kw.rankType = rank ? 'reddit' : 'none';
                 kw.avgRank = rank;
                 kw.rank = rank;
                 kw.updatedAt = new Date().toISOString();
                 updated++;
-                console.log(`[AutoRank] "${kw.keyword}": ${rank ? 'Reddit #' + rank : 'Not found'}`);
+                console.log(`[AutoRank] "${kw.keyword}": ${rank ? 'Reddit #' + rank : '10+'}`);
             }
         } catch (e) {
             console.log(`[AutoRank] Result fetch failed for ${task.id}: ${e.message}`);
@@ -1236,10 +1250,35 @@ async function autoRankCheck() {
         await new Promise(r => setTimeout(r, 100));
     }
 
+    // Clean up temp flags
+    (data.subreddits || []).forEach(sub => {
+        (sub.moneyPosts || []).forEach(mp => {
+            (mp.googleKeywords || []).forEach(kw => { delete kw._googleFoundThisCycle; });
+        });
+    });
+
     if (updated) {
         fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2), 'utf8');
         console.log(`[AutoRank] Updated ${updated} keyword positions`);
     } else {
         console.log('[AutoRank] No updates');
+    }
+}
+
+// ==========================================
+//  TELEGRAM NOTIFICATIONS
+// ==========================================
+async function sendTelegramAlert(data, message) {
+    const botToken = data.keys?.lk_telegram_bot;
+    const chatId = data.keys?.lk_telegram_chat;
+    if (!botToken || !chatId) return;
+
+    try {
+        const text = `🔔 *LK Media Tracker*\n\n${message}`;
+        const url = `https://api.telegram.org/bot${botToken}/sendMessage`;
+        execSync(`curl -sL -X POST "${url}" -H "Content-Type: application/json" -d '${JSON.stringify({ chat_id: chatId, text, parse_mode: 'Markdown' }).replace(/'/g, "'\\''")}'`, { timeout: 10000 });
+        console.log(`[Telegram] Sent: ${message}`);
+    } catch (e) {
+        console.log(`[Telegram] Failed: ${e.message}`);
     }
 }
