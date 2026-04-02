@@ -1586,7 +1586,7 @@ async function serverCheckMoneyComments() {
                 // Telegram alert if lost #1 — only after 2 consecutive checks not at #1
                 if (position && position > 1) {
                     mc._notFirstStreak = (mc._notFirstStreak || 0) + 1;
-                    if (mc._notFirstStreak >= 2 && mc._lastAlertPos !== position) {
+                    if (mc._lastAlertPos !== position) {
                         mc._lastAlertPos = position;
                         const commentLink = mp.url.replace(/\/$/, '') + '/' + mc.commentId + '/';
                         await sendTelegramAlert(data,
