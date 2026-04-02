@@ -1193,6 +1193,13 @@ async function autoRankCheck() {
     // Fetch results and update data.json
     try { data = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8')); } catch { return; }
 
+    // Process Google tasks first, then Reddit — so Google result isn't overwritten
+    pendingTasks.sort((a, b) => {
+        const aType = a.tag.startsWith('google') ? 0 : 1;
+        const bType = b.tag.startsWith('google') ? 0 : 1;
+        return aType - bType;
+    });
+
     let updated = 0;
     for (const task of pendingTasks) {
         try {
