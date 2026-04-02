@@ -1238,10 +1238,10 @@ async function autoRankCheck() {
                 if (prevType !== 'google') {
                     await sendTelegramAlert(data,
                         `🟢 *GOOGLE RANKING*\n\n` +
-                        `Keyword: *${kw.keyword}*\n` +
+                        `Keyword: *${escMd(kw.keyword)}*\n` +
                         `Position: *#${rank}* on Google\n` +
-                        `Subreddit: r/${sub.name}\n` +
-                        `Post: ${mp.title?.slice(0, 60)}\n` +
+                        `Subreddit: r/${escMd(sub.name)}\n` +
+                        `Post: ${escMd(mp.title?.slice(0, 60))}\n` +
                         `🔗 ${targetUrl}`
                     );
                 }
@@ -1266,11 +1266,11 @@ async function autoRankCheck() {
                 if (kw._lostGoogle) {
                     await sendTelegramAlert(data,
                         `🔴 *GOOGLE POSITION LOST*\n\n` +
-                        `Keyword: *${kw.keyword}*\n` +
+                        `Keyword: *${escMd(kw.keyword)}*\n` +
                         `Was: Google #${kw._lostGoogle}\n` +
                         `Now: ${rank ? 'Reddit #' + rank : 'Not in top 10'}\n` +
-                        `Subreddit: r/${sub.name}\n` +
-                        `Post: ${mp.title?.slice(0, 60)}\n` +
+                        `Subreddit: r/${escMd(sub.name)}\n` +
+                        `Post: ${escMd(mp.title?.slice(0, 60))}\n` +
                         `🔗 ${targetUrl}`
                     );
                     delete kw._lostGoogle;
@@ -1338,7 +1338,7 @@ async function pollTelegramCommands() {
                                 : kw.rankType === 'reddit' && kw.avgRank ? `🟠 Reddit #${kw.avgRank}`
                                 : '⚪ 10+';
                             const time = kw.updatedAt ? new Date(kw.updatedAt).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false }) : '';
-                            kwLines.push(`  ${pos}  *${kw.keyword}*  ${time}`);
+                            kwLines.push(`  ${pos}  *${escMd(kw.keyword)}*  ${time}`);
                         });
 
                         // Money comment
@@ -1350,7 +1350,7 @@ async function pollTelegramCommands() {
                     });
 
                     if (kwLines.length) {
-                        lines.push(`\n📌 *r/${sub.name}*`);
+                        lines.push(`\n📌 *r/${escMd(sub.name)}*`);
                         lines.push(...kwLines);
                     }
                 });
@@ -1381,10 +1381,10 @@ async function pollTelegramCommands() {
                                 const time = kw.updatedAt ? new Date(kw.updatedAt).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false }) : 'never';
                                 sendTelegramAlert(data,
                                     `🔍 *Keyword Check*\n\n` +
-                                    `Keyword: *${kw.keyword}*\n` +
+                                    `Keyword: *${escMd(kw.keyword)}*\n` +
                                     `Position: ${pos}\n` +
                                     `Last checked: ${time}\n` +
-                                    `Subreddit: r/${sub.name}\n` +
+                                    `Subreddit: r/${escMd(sub.name)}\n` +
                                     `🔗 ${mp.url || ''}`
                                 );
                             }
@@ -1393,7 +1393,7 @@ async function pollTelegramCommands() {
                 });
 
                 if (!found) {
-                    await sendTelegramAlert(data, `🔍 Keyword "*${searchKw}*" is not being tracked.`);
+                    await sendTelegramAlert(data, `🔍 Keyword "*${escMd(searchKw)}*" is not being tracked.`);
                 }
             }
         }
@@ -1406,6 +1406,11 @@ async function pollTelegramCommands() {
 setInterval(pollTelegramCommands, 10000);
 setTimeout(pollTelegramCommands, 5000);
 
+function escMd(text) {
+    if (!text) return '';
+    return text.replace(/[_`\[\]]/g, '\\$&').replace(/&amp;/g, '&');
+}
+
 async function sendTelegramAlert(data, message) {
     const botToken = data.keys?.lk_telegram_bot;
     const chatId = data.keys?.lk_telegram_chat;
@@ -1414,7 +1419,8 @@ async function sendTelegramAlert(data, message) {
     try {
         const text = `🔔 *LK Media Tracker*\n\n${message}`;
         const url = `https://api.telegram.org/bot${botToken}/sendMessage`;
-        const payload = JSON.stringify({ chat_id: chatId, text });
+        // Escape Markdown special chars in dynamic content but keep our formatting
+        const payload = JSON.stringify({ chat_id: chatId, text, parse_mode: 'Markdown' });
         const tmpFile = `/tmp/tg_${Date.now()}.json`;
         fs.writeFileSync(tmpFile, payload);
         execSync(`curl -sL -X POST "${url}" -H "Content-Type: application/json" -d @${tmpFile}`, { timeout: 10000 });
