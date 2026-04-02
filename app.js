@@ -184,15 +184,34 @@ const S = {
                 localMps.forEach(mp => {
                     const serverMp = mpMap.get(mp.id);
                     if (serverMp) {
-                        // Merge keyword histories: keep longer history
                         const localKws = mp.googleKeywords || [];
                         const serverKws = serverMp.googleKeywords || [];
                         localKws.forEach((lk, ki) => {
                             const sk = serverKws[ki];
-                            if (sk && sk.history?.length > (lk.history?.length || 0)) {
-                                lk.history = sk.history;
+                            if (!sk) return;
+                            // Merge histories: union by date, deduplicate
+                            const allHist = [...(lk.history || []), ...(sk.history || [])];
+                            const histMap = new Map();
+                            allHist.forEach(h => { if (h.date) histMap.set(h.date, h); });
+                            lk.history = Array.from(histMap.values()).sort((a, b) => new Date(a.date) - new Date(b.date));
+                            // Take server's rank if it's more recent (auto-check updated it)
+                            if (sk.updatedAt && (!lk.updatedAt || new Date(sk.updatedAt) > new Date(lk.updatedAt))) {
+                                lk.rankType = sk.rankType;
+                                lk.avgRank = sk.avgRank;
+                                lk.rank = sk.rank;
+                                lk.updatedAt = sk.updatedAt;
+                                lk.serpResults = sk.serpResults || lk.serpResults;
+                                lk.redditSerpResults = sk.redditSerpResults || lk.redditSerpResults;
                             }
                         });
+                        // Also pick up server keywords that local doesn't have
+                        if (serverKws.length > localKws.length) {
+                            mp.googleKeywords = [...localKws, ...serverKws.slice(localKws.length)];
+                        }
+                        // Merge money comment: take server if more recent
+                        if (serverMp.moneyComment?.checkedAt && (!mp.moneyComment?.checkedAt || new Date(serverMp.moneyComment.checkedAt) > new Date(mp.moneyComment.checkedAt))) {
+                            mp.moneyComment = serverMp.moneyComment;
+                        }
                     }
                     mpMap.set(mp.id, mp);
                 });
