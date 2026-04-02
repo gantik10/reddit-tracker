@@ -365,7 +365,14 @@ function closeModal(id) {
 }
 
 document.querySelectorAll('.modal-overlay').forEach(o => {
-    o.addEventListener('click', e => { if (e.target === o) closeModal(o.id); });
+    o.addEventListener('mousedown', e => {
+        if (e.target === o) o._shouldClose = true;
+        else o._shouldClose = false;
+    });
+    o.addEventListener('mouseup', e => {
+        if (e.target === o && o._shouldClose) closeModal(o.id);
+        o._shouldClose = false;
+    });
 });
 document.addEventListener('keydown', e => {
     if (e.key === 'Escape') document.querySelectorAll('.modal-overlay.active').forEach(m => closeModal(m.id));
