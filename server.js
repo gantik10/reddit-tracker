@@ -1243,17 +1243,9 @@ async function autoRankCheck() {
                 }
 
             } else if (searchType === 'google' && !rank) {
-                // Check if LOST Google ranking (was google, now not found)
+                // Mark that Google was lost — will send alert after Reddit result
                 if (kw.rankType === 'google') {
-                    await sendTelegramAlert(data,
-                        `🔴 *GOOGLE POSITION LOST*\n\n` +
-                        `Keyword: *${kw.keyword}*\n` +
-                        `Was: Google #${kw.avgRank}\n` +
-                        `Now: Not on Google page 1\n` +
-                        `Subreddit: r/${sub.name}\n` +
-                        `Post: ${mp.title?.slice(0, 60)}\n` +
-                        `🔗 ${targetUrl}`
-                    );
+                    kw._lostGoogle = kw.avgRank;
                 }
 
             } else if (searchType === 'reddit' && !kw._googleFoundThisCycle) {
@@ -1265,6 +1257,20 @@ async function autoRankCheck() {
                 kw.updatedAt = new Date().toISOString();
                 updated++;
                 console.log(`[AutoRank] "${kw.keyword}": ${rank ? 'Reddit #' + rank : '10+'}`);
+
+                // Send Google lost alert now that we know Reddit position
+                if (kw._lostGoogle) {
+                    await sendTelegramAlert(data,
+                        `🔴 *GOOGLE POSITION LOST*\n\n` +
+                        `Keyword: *${kw.keyword}*\n` +
+                        `Was: Google #${kw._lostGoogle}\n` +
+                        `Now: ${rank ? 'Reddit #' + rank : 'Not in top 10'}\n` +
+                        `Subreddit: r/${sub.name}\n` +
+                        `Post: ${mp.title?.slice(0, 60)}\n` +
+                        `🔗 ${targetUrl}`
+                    );
+                    delete kw._lostGoogle;
+                }
             }
         } catch (e) {
             console.log(`[AutoRank] Result fetch failed for ${task.id}: ${e.message}`);
@@ -1275,7 +1281,7 @@ async function autoRankCheck() {
     // Clean up temp flags
     (data.subreddits || []).forEach(sub => {
         (sub.moneyPosts || []).forEach(mp => {
-            (mp.googleKeywords || []).forEach(kw => { delete kw._googleFoundThisCycle; });
+            (mp.googleKeywords || []).forEach(kw => { delete kw._googleFoundThisCycle; delete kw._lostGoogle; });
         });
     });
 
