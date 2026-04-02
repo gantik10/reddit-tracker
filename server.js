@@ -654,7 +654,7 @@ const server = http.createServer(async (req, res) => {
 
             // Step 2: site:reddit.com (up to 30 results = 3 pages worth)
             console.log(`[DataForSEO] Not on Google, checking site:reddit.com...`);
-            const redditBody = JSON.stringify([{ keyword: keyword + ' site:www.reddit.com', location_code: 2840, language_code: 'en', depth: 30, device: 'desktop' }]);
+            const redditBody = JSON.stringify([{ keyword: keyword + ' site:www.reddit.com', location_code: 2840, language_code: 'en', depth: 10, device: 'desktop' }]);
             const redditRaw = execSync(`curl -sL -X POST "https://api.dataforseo.com/v3/serp/google/organic/live/advanced" -H "Authorization: Basic ${auth}" -H "Content-Type: application/json" -d '${redditBody.replace(/'/g, "'\\''")}'`, { encoding: 'utf8', maxBuffer: 10*1024*1024, timeout: 30000 });
             const redditData = JSON.parse(redditRaw);
 
@@ -700,7 +700,7 @@ const server = http.createServer(async (req, res) => {
             // Post both tasks: regular + site:reddit.com
             const tasks = [
                 { keyword, location_code: 2840, language_code: 'en', depth: 10, tag: `google|${targetUrl}` },
-                { keyword: keyword + ' site:www.reddit.com', location_code: 2840, language_code: 'en', depth: 30, tag: `reddit|${targetUrl}` }
+                { keyword: keyword + ' site:www.reddit.com', location_code: 2840, language_code: 'en', depth: 10, tag: `reddit|${targetUrl}` }
             ];
             const raw = execSync(`curl -sL -X POST "https://api.dataforseo.com/v3/serp/google/organic/task_post" -H "Authorization: Basic ${auth}" -H "Content-Type: application/json" -d '${JSON.stringify(tasks).replace(/'/g, "'\\''")}'`, { encoding: 'utf8', maxBuffer: 5*1024*1024, timeout: 20000 });
             const data = JSON.parse(raw);
@@ -819,37 +819,20 @@ const server = http.createServer(async (req, res) => {
             // Step 2: site:reddit.com search (up to 3 pages)
             console.log(`[SERP] Not on Google page 1, checking site:reddit.com (up to 3 pages)...`);
             const siteQuery = keyword + ' site:www.reddit.com';
-            let allRedditOrganic = [];
+            const redditUrl = `https://serpapi.com/search.json?engine=google&q=${encodeURIComponent(siteQuery)}&gl=us&hl=en&location=United+States&google_domain=google.com&num=10&api_key=${apiKey}`;
+            const redditResult = JSON.parse(httpsRequest(redditUrl).data);
+            if (redditResult.error) throw new Error(redditResult.error);
+
+            const allRedditOrganic = (redditResult.organic_results || []).map((r, i) => ({ ...r, position: i + 1 }));
             let redditRank = null;
             const redditCompetitors = [];
 
-            for (let page = 0; page < 3 && !redditRank; page++) {
-                const start = page * 10;
-                const redditUrl = `https://serpapi.com/search.json?engine=google&q=${encodeURIComponent(siteQuery)}&gl=us&hl=en&location=United+States&google_domain=google.com&num=10&start=${start}&api_key=${apiKey}`;
-                console.log(`[SERP] Reddit page ${page + 1} (start=${start})...`);
-
-                const redditResult = JSON.parse(httpsRequest(redditUrl).data);
-                if (redditResult.error) throw new Error(redditResult.error);
-
-                const pageResults = redditResult.organic_results || [];
-                if (!pageResults.length) break; // no more results
-
-                for (const r of pageResults) {
-                    // Assign absolute position across pages
-                    const absPos = allRedditOrganic.length + 1;
-                    const entry = { ...r, position: absPos };
-                    allRedditOrganic.push(entry);
-
-                    const isOurs = postId && r.link?.toLowerCase().includes(`comments/${postId}`);
-                    if (isOurs && !redditRank) {
-                        redditRank = absPos;
-                    } else if (!redditRank) {
-                        redditCompetitors.push({ position: absPos, url: r.link, title: r.title, snippet: r.snippet || '' });
-                    }
-                }
-
-                if (redditRank) {
-                    console.log(`[SERP] Found on Reddit page ${page + 1} at position #${redditRank}`);
+            for (const r of allRedditOrganic) {
+                const isOurs = postId && r.link?.toLowerCase().includes(`comments/${postId}`);
+                if (isOurs && !redditRank) {
+                    redditRank = r.position;
+                } else if (!redditRank) {
+                    redditCompetitors.push({ position: r.position, url: r.link, title: r.title, snippet: r.snippet || '' });
                 }
             }
 
@@ -1149,8 +1132,10 @@ async function autoRankCheck() {
 
     subs.forEach(sub => {
         (sub.moneyPosts || []).forEach(mp => {
-            (mp.googleKeywords || []).forEach((kw, kwIdx) => {
-                allKeywords.push({ subId: sub.id, subName: sub.name, mpId: mp.id, mpUrl: mp.url, kwIdx, keyword: kw.keyword });
+            if (!mp.url || !mp.googleKeywords?.length) return; // skip posts without URL
+            mp.googleKeywords.forEach((kw, kwIdx) => {
+                if (!kw.keyword?.trim()) return; // skip empty keywords
+                allKeywords.push({ subId: sub.id, subName: sub.name, mpId: mp.id, mpUrl: mp.url, kwIdx, keyword: kw.keyword.trim() });
             });
         });
     });
@@ -1166,7 +1151,7 @@ async function autoRankCheck() {
         try {
             const tasks = [
                 { keyword: kw.keyword, location_code: 2840, language_code: 'en', depth: 10, tag: `google|${kw.mpUrl}|${kw.subId}|${kw.mpId}|${kw.kwIdx}` },
-                { keyword: kw.keyword + ' site:www.reddit.com', location_code: 2840, language_code: 'en', depth: 30, tag: `reddit|${kw.mpUrl}|${kw.subId}|${kw.mpId}|${kw.kwIdx}` }
+                { keyword: kw.keyword + ' site:www.reddit.com', location_code: 2840, language_code: 'en', depth: 10, tag: `reddit|${kw.mpUrl}|${kw.subId}|${kw.mpId}|${kw.kwIdx}` }
             ];
             const raw = execSync(`curl -sL -X POST "https://api.dataforseo.com/v3/serp/google/organic/task_post" -H "Authorization: Basic ${auth}" -H "Content-Type: application/json" -d '${JSON.stringify(tasks).replace(/'/g, "'\\''")}'`, { encoding: 'utf8', maxBuffer: 5*1024*1024, timeout: 20000 });
             const result = JSON.parse(raw);

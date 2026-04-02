@@ -1024,6 +1024,8 @@ function renderHome() {
                     ? `<span class="home-rank home-rank-google">G#${r}</span>`
                     : rType === 'reddit' && r
                     ? `<span class="home-rank home-rank-reddit">R#${r}</span>`
+                    : kw.updatedAt
+                    ? `<span class="home-rank home-rank-none">10+</span>`
                     : `<span class="home-rank home-rank-none">—</span>`;
                 const kwShort = kw.keyword.length > 22 ? kw.keyword.slice(0, 20) + '..' : kw.keyword;
                 return `<div class="home-kw-row">
