@@ -3463,327 +3463,281 @@ openSubreddit = function(id) {
     _origOpenSub(id);
 };
 
+
 // ==========================================
 //  COMMENT WORKSPACE
 // ==========================================
-let _cgCurrentPost = null;
-let _cgCurrentTab = 'our';
+let _cgPost = null; // { subId, mpId, subName, title, url, body }
 
 function openCommentGen() {
     currentSubId = null;
     document.getElementById('homeView').classList.add('hidden');
     document.getElementById('detailView').classList.add('hidden');
     document.getElementById('taskBoardView').classList.add('hidden');
+    document.getElementById('commentGenView').classList.add('hidden');
     document.getElementById('commentGenView').classList.remove('hidden');
     document.getElementById('addSubredditBtn').classList.add('hidden');
     cgBuildSidebar();
     document.getElementById('cgEmptyWs').classList.remove('hidden');
     document.getElementById('cgPostWs').classList.add('hidden');
+    // Show/hide paste ref based on genType
+    document.getElementById('cgGenType').onchange = function() {
+        document.getElementById('cgPasteRef').classList.toggle('hidden', this.value !== 'paste');
+    };
 }
 
 function cgBuildSidebar() {
     const subs = S.get('subreddits');
     const list = document.getElementById('cgSidebarList');
-    list.innerHTML = subs.map(sub => {
+    let html = '';
+    subs.forEach(sub => {
         const mps = sub.moneyPosts || [];
-        if (!mps.length) return '';
-        return `<div class="cg-sb-group">
-            <div class="cg-sb-sub">r/${esc(sub.name)}</div>
-            ${mps.map(mp => {
-                const comments = getCgComments(sub.id, mp.id);
-                const posted = comments.filter(c => c.status === 'posted').length;
-                const total = comments.length;
-                return `<div class="cg-sb-post ${_cgCurrentPost?.mpId === mp.id ? 'cg-sb-active' : ''}" onclick="cgSelectPost(${sub.id},${mp.id})">
-                    <span class="cg-sb-title">${esc(mp.title.slice(0, 35))}${mp.title.length > 35 ? '...' : ''}</span>
-                    ${total ? `<span class="cg-sb-count">${posted}/${total}</span>` : ''}
-                </div>`;
-            }).join('')}
-        </div>`;
-    }).join('') || '<div class="tl-empty">No posts yet</div>';
+        if (!mps.length) return;
+        html += `<div class="cg-sb-sub">r/${esc(sub.name)}</div>`;
+        mps.forEach(mp => {
+            const comments = getCgComments(sub.id, mp.id);
+            const posted = comments.filter(c => c.status === 'posted').length;
+            const total = comments.length;
+            const isActive = _cgPost?.mpId === mp.id && _cgPost?.subId === sub.id;
+            html += `<div class="cg-sb-post ${isActive ? 'cg-sb-active' : ''}" onclick="cgOpenPost(${sub.id},${mp.id})">
+                <span class="cg-sb-title">${esc(mp.title.slice(0, 30))}${mp.title.length > 30 ? '...' : ''}</span>
+                ${total ? `<span class="cg-sb-count">${posted}/${total}</span>` : ''}
+            </div>`;
+        });
+    });
+    // Custom posts (not from subreddits)
+    const custom = S.get('cg_custom_posts');
+    if (custom.length) {
+        html += `<div class="cg-sb-sub" style="margin-top:8px;">Custom Posts</div>`;
+        custom.forEach(p => {
+            const comments = getCgComments(0, p.id);
+            const posted = comments.filter(c => c.status === 'posted').length;
+            const total = comments.length;
+            const isActive = _cgPost?.mpId === p.id && _cgPost?.subId === 0;
+            html += `<div class="cg-sb-post ${isActive ? 'cg-sb-active' : ''}" onclick="cgOpenCustomPost(${p.id})">
+                <span class="cg-sb-title">${esc(p.title.slice(0, 30))}${p.title.length > 30 ? '...' : ''}</span>
+                ${total ? `<span class="cg-sb-count">${posted}/${total}</span>` : ''}
+            </div>`;
+        });
+    }
+    list.innerHTML = html || '<div style="padding:14px;color:var(--text-muted);font-size:12px;">No posts</div>';
 }
 
-// Storage for per-post comments
-function getCgKey(subId, mpId) { return `cg_${subId}_${mpId}`; }
 function getCgComments(subId, mpId) {
-    try { return JSON.parse(localStorage.getItem('lk_' + getCgKey(subId, mpId))) || []; } catch { return []; }
+    try { return JSON.parse(localStorage.getItem(`lk_cg_${subId}_${mpId}`)) || []; } catch { return []; }
 }
 function saveCgComments(subId, mpId, comments) {
-    localStorage.setItem('lk_' + getCgKey(subId, mpId), JSON.stringify(comments));
+    localStorage.setItem(`lk_cg_${subId}_${mpId}`, JSON.stringify(comments));
 }
 
-function cgSelectPost(subId, mpId) {
+function cgOpenPost(subId, mpId) {
     const subs = S.get('subreddits');
     const sub = subs.find(s => s.id === subId);
     const mp = sub?.moneyPosts?.find(p => p.id === mpId);
     if (!mp) return;
-    _cgCurrentPost = { subId, mpId, subName: sub.name, title: mp.title, url: mp.url };
+    _cgPost = { subId, mpId, subName: sub.name, title: mp.title, url: mp.url, body: '' };
+    cgRenderWorkspace();
+}
+
+function cgOpenCustomPost(id) {
+    const custom = S.get('cg_custom_posts');
+    const p = custom.find(x => x.id === id);
+    if (!p) return;
+    _cgPost = { subId: 0, mpId: p.id, subName: p.subreddit || 'Custom', title: p.title, url: '', body: p.body || '' };
+    cgRenderWorkspace();
+}
+
+function cgNewPost() {
+    const title = prompt('Post title:');
+    if (!title?.trim()) return;
+    const body = prompt('Post body (optional):') || '';
+    const subreddit = prompt('Subreddit (optional, e.g. DigitalMarketingSEO1):') || 'Custom';
+    const custom = S.get('cg_custom_posts');
+    const id = Date.now();
+    custom.push({ id, title: title.trim(), body: body.trim(), subreddit: subreddit.trim(), createdAt: new Date().toISOString() });
+    S.set('cg_custom_posts', custom);
+    cgOpenCustomPost(id);
+}
+
+function cgRenderWorkspace() {
     document.getElementById('cgEmptyWs').classList.add('hidden');
     document.getElementById('cgPostWs').classList.remove('hidden');
-    document.getElementById('cgPostHeader').innerHTML = `
-        <h2>${esc(mp.title)}</h2>
-        <div class="cg-post-meta">r/${esc(sub.name)} ${mp.url ? `· <a href="${esc(mp.url)}" target="_blank" rel="noopener" style="color:var(--accent-blue)">View on Reddit</a>` : ''}</div>
-    `;
     cgBuildSidebar();
-    cgSetTab(_cgCurrentTab);
+
+    // Post header
+    const top = document.getElementById('cgPostTop');
+    top.innerHTML = `
+        <h2 class="cg-post-title">${esc(_cgPost.title)}</h2>
+        ${_cgPost.body ? `<div class="cg-post-body">${esc(_cgPost.body).replace(/\n/g, '<br>')}</div>` : ''}
+        <div class="cg-post-meta">
+            r/${esc(_cgPost.subName)}
+            ${_cgPost.url ? ` · <a href="${esc(_cgPost.url)}" target="_blank" rel="noopener" style="color:var(--accent-blue)">View on Reddit</a>` : ''}
+        </div>
+    `;
+
+    cgRenderFeed();
 }
 
-function cgSetTab(tab) {
-    _cgCurrentTab = tab;
-    ['our', 'live', 'generate'].forEach(t => {
-        document.getElementById('cgTab' + t.charAt(0).toUpperCase() + t.slice(1)).classList.toggle('active', t === tab);
-        document.getElementById('cgTabContent' + t.charAt(0).toUpperCase() + t.slice(1)).classList.toggle('hidden', t !== tab);
-    });
-    if (tab === 'our') cgRenderOur();
-    if (tab === 'live') cgFetchLive();
-}
-
-// ---- OUR COMMENTS TAB ----
-function cgRenderOur() {
-    if (!_cgCurrentPost) return;
-    const comments = getCgComments(_cgCurrentPost.subId, _cgCurrentPost.mpId);
+function cgRenderFeed() {
+    if (!_cgPost) return;
+    const comments = getCgComments(_cgPost.subId, _cgPost.mpId);
+    const feed = document.getElementById('cgCommentsFeed');
     const posted = comments.filter(c => c.status === 'posted').length;
-    document.getElementById('cgOurStats').textContent = `${posted}/${comments.length} posted`;
 
-    const el = document.getElementById('cgOurList');
     if (!comments.length) {
-        el.innerHTML = '<div class="tl-empty">No comments yet. Add manually, import a plan, or generate with AI.</div>';
+        feed.innerHTML = `<div class="cg-feed-empty">No comments yet. Generate some below or add manually.</div>
+            <button class="btn btn-sm btn-ghost" onclick="cgAddManual()" style="margin:10px 0;">+ Add comment manually</button>`;
         return;
     }
-    el.innerHTML = comments.map((c, i) => {
-        const isPosted = c.status === 'posted';
-        const roleClass = c.role === 'skeptic' ? 'cg-role-skeptic' : c.role === 'advocate' ? 'cg-role-advocate' : '';
-        return `<div class="cg-comment ${isPosted ? 'cg-posted' : ''} ${roleClass}">
-            <div class="cg-comment-header">
-                <span class="cg-username">u/${esc(c.username || 'anonymous')}</span>
-                ${c.role ? `<span class="cg-role cg-role-${c.role}">${c.role}</span>` : ''}
-                <span class="cg-comment-status ${isPosted ? 'cg-status-posted' : 'cg-status-pending'}">${isPosted ? 'Posted' : 'Pending'}</span>
-                <div class="cg-comment-actions">
-                    ${!isPosted ? `<button class="btn btn-xs btn-primary" onclick="cgMark(${i},'posted')">Mark Posted</button>` : `<button class="btn btn-xs btn-ghost" onclick="cgMark(${i},'pending')">Undo</button>`}
-                    <button class="btn btn-xs btn-ghost" onclick="cgEditOur(${i})">Edit</button>
-                    <button class="btn btn-xs btn-ghost" onclick="cgRegenOne(${i})">Regen</button>
-                    <button class="btn btn-xs btn-ghost" onclick="cgCopy(${i})">Copy</button>
-                    <button class="btn btn-xs btn-ghost danger" onclick="cgDeleteOur(${i})">Del</button>
+
+    feed.innerHTML = `<div class="cg-feed-stats">${posted}/${comments.length} posted</div>
+        <button class="btn btn-xs btn-ghost" onclick="cgAddManual()" style="margin-bottom:8px;">+ Add manually</button>` +
+        comments.map((c, i) => {
+            const isPosted = c.status === 'posted';
+            const isNew = c.isNew;
+            return `<div class="cg-c ${isPosted ? 'cg-c-posted' : ''} ${isNew ? 'cg-c-new' : ''}" id="cgC${i}">
+                <div class="cg-c-head">
+                    <span class="cg-c-num">Account ${i + 1}</span>
+                    <span class="cg-c-badge ${isPosted ? 'cg-b-posted' : 'cg-b-pending'}">${isPosted ? 'Posted' : 'Pending'}</span>
+                    ${isNew ? '<span class="cg-c-new-badge">NEW</span>' : ''}
+                    <div class="cg-c-actions">
+                        ${!isPosted ? `<button class="btn btn-xs btn-primary" onclick="cgMarkPosted(${i})">Posted</button>` : `<button class="btn btn-xs btn-ghost" onclick="cgMarkPending(${i})">Undo</button>`}
+                        <button class="btn btn-xs btn-ghost" onclick="cgEdit(${i})">Edit</button>
+                        <button class="btn btn-xs btn-ghost" onclick="cgRegen(${i})">Regen</button>
+                        <button class="btn btn-xs btn-ghost" onclick="cgCopyC(${i})">Copy</button>
+                        <button class="btn btn-xs btn-ghost danger" onclick="cgDelC(${i})">Del</button>
+                    </div>
                 </div>
-            </div>
-            <div class="cg-comment-body" id="cgOurBody${i}">${esc(c.comment)}</div>
-        </div>`;
-    }).join('');
-}
-
-function cgMark(idx, status) {
-    if (!_cgCurrentPost) return;
-    const comments = getCgComments(_cgCurrentPost.subId, _cgCurrentPost.mpId);
-    if (comments[idx]) comments[idx].status = status;
-    saveCgComments(_cgCurrentPost.subId, _cgCurrentPost.mpId, comments);
-    cgRenderOur();
-    cgBuildSidebar();
-}
-
-function cgCopy(idx) {
-    const comments = getCgComments(_cgCurrentPost.subId, _cgCurrentPost.mpId);
-    if (comments[idx]) navigator.clipboard.writeText(comments[idx].comment).then(() => toast('success', 'Copied', '', 2000));
-}
-
-function cgDeleteOur(idx) {
-    if (!_cgCurrentPost) return;
-    const comments = getCgComments(_cgCurrentPost.subId, _cgCurrentPost.mpId);
-    comments.splice(idx, 1);
-    saveCgComments(_cgCurrentPost.subId, _cgCurrentPost.mpId, comments);
-    cgRenderOur();
-    cgBuildSidebar();
-}
-
-function cgEditOur(idx) {
-    const comments = getCgComments(_cgCurrentPost.subId, _cgCurrentPost.mpId);
-    const c = comments[idx];
-    if (!c) return;
-    const el = document.getElementById(`cgOurBody${idx}`);
-    el.innerHTML = `<textarea class="input cg-edit-textarea" id="cgEditArea${idx}" rows="4">${esc(c.comment)}</textarea>
-        <div style="margin-top:6px;display:flex;gap:6px;">
-            <button class="btn btn-xs btn-primary" onclick="cgSaveEdit(${idx})">Save</button>
-            <button class="btn btn-xs btn-ghost" onclick="cgRenderOur()">Cancel</button>
-        </div>`;
-}
-
-function cgSaveEdit(idx) {
-    const comments = getCgComments(_cgCurrentPost.subId, _cgCurrentPost.mpId);
-    comments[idx].comment = document.getElementById(`cgEditArea${idx}`).value.trim();
-    saveCgComments(_cgCurrentPost.subId, _cgCurrentPost.mpId, comments);
-    cgRenderOur();
-}
-
-function cgAddComment() {
-    if (!_cgCurrentPost) return;
-    const username = prompt('Username (e.g. TikTokFan22):');
-    if (!username) return;
-    const comment = prompt('Comment text:');
-    if (!comment) return;
-    const comments = getCgComments(_cgCurrentPost.subId, _cgCurrentPost.mpId);
-    comments.push({ username: username.trim(), comment: comment.trim(), status: 'pending', role: '', addedAt: new Date().toISOString() });
-    saveCgComments(_cgCurrentPost.subId, _cgCurrentPost.mpId, comments);
-    cgRenderOur();
-    cgBuildSidebar();
-}
-
-function cgImportPlan() {
-    if (!_cgCurrentPost) return;
-    const text = prompt('Paste your comment plan (format: username - comment, one per block):');
-    if (!text) return;
-    // Parse: lines like "username - comment text" or "username: comment text"
-    const blocks = text.split(/\n{2,}|\n(?=\w+\s*[-:])/).filter(Boolean);
-    const comments = getCgComments(_cgCurrentPost.subId, _cgCurrentPost.mpId);
-    let added = 0;
-    blocks.forEach(block => {
-        const match = block.trim().match(/^(\S+)\s*[-:]\s*(.+)/s);
-        if (match) {
-            comments.push({ username: match[1].trim(), comment: match[2].trim(), status: 'pending', role: '', addedAt: new Date().toISOString() });
-            added++;
-        }
-    });
-    saveCgComments(_cgCurrentPost.subId, _cgCurrentPost.mpId, comments);
-    cgRenderOur();
-    cgBuildSidebar();
-    toast('success', `Imported ${added} comments`, '');
-}
-
-// ---- LIVE COMMENTS TAB ----
-async function cgFetchLive() {
-    if (!_cgCurrentPost?.url) return;
-    const el = document.getElementById('cgLiveList');
-    el.innerHTML = '<div class="fetch-status loading"><span class="spinner"></span> Loading from Reddit...</div>';
-
-    try {
-        const parsed = parsePostUrl(_cgCurrentPost.url);
-        if (!parsed) throw new Error('Invalid URL');
-        const data = await redditFetch(`/comments/${parsed.postId}.json?limit=50`);
-        const comments = (data?.[1]?.data?.children || []).filter(c => c.kind === 't1');
-
-        // Check which are ours
-        const ourComments = getCgComments(_cgCurrentPost.subId, _cgCurrentPost.mpId);
-        const ourUsernames = new Set(ourComments.map(c => c.username?.toLowerCase()));
-
-        document.getElementById('cgLiveStats').textContent = `${comments.length} comments · ${ourUsernames.size} tracked usernames`;
-
-        el.innerHTML = comments.map(c => {
-            const d = c.data;
-            const isOurs = ourUsernames.has(d.author?.toLowerCase());
-            return `<div class="cg-comment ${isOurs ? 'cg-ours-highlight' : ''}">
-                <div class="cg-comment-header">
-                    <span class="cg-username">u/${esc(d.author)}</span>
-                    <span style="color:var(--text-muted);font-size:11px;">${d.ups || 0} upvotes</span>
-                    ${isOurs ? '<span class="cg-our-badge">OURS</span>' : '<span class="cg-organic-badge">ORGANIC</span>'}
-                </div>
-                <div class="cg-comment-body">${esc((d.body || '').slice(0, 300))}${(d.body || '').length > 300 ? '...' : ''}</div>
+                <div class="cg-c-body" id="cgCB${i}">${esc(c.comment)}</div>
             </div>`;
-        }).join('') || '<div class="tl-empty">No comments found</div>';
-    } catch (err) {
-        el.innerHTML = `<div class="fetch-status error">${err.message}</div>`;
-    }
+        }).join('');
 }
 
-// ---- GENERATE TAB ----
+function cgMarkPosted(i) {
+    const c = getCgComments(_cgPost.subId, _cgPost.mpId);
+    if (c[i]) { c[i].status = 'posted'; delete c[i].isNew; }
+    saveCgComments(_cgPost.subId, _cgPost.mpId, c);
+    cgRenderFeed(); cgBuildSidebar();
+}
+
+function cgMarkPending(i) {
+    const c = getCgComments(_cgPost.subId, _cgPost.mpId);
+    if (c[i]) c[i].status = 'pending';
+    saveCgComments(_cgPost.subId, _cgPost.mpId, c);
+    cgRenderFeed(); cgBuildSidebar();
+}
+
+function cgCopyC(i) {
+    const c = getCgComments(_cgPost.subId, _cgPost.mpId);
+    if (c[i]) navigator.clipboard.writeText(c[i].comment).then(() => toast('success', 'Copied', '', 2000));
+}
+
+function cgDelC(i) {
+    const c = getCgComments(_cgPost.subId, _cgPost.mpId);
+    c.splice(i, 1);
+    saveCgComments(_cgPost.subId, _cgPost.mpId, c);
+    cgRenderFeed(); cgBuildSidebar();
+}
+
+function cgEdit(i) {
+    const c = getCgComments(_cgPost.subId, _cgPost.mpId);
+    if (!c[i]) return;
+    document.getElementById(`cgCB${i}`).innerHTML = `
+        <textarea class="input" id="cgEditA${i}" rows="4" style="width:100%;font-size:13px;">${esc(c[i].comment)}</textarea>
+        <div style="margin-top:6px;display:flex;gap:6px;">
+            <button class="btn btn-xs btn-primary" onclick="cgSaveEdit(${i})">Save</button>
+            <button class="btn btn-xs btn-ghost" onclick="cgRenderFeed()">Cancel</button>
+        </div>`;
+}
+
+function cgSaveEdit(i) {
+    const c = getCgComments(_cgPost.subId, _cgPost.mpId);
+    c[i].comment = document.getElementById(`cgEditA${i}`).value.trim();
+    saveCgComments(_cgPost.subId, _cgPost.mpId, c);
+    cgRenderFeed();
+}
+
+function cgAddManual() {
+    const comment = prompt('Comment text:');
+    if (!comment?.trim()) return;
+    const c = getCgComments(_cgPost.subId, _cgPost.mpId);
+    c.push({ comment: comment.trim(), status: 'pending', isNew: true, addedAt: new Date().toISOString() });
+    saveCgComments(_cgPost.subId, _cgPost.mpId, c);
+    cgRenderFeed(); cgBuildSidebar();
+}
+
+async function cgRegen(i) {
+    const apiKey = getClaudeKey();
+    if (!apiKey) return toast('warning', 'No Claude API key', 'Add in Settings.');
+    const c = getCgComments(_cgPost.subId, _cgPost.mpId);
+    if (!c[i]) return;
+    toast('info', 'Regenerating...', '', 3000);
+    try {
+        const res = await fetch(`${SERVER}/api/generate-comments`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ referenceComments: [{ author: 'ref', body: c[i].comment, upvotes: 5 }], postTitle: _cgPost.title, subreddit: _cgPost.subName, count: 1, styleGuide: 'Rewrite this comment with a completely different persona and wording but similar intent. Do NOT use a username.', apiKey })
+        });
+        const data = await res.json();
+        if (data.comments?.[0]) {
+            c[i].comment = data.comments[0].comment;
+            c[i].isNew = true;
+            saveCgComments(_cgPost.subId, _cgPost.mpId, c);
+            cgRenderFeed();
+            toast('success', 'Regenerated', '');
+        }
+    } catch (err) { toast('error', 'Failed', err.message); }
+}
+
 async function cgGenerate() {
     const apiKey = getClaudeKey();
-    if (!apiKey) return toast('warning', 'No Claude API key', 'Add it in Settings.');
-    if (!_cgCurrentPost) return;
+    if (!apiKey) return toast('warning', 'No Claude API key', 'Add in Settings.');
+    if (!_cgPost) return;
 
     const count = Number(document.getElementById('cgCount').value) || 10;
-    const styleGuide = document.getElementById('cgStyleGuide').value.trim();
     const genType = document.getElementById('cgGenType').value;
-    localStorage.setItem('lk_cg_style', styleGuide);
-
     const btn = document.getElementById('cgGenBtn');
-    btn.disabled = true;
-    btn.textContent = 'Generating...';
+    btn.disabled = true; btn.textContent = 'Generating...';
 
-    // Use existing "our comments" as additional reference
-    const existing = getCgComments(_cgCurrentPost.subId, _cgCurrentPost.mpId);
-    const refText = existing.slice(0, 5).map(c => `u/${c.username}: ${c.comment}`).join('\n\n');
+    let styleGuide = '';
+    if (genType === 'paste') {
+        styleGuide = document.getElementById('cgPasteRef').value.trim();
+        if (!styleGuide) { btn.disabled = false; btn.textContent = 'Generate'; return toast('warning', 'Empty', 'Paste reference text.'); }
+    }
+
+    // Use selected comments as reference (for "pick" mode, use existing comments)
+    const existing = getCgComments(_cgPost.subId, _cgPost.mpId);
+    const refComments = existing.slice(0, 5).map(c => ({ author: 'ref', body: c.comment, upvotes: 5 }));
+
+    if (genType === 'pick' && !refComments.length) {
+        btn.disabled = false; btn.textContent = 'Generate';
+        return toast('warning', 'No reference', 'Add some comments first or switch to "paste reference" mode.');
+    }
 
     try {
         const res = await fetch(`${SERVER}/api/generate-comments`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                referenceComments: existing.slice(0, 5).map(c => ({ author: c.username, body: c.comment, upvotes: 5 })),
-                postTitle: _cgCurrentPost.title,
-                postBody: refText ? '' : '',
-                subreddit: _cgCurrentPost.subName,
-                count,
-                styleGuide: (styleGuide || '') + (genType === 'dialogue' ? '\n\nIMPORTANT: Generate as dialogue pairs — two personas debating back and forth (skeptic vs advocate). Return pairs with alternating viewpoints.' : genType === 'mix' ? '\n\nGenerate a mix: some standalone comments and some dialogue pairs (2 personas debating).' : ''),
+                referenceComments: genType === 'paste' ? [{ author: 'ref', body: styleGuide, upvotes: 5 }] : refComments,
+                postTitle: _cgPost.title, postBody: _cgPost.body || '', subreddit: _cgPost.subName, count,
+                styleGuide: genType === 'paste' ? styleGuide : 'Match the style and tone of the reference comments. Do NOT include usernames — just return the comment text.',
                 apiKey
             })
         });
         const data = await res.json();
         if (data.error) throw new Error(data.error);
 
-        // Show results
-        const resultsEl = document.getElementById('cgGenResults');
-        resultsEl.innerHTML = `<div class="cg-gen-header">${data.comments.length} comments generated — click "Add" to add to your plan</div>` +
-            data.comments.map((c, i) => `
-                <div class="cg-comment">
-                    <div class="cg-comment-header">
-                        <span class="cg-username">u/${esc(c.username)}</span>
-                        <button class="btn btn-xs btn-primary" onclick="cgAddGenerated(${i})">Add to Plan</button>
-                        <button class="btn btn-xs btn-ghost" onclick="cgCopyGen(${i})">Copy</button>
-                    </div>
-                    <div class="cg-comment-body">${esc(c.comment)}</div>
-                </div>
-            `).join('');
-
-        window._cgGenerated = data.comments;
-        toast('success', 'Generated', `${data.comments.length} comments`);
-    } catch (err) {
-        toast('error', 'Failed', err.message);
-    }
-    btn.disabled = false;
-    btn.textContent = 'Generate';
-}
-
-function cgAddGenerated(idx) {
-    if (!_cgCurrentPost || !window._cgGenerated?.[idx]) return;
-    const c = window._cgGenerated[idx];
-    const comments = getCgComments(_cgCurrentPost.subId, _cgCurrentPost.mpId);
-    comments.push({ username: c.username, comment: c.comment, status: 'pending', role: '', addedAt: new Date().toISOString() });
-    saveCgComments(_cgCurrentPost.subId, _cgCurrentPost.mpId, comments);
-    toast('success', 'Added', `u/${c.username}`);
-    cgBuildSidebar();
-}
-
-function cgCopyGen(idx) {
-    if (window._cgGenerated?.[idx]) navigator.clipboard.writeText(window._cgGenerated[idx].comment).then(() => toast('success', 'Copied', '', 2000));
-}
-
-async function cgRegenOne(idx) {
-    const apiKey = getClaudeKey();
-    if (!apiKey || !_cgCurrentPost) return;
-    const comments = getCgComments(_cgCurrentPost.subId, _cgCurrentPost.mpId);
-    const c = comments[idx];
-    if (!c) return;
-    toast('info', 'Regenerating...', '', 3000);
-    try {
-        const res = await fetch(`${SERVER}/api/generate-comments`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                referenceComments: [{ author: c.username, body: c.comment, upvotes: 5 }],
-                postTitle: _cgCurrentPost.title,
-                subreddit: _cgCurrentPost.subName,
-                count: 1,
-                styleGuide: 'Generate one alternative with a different persona and wording but similar intent.',
-                apiKey
-            })
+        // Add to comment list as new
+        const comments = getCgComments(_cgPost.subId, _cgPost.mpId);
+        data.comments.forEach(c => {
+            comments.push({ comment: c.comment, status: 'pending', isNew: true, addedAt: new Date().toISOString() });
         });
-        const data = await res.json();
-        if (data.comments?.[0]) {
-            comments[idx].username = data.comments[0].username;
-            comments[idx].comment = data.comments[0].comment;
-            saveCgComments(_cgCurrentPost.subId, _cgCurrentPost.mpId, comments);
-            cgRenderOur();
-        }
+        saveCgComments(_cgPost.subId, _cgPost.mpId, comments);
+        cgRenderFeed(); cgBuildSidebar();
+        toast('success', `Generated ${data.comments.length} comments`, '');
     } catch (err) { toast('error', 'Failed', err.message); }
-}
 
+    btn.disabled = false; btn.textContent = 'Generate';
+}
 
 // ==========================================
 //  MONTHLY RECURRING TASK RESET
