@@ -3887,13 +3887,22 @@ async function autoCheckAllMoneyComments() {
 
                 // CRITICAL ALERT if lost #1 — persistent toast + Telegram
                 if (mcData.position && mcData.position > 1) {
-                    const alertMsg = `"${p.title?.slice(0, 40)}..." in r/${sub.name} dropped to #${mcData.position}. Was ${oldPos ? '#' + oldPos : 'unchecked'}.`;
-                    toast('error', 'CRITICAL: Money comment lost #1!', alertMsg + ' Immediate action needed.', 0);
-                    // Send Telegram notification
+                    const alertMsg = `"${p.title?.slice(0, 50)}" in r/${sub.name} dropped to #${mcData.position}`;
+                    toast('error', 'CRITICAL: Money comment lost #1!', alertMsg + '. Immediate action needed.', 0);
+                    // Build comment permalink
+                    const commentLink = p.url ? p.url.replace(/\/$/, '') + '/' + p.moneyComment.commentId + '/' : '';
                     fetch(`${SERVER}/api/telegram`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ message: `⚠️ Money comment lost #1!\n${alertMsg}` })
+                        body: JSON.stringify({ message:
+                            `🔴 *MONEY COMMENT LOST #1*\n\n` +
+                            `Position: #${oldPos || '?'} ➜ *#${mcData.position}*\n` +
+                            `Post: ${p.title?.slice(0, 60)}\n` +
+                            `Subreddit: r/${sub.name}\n` +
+                            `Author: u/${mcData.commentData?.author || '?'}\n` +
+                            `Upvotes: ${mcData.commentData?.upvotes || 0}\n` +
+                            (commentLink ? `🔗 ${commentLink}` : '')
+                        })
                     }).catch(() => {});
                 }
 

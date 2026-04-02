@@ -1219,7 +1219,7 @@ async function autoRankCheck() {
             }
 
             if (searchType === 'google' && rank) {
-                // Found on Google — save and mark so reddit result is skipped
+                const prevType = kw.rankType;
                 if (!kw.history) kw.history = [];
                 if (kw.updatedAt) kw.history.push({ rankType: kw.rankType || 'none', avgRank: kw.avgRank, date: kw.updatedAt });
                 kw.rankType = 'google';
@@ -1230,11 +1230,33 @@ async function autoRankCheck() {
                 updated++;
                 console.log(`[AutoRank] "${kw.keyword}": Google #${rank}`);
 
-                // Telegram: notify if newly on Google
-                await sendTelegramAlert(data, `Google ranking: "${kw.keyword}" is now on Google #${rank}`);
+                // Telegram: only notify ONCE when first appearing on Google
+                if (prevType !== 'google') {
+                    await sendTelegramAlert(data,
+                        `🟢 *GOOGLE RANKING*\n\n` +
+                        `Keyword: *${kw.keyword}*\n` +
+                        `Position: *#${rank}* on Google\n` +
+                        `Subreddit: r/${sub.name}\n` +
+                        `Post: ${mp.title?.slice(0, 60)}\n` +
+                        `🔗 ${targetUrl}`
+                    );
+                }
+
+            } else if (searchType === 'google' && !rank) {
+                // Check if LOST Google ranking (was google, now not found)
+                if (kw.rankType === 'google') {
+                    await sendTelegramAlert(data,
+                        `🔴 *GOOGLE POSITION LOST*\n\n` +
+                        `Keyword: *${kw.keyword}*\n` +
+                        `Was: Google #${kw.avgRank}\n` +
+                        `Now: Not on Google page 1\n` +
+                        `Subreddit: r/${sub.name}\n` +
+                        `Post: ${mp.title?.slice(0, 60)}\n` +
+                        `🔗 ${targetUrl}`
+                    );
+                }
 
             } else if (searchType === 'reddit' && !kw._googleFoundThisCycle) {
-                // Only save reddit result if Google didn't find it this cycle
                 if (!kw.history) kw.history = [];
                 if (kw.updatedAt) kw.history.push({ rankType: kw.rankType || 'none', avgRank: kw.avgRank, date: kw.updatedAt });
                 kw.rankType = rank ? 'reddit' : 'none';
