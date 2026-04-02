@@ -3504,6 +3504,37 @@ select.input {
     margin-bottom: 6px;
 }
 
+.cg-c-live {
+    background: var(--bg-muted);
+    border-color: transparent;
+}
+
+.cg-live-header, .cg-our-header {
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    letter-spacing: 0.3px;
+    padding: 10px 0 6px;
+    margin-top: 8px;
+    border-top: 2px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.cg-live-header { border-top: none; margin-top: 0; }
+
+.cg-organic-badge {
+    font-size: 9px;
+    font-weight: 700;
+    color: var(--text-muted);
+    background: var(--bg-muted);
+    padding: 1px 5px;
+    border-radius: 3px;
+    border: 1px solid var(--border);
+}
+
 .cg-c-posted { opacity: 0.5; border-color: var(--accent-green); }
 .cg-c-new { border-left: 3px solid var(--accent-yellow); }
 

@@ -3530,13 +3530,37 @@ function saveCgComments(subId, mpId, comments) {
     localStorage.setItem(`lk_cg_${subId}_${mpId}`, JSON.stringify(comments));
 }
 
-function cgOpenPost(subId, mpId) {
+async function cgOpenPost(subId, mpId) {
     const subs = S.get('subreddits');
     const sub = subs.find(s => s.id === subId);
     const mp = sub?.moneyPosts?.find(p => p.id === mpId);
     if (!mp) return;
-    _cgPost = { subId, mpId, subName: sub.name, title: mp.title, url: mp.url, body: '' };
+    _cgPost = { subId, mpId, subName: sub.name, title: mp.title, url: mp.url, body: '', liveComments: [] };
     cgRenderWorkspace();
+
+    // Fetch post body + comments from Reddit
+    if (mp.url) {
+        try {
+            const parsed = parsePostUrl(mp.url);
+            if (parsed) {
+                const data = await redditFetch(`/comments/${parsed.postId}.json?limit=50`);
+                const post = data?.[0]?.data?.children?.[0]?.data;
+                const comments = (data?.[1]?.data?.children || []).filter(c => c.kind === 't1');
+                if (post) {
+                    _cgPost.body = post.selftext || '';
+                    _cgPost.title = post.title || _cgPost.title;
+                }
+                _cgPost.liveComments = comments.map(c => ({
+                    author: c.data.author,
+                    body: c.data.body || '',
+                    upvotes: c.data.ups || 0,
+                }));
+                cgRenderWorkspace();
+            }
+        } catch (e) {
+            console.log('[CG] Failed to fetch post:', e.message);
+        }
+    }
 }
 
 function cgOpenCustomPost(id) {
@@ -3584,15 +3608,33 @@ function cgRenderFeed() {
     const feed = document.getElementById('cgCommentsFeed');
     const posted = comments.filter(c => c.status === 'posted').length;
 
-    if (!comments.length) {
-        feed.innerHTML = `<div class="cg-feed-empty">No comments yet. Generate some below or add manually.</div>
-            <button class="btn btn-sm btn-ghost" onclick="cgAddManual()" style="margin:10px 0;">+ Add comment manually</button>`;
-        return;
+    // Live Reddit comments section
+    const live = _cgPost.liveComments || [];
+    let liveHtml = '';
+    if (live.length) {
+        liveHtml = `<div class="cg-live-header">Live on Reddit (${live.length} comments)</div>` +
+            live.map(c => `<div class="cg-c cg-c-live">
+                <div class="cg-c-head">
+                    <span class="cg-c-num">u/${esc(c.author)}</span>
+                    <span style="color:var(--text-muted);font-size:11px;">${c.upvotes} upvotes</span>
+                    <span class="cg-organic-badge">LIVE</span>
+                </div>
+                <div class="cg-c-body">${esc(c.body.slice(0, 300))}${c.body.length > 300 ? '...' : ''}</div>
+            </div>`).join('');
     }
 
-    feed.innerHTML = `<div class="cg-feed-stats">${posted}/${comments.length} posted</div>
-        <button class="btn btn-xs btn-ghost" onclick="cgAddManual()" style="margin-bottom:8px;">+ Add manually</button>` +
-        comments.map((c, i) => {
+    // Our managed comments section
+    let ourHtml = '';
+    if (!comments.length && !live.length) {
+        ourHtml = `<div class="cg-feed-empty">No comments yet. Generate some below or add manually.</div>`;
+    }
+
+    ourHtml += `<div class="cg-our-header">
+        <span>Our Comments ${comments.length ? `(${posted}/${comments.length} posted)` : ''}</span>
+        <button class="btn btn-xs btn-ghost" onclick="cgAddManual()">+ Add manually</button>
+    </div>`;
+
+    ourHtml += comments.map((c, i) => {
             const isPosted = c.status === 'posted';
             const isNew = c.isNew;
             return `<div class="cg-c ${isPosted ? 'cg-c-posted' : ''} ${isNew ? 'cg-c-new' : ''}" id="cgC${i}">
@@ -3611,6 +3653,8 @@ function cgRenderFeed() {
                 <div class="cg-c-body" id="cgCB${i}">${esc(c.comment)}</div>
             </div>`;
         }).join('');
+
+    feed.innerHTML = liveHtml + ourHtml;
 }
 
 function cgMarkPosted(i) {
