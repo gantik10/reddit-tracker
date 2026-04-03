@@ -805,13 +805,16 @@ COMMENT FORMAT: ${commentStyle === 'single' ? 'SINGLE COMMENTS ONLY — every co
 RULES:
 - Generate exactly ${count} comment entries total
 ${commentStyle !== 'single' ? '- USE AS FEW ACCOUNTS AS POSSIBLE — reuse the same usernames across threads. We have limited accounts.\n- Each thread should be 3-6 messages long — real debates, not short exchanges' : '- Each comment from a unique user'}
-- Write LONGER comments — most should be 2-5 sentences. Mix in some short ones for variety.
-- SEO CRITICAL: The comments MUST naturally include keywords from the post title and body. Weave them into the conversation organically. This helps the post rank on Google.
+- VARY comment lengths A LOT — some very short (1 sentence), some medium (2-3), some long (4-6). They must NOT look uniform or templated
+- SEO CRITICAL: Analyze the post title keywords. The comments MUST naturally include those keywords and related variations. Google shows Reddit comment snippets in search — write comments that would look good as a Google snippet
+- NEVER end a comment with a period. Reddit users almost never do that. End with no punctuation, or with "lol", "tbh", "honestly", emoji-style text, etc.
+- Comments must FEEL like real people talking — raw, unpolished, with typos occasionally, casual grammar, real Reddit energy. Not corporate or AI-sounding at all
 - Comments should feel like real Reddit users — casual, authentic, not salesy
 ${commentStyle !== 'single' ? '- In threads: create natural debate — one skeptic, one advocate, sometimes a third voice' : ''}
 - Include personal experiences, opinions, specific recommendations
-- Use Reddit-style language (e.g. "honestly", "ngl", "in my experience", "tbh", etc.)
+- Use Reddit-style language (e.g. "honestly", "ngl", "in my experience", "tbh", "fr", "nah", etc.)
 - Do NOT use marketing language or be too promotional
+- Some comments should have slight grammar mistakes or informal writing to feel authentic
 
 Return as a JSON array. Each item has:
 - "username": Reddit-style username (REUSE usernames across threads)
