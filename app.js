@@ -478,7 +478,7 @@ async function proxyFetch(targetUrl, extraHeaders = {}) {
 }
 
 async function redditFetch(endpoint) {
-    return proxyFetch(`https://oauth.reddit.com${endpoint}`);
+    return proxyFetch(`https://www.reddit.com${endpoint}`);
 }
 
 // ==========================================
@@ -3543,9 +3543,22 @@ async function cgOpenPost(subId, mpId) {
         try {
             const parsed = parsePostUrl(mp.url);
             if (parsed) {
-                const data = await redditFetch(`/comments/${parsed.postId}.json?limit=500&depth=1`);
+                const data = await redditFetch(`/comments/${parsed.postId}.json?limit=500`);
                 const post = data?.[0]?.data?.children?.[0]?.data;
-                const comments = (data?.[1]?.data?.children || []).filter(c => c.kind === 't1');
+                // Flatten all comments recursively (top-level + replies)
+                function flattenComments(children) {
+                    const result = [];
+                    (children || []).forEach(c => {
+                        if (c.kind === 't1') {
+                            result.push(c);
+                            if (c.data.replies?.data?.children) {
+                                result.push(...flattenComments(c.data.replies.data.children));
+                            }
+                        }
+                    });
+                    return result;
+                }
+                const comments = flattenComments(data?.[1]?.data?.children);
                 if (post) {
                     _cgPost.body = post.selftext || '';
                     _cgPost.title = post.title || _cgPost.title;

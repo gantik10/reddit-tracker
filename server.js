@@ -977,12 +977,12 @@ Return ONLY the JSON array, no other text.`;
                 if (!compPostId) continue;
 
                 // Fetch Reddit post data with comments
-                const postData = JSON.parse(httpsRequest(`https://oauth.reddit.com/comments/${compPostId}.json?limit=5`).data);
+                const postData = JSON.parse(httpsRequest(`https://www.reddit.com/comments/${compPostId}.json?limit=5`).data);
                 const post = postData?.[0]?.data?.children?.[0]?.data;
                 if (!post) continue;
 
                 // Fetch subreddit data
-                const subData = JSON.parse(httpsRequest(`https://oauth.reddit.com/r/${post.subreddit}/about.json`).data);
+                const subData = JSON.parse(httpsRequest(`https://www.reddit.com/r/${post.subreddit}/about.json`).data);
                 const sub = subData?.data;
 
                 // Extract top comments for analysis
@@ -1027,9 +1027,9 @@ Return ONLY the JSON array, no other text.`;
             try {
                 const ourPostId = ourPost.url.match(/comments\/([A-Za-z0-9]+)/i)?.[1];
                 if (ourPostId) {
-                    const pd = JSON.parse(httpsRequest(`https://oauth.reddit.com/comments/${ourPostId}.json`).data);
+                    const pd = JSON.parse(httpsRequest(`https://www.reddit.com/comments/${ourPostId}.json`).data);
                     const p = pd?.[0]?.data?.children?.[0]?.data;
-                    const sd = JSON.parse(httpsRequest(`https://oauth.reddit.com/r/${p.subreddit}/about.json`).data);
+                    const sd = JSON.parse(httpsRequest(`https://www.reddit.com/r/${p.subreddit}/about.json`).data);
                     ourData = {
                         title: p.title,
                         subreddit: p.subreddit,
@@ -1068,7 +1068,7 @@ Return ONLY the JSON array, no other text.`;
         console.log(`[Comments] Fetching top comments for ${postId}...`);
 
         try {
-            const data = JSON.parse(httpsRequest(`https://oauth.reddit.com/comments/${postId}.json?limit=10`).data);
+            const data = JSON.parse(httpsRequest(`https://www.reddit.com/comments/${postId}.json?limit=10`).data);
             const comments = (data?.[1]?.data?.children || [])
                 .filter(c => c.kind === 't1')
                 .slice(0, 7)
@@ -1113,7 +1113,7 @@ Return ONLY the JSON array, no other text.`;
 
         try {
             // Fetch post with comments sorted by best (default Reddit sort)
-            const data = JSON.parse(httpsRequest(`https://oauth.reddit.com/comments/${postId}.json?limit=25`).data);
+            const data = JSON.parse(httpsRequest(`https://www.reddit.com/comments/${postId}.json?limit=25`).data);
             const comments = data?.[1]?.data?.children || [];
 
             let position = null;
@@ -1539,7 +1539,7 @@ async function serverCheckMoneyComments() {
             if (!postId) continue;
 
             try {
-                const raw = httpsRequest(`https://oauth.reddit.com/comments/${postId}.json?limit=25`).data;
+                const raw = httpsRequest(`https://www.reddit.com/comments/${postId}.json?limit=25`).data;
                 const jsonData = JSON.parse(raw);
                 const comments = jsonData?.[1]?.data?.children || [];
 
