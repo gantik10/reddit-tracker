@@ -3543,7 +3543,7 @@ async function cgOpenPost(subId, mpId) {
         try {
             const parsed = parsePostUrl(mp.url);
             if (parsed) {
-                const data = await redditFetch(`/comments/${parsed.postId}.json?limit=50`);
+                const data = await redditFetch(`/comments/${parsed.postId}.json?limit=500&depth=1`);
                 const post = data?.[0]?.data?.children?.[0]?.data;
                 const comments = (data?.[1]?.data?.children || []).filter(c => c.kind === 't1');
                 if (post) {
@@ -3608,13 +3608,18 @@ function cgRenderFeed() {
     const feed = document.getElementById('cgCommentsFeed');
     const posted = comments.filter(c => c.status === 'posted').length;
 
-    // Live Reddit comments section
+    // Live Reddit comments section with selectable checkboxes
     const live = _cgPost.liveComments || [];
     let liveHtml = '';
     if (live.length) {
-        liveHtml = `<div class="cg-live-header">Live on Reddit (${live.length} comments)</div>` +
-            live.map(c => `<div class="cg-c cg-c-live">
+        const selectedCount = live.filter(c => c._selected).length;
+        liveHtml = `<div class="cg-live-header">
+            <span>Live on Reddit (${live.length} comments${selectedCount ? `, ${selectedCount} selected as reference` : ''})</span>
+            ${selectedCount ? `<button class="btn btn-xs btn-ghost" onclick="cgClearSelection()">Clear selection</button>` : ''}
+        </div>` +
+            live.map((c, i) => `<div class="cg-c cg-c-live ${c._selected ? 'cg-c-ref-selected' : ''}" onclick="cgToggleLiveRef(${i})">
                 <div class="cg-c-head">
+                    <div class="cg-ref-check ${c._selected ? 'cg-ref-checked' : ''}"></div>
                     <span class="cg-c-num">u/${esc(c.author)}</span>
                     <span style="color:var(--text-muted);font-size:11px;">${c.upvotes} upvotes</span>
                     <span class="cg-organic-badge">LIVE</span>
@@ -3655,6 +3660,17 @@ function cgRenderFeed() {
         }).join('');
 
     feed.innerHTML = liveHtml + ourHtml;
+}
+
+function cgToggleLiveRef(idx) {
+    if (!_cgPost?.liveComments?.[idx]) return;
+    _cgPost.liveComments[idx]._selected = !_cgPost.liveComments[idx]._selected;
+    cgRenderFeed();
+}
+
+function cgClearSelection() {
+    (_cgPost?.liveComments || []).forEach(c => delete c._selected);
+    cgRenderFeed();
 }
 
 function cgMarkPosted(i) {
@@ -3748,13 +3764,17 @@ async function cgGenerate() {
         if (!styleGuide) { btn.disabled = false; btn.textContent = 'Generate'; return toast('warning', 'Empty', 'Paste reference text.'); }
     }
 
-    // Use selected comments as reference (for "pick" mode, use existing comments)
+    // Use selected live comments as reference, fall back to existing managed comments
+    const selectedLive = (_cgPost.liveComments || []).filter(c => c._selected);
     const existing = getCgComments(_cgPost.subId, _cgPost.mpId);
-    const refComments = existing.slice(0, 5).map(c => ({ author: 'ref', body: c.comment, upvotes: 5 }));
-
-    if (genType === 'pick' && !refComments.length) {
+    let refComments;
+    if (genType === 'pick' && selectedLive.length) {
+        refComments = selectedLive.map(c => ({ author: c.author, body: c.body, upvotes: c.upvotes }));
+    } else if (genType === 'pick' && existing.length) {
+        refComments = existing.slice(0, 5).map(c => ({ author: 'ref', body: c.comment, upvotes: 5 }));
+    } else if (genType === 'pick') {
         btn.disabled = false; btn.textContent = 'Generate';
-        return toast('warning', 'No reference', 'Add some comments first or switch to "paste reference" mode.');
+        return toast('warning', 'No reference', 'Select comments from "Live on Reddit" or add some comments first.');
     }
 
     try {

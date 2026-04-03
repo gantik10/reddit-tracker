@@ -3507,6 +3507,28 @@ select.input {
 .cg-c-live {
     background: var(--bg-muted);
     border-color: transparent;
+    cursor: pointer;
+}
+
+.cg-c-live:hover { border-color: var(--primary); }
+
+.cg-c-ref-selected {
+    border-color: var(--accent-green) !important;
+    background: rgba(70, 209, 96, 0.05) !important;
+}
+
+.cg-ref-check {
+    width: 16px;
+    height: 16px;
+    border: 2px solid var(--border);
+    border-radius: 3px;
+    flex-shrink: 0;
+    transition: var(--transition);
+}
+
+.cg-ref-checked {
+    background: var(--accent-green);
+    border-color: var(--accent-green);
 }
 
 .cg-live-header, .cg-our-header {
