@@ -764,7 +764,7 @@ const server = http.createServer(async (req, res) => {
     // --- Comment Generator (Claude API) ---
     if (parsed.pathname === '/api/generate-comments' && req.method === 'POST') {
         const body = await readBody(req);
-        const { referenceComments, postTitle, postBody, subreddit, count, styleGuide, apiKey } = body;
+        const { referenceComments, postTitle, postBody, subreddit, count, styleGuide, apiKey, commentStyle } = body;
 
         if (!referenceComments?.length || !postTitle || !apiKey) {
             res.writeHead(400, { 'Content-Type': 'application/json' });
@@ -800,27 +800,25 @@ ${refText}
 ${styleMemory}
 ${styleGuide ? `STYLE INSTRUCTIONS: ${styleGuide}` : ''}
 
+COMMENT FORMAT: ${commentStyle === 'single' ? 'SINGLE COMMENTS ONLY — every comment is a standalone top-level comment from a different user. Each user appears only once. No replies or threads.' : commentStyle === 'thread' ? 'THREADS ONLY — create threaded conversations. Each thread has 2-3 users debating back-and-forth (3-6 messages per thread). Reuse the same usernames across threads. No standalone comments.' : 'MIXED — about 30% standalone single comments and 70% threaded conversations. Reuse usernames across threads.'}
+
 RULES:
 - Generate exactly ${count} comment entries total
-- Create a MIX of standalone comments AND threaded conversations:
-  - About 40% should be standalone top-level comments
-  - About 60% should be threaded replies (2-4 messages back and forth between personas)
-- Each persona must have a DIFFERENT voice and believable Reddit-style username
+${commentStyle !== 'single' ? '- USE AS FEW ACCOUNTS AS POSSIBLE — reuse the same usernames across threads. We have limited accounts.\n- Each thread should be 3-6 messages long — real debates, not short exchanges' : '- Each comment from a unique user'}
+- Write LONGER comments — most should be 2-5 sentences. Mix in some short ones for variety.
+- SEO CRITICAL: The comments MUST naturally include keywords from the post title and body. Weave them into the conversation organically. This helps the post rank on Google.
 - Comments should feel like real Reddit users — casual, authentic, not salesy
-- Mix comment lengths: some short (1-2 sentences), some medium (3-4), some longer
-- In threads: one persona can be skeptical, the other supportive. Create natural debate.
-- Include personal experiences, opinions, questions, recommendations naturally
-- Use Reddit-style language (e.g. "honestly", "ngl", "in my experience", etc.)
-- The comments should help the post rank in Google — include relevant keywords naturally
-- Do NOT make comments sound like they're from the same person
+${commentStyle !== 'single' ? '- In threads: create natural debate — one skeptic, one advocate, sometimes a third voice' : ''}
+- Include personal experiences, opinions, specific recommendations
+- Use Reddit-style language (e.g. "honestly", "ngl", "in my experience", "tbh", etc.)
 - Do NOT use marketing language or be too promotional
 
 Return as a JSON array. Each item has:
-- "username": Reddit-style username
-- "comment": the comment text
+- "username": Reddit-style username (REUSE usernames across threads)
+- "comment": the comment text (make them substantial, not one-liners)
 - "parentIndex": null for top-level, or the index (0-based) of the comment this replies to
 
-Example: [{"username":"u1","comment":"text","parentIndex":null},{"username":"u2","comment":"reply","parentIndex":0}]
+Example: [{"username":"u1","comment":"long text here","parentIndex":null},{"username":"u2","comment":"reply","parentIndex":0},{"username":"u1","comment":"response back","parentIndex":1}]
 Return ONLY the JSON array, no other text.`;
 
             const claudeBody = JSON.stringify({

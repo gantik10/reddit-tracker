@@ -3714,7 +3714,10 @@ function cgRenderFeed() {
             </div>`;
         }).join('');
 
-    feed.innerHTML = liveHtml + ourHtml;
+    // Our comments section (above live)
+    document.getElementById('cgOurSection').innerHTML = ourHtml;
+    // Live feed (below)
+    feed.innerHTML = liveHtml;
 }
 
 function cgToggleLiveRef2(idx) {
@@ -3822,11 +3825,13 @@ async function cgGenerate() {
     const btn = document.getElementById('cgGenBtn');
     btn.disabled = true; btn.textContent = 'Generating...';
 
+    const feedback = document.getElementById('cgFeedback').value.trim();
     let styleGuide = '';
     if (genType === 'paste') {
         styleGuide = document.getElementById('cgPasteRef').value.trim();
         if (!styleGuide) { btn.disabled = false; btn.textContent = 'Generate'; return toast('warning', 'Empty', 'Paste reference text.'); }
     }
+    if (feedback) styleGuide = (styleGuide ? styleGuide + '\n\n' : '') + 'USER FEEDBACK: ' + feedback;
 
     // Use selected live comments as reference, fall back to existing managed comments
     const selectedLive = (window._cgFlatLive || []).filter(c => c._selected);
@@ -3847,7 +3852,8 @@ async function cgGenerate() {
             body: JSON.stringify({
                 referenceComments: genType === 'paste' ? [{ author: 'ref', body: styleGuide, upvotes: 5 }] : refComments,
                 postTitle: _cgPost.title, postBody: _cgPost.body || '', subreddit: _cgPost.subName, count,
-                styleGuide: genType === 'paste' ? styleGuide : 'Match the style and tone of the reference comments. Do NOT include usernames — just return the comment text.',
+                commentStyle: document.getElementById('cgGenStyle').value,
+                styleGuide: genType === 'paste' ? styleGuide : 'Match the style and tone of the reference comments.',
                 apiKey
             })
         });
