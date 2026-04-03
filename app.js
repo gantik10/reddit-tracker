@@ -3730,7 +3730,16 @@ function cgClearSelection() {
 
 function cgMarkPosted(i) {
     const c = getCgComments(_cgPost.subId, _cgPost.mpId);
-    if (c[i]) { c[i].status = 'posted'; delete c[i].isNew; }
+    if (c[i]) {
+        c[i].status = 'posted';
+        delete c[i].isNew;
+        // Save to style memory — AI learns from approved comments
+        fetch(`${SERVER}/api/style-memory`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'add_example', comment: c[i].comment })
+        }).catch(() => {});
+    }
     saveCgComments(_cgPost.subId, _cgPost.mpId, c);
     cgRenderFeed(); cgBuildSidebar();
 }

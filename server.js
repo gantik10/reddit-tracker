@@ -777,6 +777,19 @@ const server = http.createServer(async (req, res) => {
         try {
             const refText = referenceComments.map((c, i) => `Comment ${i + 1} (by u/${c.author}, ${c.upvotes} upvotes):\n${c.body}`).join('\n\n');
 
+            // Load learned style memory
+            const styleMemoryFile = path.join(__dirname, 'style_memory.json');
+            let styleMemory = '';
+            try {
+                const mem = JSON.parse(fs.readFileSync(styleMemoryFile, 'utf8'));
+                if (mem.examples?.length) {
+                    styleMemory = `\nLEARNED STYLE (from previously approved comments — match this tone closely):\n${mem.examples.slice(-15).map((e, i) => `${i+1}. ${e}`).join('\n')}\n`;
+                }
+                if (mem.rules?.length) {
+                    styleMemory += `\nSTYLE RULES (learned from user feedback):\n${mem.rules.join('\n')}\n`;
+                }
+            } catch {}
+
             const prompt = `You are generating Reddit comments for a post in r/${subreddit}.
 
 POST TITLE: ${postTitle}
@@ -784,7 +797,7 @@ ${postBody ? `POST BODY: ${postBody.slice(0, 500)}` : ''}
 
 REFERENCE COMMENTS (match this style, tone, and quality):
 ${refText}
-
+${styleMemory}
 ${styleGuide ? `STYLE INSTRUCTIONS: ${styleGuide}` : ''}
 
 RULES:
@@ -839,6 +852,38 @@ Return ONLY the JSON array, no other text.`;
             console.error(`[CommentGen] Error: ${err.message}`);
             res.writeHead(500, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify({ error: err.message }));
+        }
+        return;
+    }
+
+    // --- Style memory: learn from approved comments ---
+    if (parsed.pathname === '/api/style-memory' && req.method === 'POST') {
+        const body = await readBody(req);
+        const styleMemoryFile = path.join(__dirname, 'style_memory.json');
+        try {
+            let mem = { examples: [], rules: [] };
+            try { mem = JSON.parse(fs.readFileSync(styleMemoryFile, 'utf8')); } catch {}
+
+            if (body.action === 'add_example' && body.comment) {
+                mem.examples.push(body.comment.slice(0, 300));
+                if (mem.examples.length > 50) mem.examples = mem.examples.slice(-50);
+            } else if (body.action === 'add_rule' && body.rule) {
+                mem.rules.push(body.rule);
+                if (mem.rules.length > 20) mem.rules = mem.rules.slice(-20);
+            } else if (body.action === 'get') {
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify(mem));
+                return;
+            } else if (body.action === 'clear') {
+                mem = { examples: [], rules: [] };
+            }
+
+            fs.writeFileSync(styleMemoryFile, JSON.stringify(mem, null, 2));
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ success: true, examples: mem.examples.length, rules: mem.rules.length }));
+        } catch (e) {
+            res.writeHead(500, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: e.message }));
         }
         return;
     }
