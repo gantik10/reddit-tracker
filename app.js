@@ -3545,29 +3545,36 @@ async function cgOpenPost(subId, mpId) {
             if (parsed) {
                 const data = await redditFetch(`/comments/${parsed.postId}.json?limit=500`);
                 const post = data?.[0]?.data?.children?.[0]?.data;
-                // Flatten all comments recursively (top-level + replies)
-                function flattenComments(children) {
+                // Build threaded comment tree
+                function buildTree(children, depth) {
                     const result = [];
                     (children || []).forEach(c => {
                         if (c.kind === 't1') {
-                            result.push(c);
+                            const node = {
+                                author: c.data.author,
+                                body: c.data.body || '',
+                                upvotes: c.data.ups || 0,
+                                depth: depth || 0,
+                                replies: []
+                            };
                             if (c.data.replies?.data?.children) {
-                                result.push(...flattenComments(c.data.replies.data.children));
+                                node.replies = buildTree(c.data.replies.data.children, (depth || 0) + 1);
                             }
+                            result.push(node);
                         }
                     });
                     return result;
                 }
-                const comments = flattenComments(data?.[1]?.data?.children);
+                const commentTree = buildTree(data?.[1]?.data?.children, 0);
+                // Also create flat list for counting
+                function flatCount(tree) { let n = 0; tree.forEach(c => { n++; n += flatCount(c.replies); }); return n; }
+                const comments = commentTree; // keep as tree
                 if (post) {
                     _cgPost.body = post.selftext || '';
                     _cgPost.title = post.title || _cgPost.title;
                 }
-                _cgPost.liveComments = comments.map(c => ({
-                    author: c.data.author,
-                    body: c.data.body || '',
-                    upvotes: c.data.ups || 0,
-                }));
+                _cgPost.liveComments = comments; // threaded tree
+                _cgPost.liveCount = flatCount(comments);
                 cgRenderWorkspace();
             }
         } catch (e) {
@@ -3621,24 +3628,55 @@ function cgRenderFeed() {
     const feed = document.getElementById('cgCommentsFeed');
     const posted = comments.filter(c => c.status === 'posted').length;
 
-    // Live Reddit comments section with selectable checkboxes
+    // Live Reddit comments as threaded view
     const live = _cgPost.liveComments || [];
+    const liveCount = _cgPost.liveCount || 0;
+    let _liveIdx = 0;
+
+    function renderThreadedComment(c, flatIdx) {
+        const idx = flatIdx;
+        const indent = Math.min(c.depth || 0, 5) * 20;
+        const selected = c._selected;
+        let html = `<div class="cg-thread" style="margin-left:${indent}px" onclick="cgToggleLiveRef2(${idx})" data-cgidx="${idx}">
+            <div class="cg-thread-line" style="border-color:${['var(--primary)','var(--accent-blue)','var(--accent-green)','var(--accent-yellow)','#7193FF','var(--accent-red)'][c.depth % 6]}"></div>
+            <div class="cg-thread-body ${selected ? 'cg-c-ref-selected' : ''}">
+                <div class="cg-thread-head">
+                    <div class="cg-ref-check ${selected ? 'cg-ref-checked' : ''}"></div>
+                    <span class="cg-thread-author">u/${esc(c.author)}</span>
+                    <span class="cg-thread-votes">${c.upvotes} pts</span>
+                </div>
+                <div class="cg-thread-text">${esc(c.body)}</div>
+            </div>
+        </div>`;
+        return html;
+    }
+
+    function renderTree(tree) {
+        let html = '';
+        tree.forEach(c => {
+            html += renderThreadedComment(c, _liveIdx);
+            _liveIdx++;
+            if (c.replies?.length) html += renderTree(c.replies);
+        });
+        return html;
+    }
+
+    // Build flat index for selection
+    function flattenTree(tree) {
+        const flat = [];
+        tree.forEach(c => { flat.push(c); flat.push(...flattenTree(c.replies || [])); });
+        return flat;
+    }
+    window._cgFlatLive = flattenTree(live);
+
+    const selectedCount = window._cgFlatLive.filter(c => c._selected).length;
     let liveHtml = '';
     if (live.length) {
-        const selectedCount = live.filter(c => c._selected).length;
+        _liveIdx = 0;
         liveHtml = `<div class="cg-live-header">
-            <span>Live on Reddit (${live.length} comments${selectedCount ? `, ${selectedCount} selected as reference` : ''})</span>
-            ${selectedCount ? `<button class="btn btn-xs btn-ghost" onclick="cgClearSelection()">Clear selection</button>` : ''}
-        </div>` +
-            live.map((c, i) => `<div class="cg-c cg-c-live ${c._selected ? 'cg-c-ref-selected' : ''}" onclick="cgToggleLiveRef(${i})">
-                <div class="cg-c-head">
-                    <div class="cg-ref-check ${c._selected ? 'cg-ref-checked' : ''}"></div>
-                    <span class="cg-c-num">u/${esc(c.author)}</span>
-                    <span style="color:var(--text-muted);font-size:11px;">${c.upvotes} upvotes</span>
-                    <span class="cg-organic-badge">LIVE</span>
-                </div>
-                <div class="cg-c-body">${esc(c.body.slice(0, 300))}${c.body.length > 300 ? '...' : ''}</div>
-            </div>`).join('');
+            <span>Live on Reddit (${liveCount} comments${selectedCount ? `, ${selectedCount} selected` : ''})</span>
+            ${selectedCount ? `<button class="btn btn-xs btn-ghost" onclick="cgClearSelection()">Clear</button>` : ''}
+        </div>` + renderTree(live);
     }
 
     // Our managed comments section
@@ -3655,9 +3693,13 @@ function cgRenderFeed() {
     ourHtml += comments.map((c, i) => {
             const isPosted = c.status === 'posted';
             const isNew = c.isNew;
-            return `<div class="cg-c ${isPosted ? 'cg-c-posted' : ''} ${isNew ? 'cg-c-new' : ''}" id="cgC${i}">
+            const indent = c.parentIndex != null ? 24 : 0;
+            const isReply = c.parentIndex != null;
+            return `<div class="cg-c ${isPosted ? 'cg-c-posted' : ''} ${isNew ? 'cg-c-new' : ''}" id="cgC${i}" style="margin-left:${indent}px">
+                ${isReply ? '<div class="cg-thread-line" style="border-color:var(--accent-blue);position:absolute;left:-2px;top:0;bottom:0;"></div>' : ''}
                 <div class="cg-c-head">
                     <span class="cg-c-num">Account ${i + 1}</span>
+                    ${isReply ? '<span style="font-size:9px;color:var(--text-muted);">reply</span>' : ''}
                     <span class="cg-c-badge ${isPosted ? 'cg-b-posted' : 'cg-b-pending'}">${isPosted ? 'Posted' : 'Pending'}</span>
                     ${isNew ? '<span class="cg-c-new-badge">NEW</span>' : ''}
                     <div class="cg-c-actions">
@@ -3675,14 +3717,14 @@ function cgRenderFeed() {
     feed.innerHTML = liveHtml + ourHtml;
 }
 
-function cgToggleLiveRef(idx) {
-    if (!_cgPost?.liveComments?.[idx]) return;
-    _cgPost.liveComments[idx]._selected = !_cgPost.liveComments[idx]._selected;
+function cgToggleLiveRef2(idx) {
+    if (!window._cgFlatLive?.[idx]) return;
+    window._cgFlatLive[idx]._selected = !window._cgFlatLive[idx]._selected;
     cgRenderFeed();
 }
 
 function cgClearSelection() {
-    (_cgPost?.liveComments || []).forEach(c => delete c._selected);
+    (window._cgFlatLive || []).forEach(c => delete c._selected);
     cgRenderFeed();
 }
 
@@ -3778,7 +3820,7 @@ async function cgGenerate() {
     }
 
     // Use selected live comments as reference, fall back to existing managed comments
-    const selectedLive = (_cgPost.liveComments || []).filter(c => c._selected);
+    const selectedLive = (window._cgFlatLive || []).filter(c => c._selected);
     const existing = getCgComments(_cgPost.subId, _cgPost.mpId);
     let refComments;
     if (genType === 'pick' && selectedLive.length) {
@@ -3805,8 +3847,15 @@ async function cgGenerate() {
 
         // Add to comment list as new
         const comments = getCgComments(_cgPost.subId, _cgPost.mpId);
-        data.comments.forEach(c => {
-            comments.push({ comment: c.comment, status: 'pending', isNew: true, addedAt: new Date().toISOString() });
+        const baseIdx = comments.length;
+        data.comments.forEach((c, ci) => {
+            comments.push({
+                comment: c.comment,
+                status: 'pending',
+                isNew: true,
+                parentIndex: c.parentIndex != null ? baseIdx + c.parentIndex : null,
+                addedAt: new Date().toISOString()
+            });
         });
         saveCgComments(_cgPost.subId, _cgPost.mpId, comments);
         cgRenderFeed(); cgBuildSidebar();

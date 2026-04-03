@@ -788,19 +788,26 @@ ${refText}
 ${styleGuide ? `STYLE INSTRUCTIONS: ${styleGuide}` : ''}
 
 RULES:
-- Generate exactly ${count} unique comments
-- Each comment must be from a DIFFERENT fictional persona with a unique voice
+- Generate exactly ${count} comment entries total
+- Create a MIX of standalone comments AND threaded conversations:
+  - About 40% should be standalone top-level comments
+  - About 60% should be threaded replies (2-4 messages back and forth between personas)
+- Each persona must have a DIFFERENT voice and believable Reddit-style username
 - Comments should feel like real Reddit users — casual, authentic, not salesy
 - Mix comment lengths: some short (1-2 sentences), some medium (3-4), some longer
+- In threads: one persona can be skeptical, the other supportive. Create natural debate.
 - Include personal experiences, opinions, questions, recommendations naturally
-- Some comments should agree, some should add nuance, some ask questions
 - Use Reddit-style language (e.g. "honestly", "ngl", "in my experience", etc.)
 - The comments should help the post rank in Google — include relevant keywords naturally
 - Do NOT make comments sound like they're from the same person
 - Do NOT use marketing language or be too promotional
-- Each persona should have a believable Reddit-style username
 
-Return as a JSON array of objects with fields: "username", "comment"
+Return as a JSON array. Each item has:
+- "username": Reddit-style username
+- "comment": the comment text
+- "parentIndex": null for top-level, or the index (0-based) of the comment this replies to
+
+Example: [{"username":"u1","comment":"text","parentIndex":null},{"username":"u2","comment":"reply","parentIndex":0}]
 Return ONLY the JSON array, no other text.`;
 
             const claudeBody = JSON.stringify({
