@@ -3480,7 +3480,6 @@ function openCommentGen() {
     cgBuildSidebar();
     document.getElementById('cgEmptyWs').classList.remove('hidden');
     document.getElementById('cgPostWs').classList.add('hidden');
-    // Show/hide paste ref based on genType
     document.getElementById('cgGenType').onchange = function() {
         document.getElementById('cgPasteRef').classList.toggle('hidden', this.value !== 'paste');
     };
@@ -3877,17 +3876,31 @@ async function cgGenerate() {
         styleGuide = `Generate REPLIES to this specific comment by ${_cgReplyContext.author}:\n"${_cgReplyContext.body.slice(0, 500)}"\n\nThese must be direct replies to this comment — responding to what they said, agreeing, disagreeing, asking follow-ups, or adding to the discussion.\n\n${styleGuide}`;
     }
 
-    // Use selected live comments as reference, fall back to existing managed comments
+    // Build reference comments based on source type
     const selectedLive = (window._cgFlatLive || []).filter(c => c._selected);
     const existing = getCgComments(_cgPost.subId, _cgPost.mpId);
+    const allLive = window._cgFlatLive || [];
     let refComments;
-    if (genType === 'pick' && selectedLive.length) {
+
+    if (_cgReplyContext) {
+        // Reply mode: the target comment IS the reference
+        refComments = [{ author: _cgReplyContext.author, body: _cgReplyContext.body, upvotes: 5 }];
+    } else if (genType === 'pick' && selectedLive.length) {
         refComments = selectedLive.map(c => ({ author: c.author, body: c.body, upvotes: c.upvotes }));
+    } else if (genType === 'general') {
+        // General post style: use a sample of all live comments as style reference
+        refComments = allLive.slice(0, 8).map(c => ({ author: c.author, body: c.body, upvotes: c.upvotes }));
     } else if (genType === 'pick' && existing.length) {
         refComments = existing.slice(0, 5).map(c => ({ author: 'ref', body: c.comment, upvotes: 5 }));
     } else if (genType === 'pick') {
         btn.disabled = false; btn.textContent = 'Generate';
-        return toast('warning', 'No reference', 'Select comments from "Live on Reddit" or add some comments first.');
+        return toast('warning', 'No reference', 'Select comments or use "General post style".');
+    }
+
+    // Build the final styleGuide — don't overwrite reply context
+    let finalStyleGuide = styleGuide;
+    if (!_cgReplyContext && genType !== 'paste') {
+        finalStyleGuide = (styleGuide ? styleGuide + '\n\n' : '') + 'Match the overall style and tone of the post and its existing comments.';
     }
 
     try {
@@ -3898,7 +3911,7 @@ async function cgGenerate() {
                 postTitle: _cgPost.title, postBody: _cgPost.body || '', subreddit: _cgPost.subName, count,
                 commentStyle: document.getElementById('cgGenStyle').value,
                 commentTone: document.getElementById('cgGenTone').value,
-                styleGuide: genType === 'paste' ? styleGuide : 'Match the style and tone of the reference comments.',
+                styleGuide: finalStyleGuide,
                 apiKey
             })
         });
