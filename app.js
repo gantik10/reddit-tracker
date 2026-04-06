@@ -3637,13 +3637,14 @@ function cgRenderFeed() {
         const idx = flatIdx;
         const indent = Math.min(c.depth || 0, 5) * 20;
         const selected = c._selected;
-        let html = `<div class="cg-thread" style="margin-left:${indent}px" onclick="cgToggleLiveRef2(${idx})" data-cgidx="${idx}">
+        let html = `<div class="cg-thread" style="margin-left:${indent}px" data-cgidx="${idx}">
             <div class="cg-thread-line" style="border-color:${['var(--primary)','var(--accent-blue)','var(--accent-green)','var(--accent-yellow)','#7193FF','var(--accent-red)'][c.depth % 6]}"></div>
-            <div class="cg-thread-body ${selected ? 'cg-c-ref-selected' : ''}">
+            <div class="cg-thread-body ${selected ? 'cg-c-ref-selected' : ''}" onclick="cgToggleLiveRef2(${idx})">
                 <div class="cg-thread-head">
                     <div class="cg-ref-check ${selected ? 'cg-ref-checked' : ''}"></div>
                     <span class="cg-thread-author">u/${esc(c.author)}</span>
                     <span class="cg-thread-votes">${c.upvotes} pts</span>
+                    <button class="btn btn-xs btn-ghost cg-reply-btn" onclick="event.stopPropagation();cgReplyTo(${idx})" title="Generate replies to this comment">Reply</button>
                 </div>
                 <div class="cg-thread-text">${esc(c.body)}</div>
             </div>
@@ -3700,10 +3701,12 @@ function cgRenderFeed() {
                 <div class="cg-c-head">
                     <span class="cg-c-num">Account ${i + 1}</span>
                     ${isReply ? '<span style="font-size:9px;color:var(--text-muted);">reply</span>' : ''}
+                    ${c.replyToLive ? `<span style="font-size:9px;color:var(--accent-blue);" title="${esc(c.replyToLive)}">replying to live</span>` : ''}
                     <span class="cg-c-badge ${isPosted ? 'cg-b-posted' : 'cg-b-pending'}">${isPosted ? 'Posted' : 'Pending'}</span>
                     ${isNew ? '<span class="cg-c-new-badge">NEW</span>' : ''}
                     <div class="cg-c-actions">
                         ${!isPosted ? `<button class="btn btn-xs btn-primary" onclick="cgMarkPosted(${i})">Posted</button>` : `<button class="btn btn-xs btn-ghost" onclick="cgMarkPending(${i})">Undo</button>`}
+                        <button class="btn btn-xs btn-ghost" onclick="cgReplyToOwn(${i})">Reply</button>
                         <button class="btn btn-xs btn-ghost" onclick="cgEdit(${i})">Edit</button>
                         <button class="btn btn-xs btn-ghost" onclick="cgRegen(${i})">Regen</button>
                         <button class="btn btn-xs btn-ghost" onclick="cgCopyC(${i})">Copy</button>
@@ -3729,6 +3732,106 @@ function cgToggleLiveRef2(idx) {
 function cgClearSelection() {
     (window._cgFlatLive || []).forEach(c => delete c._selected);
     cgRenderFeed();
+}
+
+// Generate replies to a specific live comment
+async function cgReplyTo(liveIdx) {
+    const apiKey = getClaudeKey();
+    if (!apiKey) return toast('warning', 'No Claude API key', 'Add in Settings.');
+    if (!_cgPost) return;
+    const comment = window._cgFlatLive?.[liveIdx];
+    if (!comment) return;
+
+    const count = Number(prompt('How many replies to generate?', '3')) || 3;
+    const feedback = document.getElementById('cgFeedback').value.trim();
+
+    toast('info', 'Generating replies...', `${count} replies to u/${comment.author}`, 4000);
+
+    try {
+        const res = await fetch(`${SERVER}/api/generate-comments`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                referenceComments: [{ author: comment.author, body: comment.body, upvotes: comment.upvotes }],
+                postTitle: _cgPost.title,
+                postBody: _cgPost.body || '',
+                subreddit: _cgPost.subName,
+                count,
+                commentStyle: 'thread',
+                styleGuide: `Generate ${count} REPLIES to this specific comment by u/${comment.author}:\n"${comment.body.slice(0, 500)}"\n\nThese must be direct replies to this comment — responding to what they said, agreeing, disagreeing, asking follow-ups, or adding to the discussion. Each reply from a different persona.${feedback ? '\n\nAdditional instructions: ' + feedback : ''}`,
+                apiKey
+            })
+        });
+        const data = await res.json();
+        if (data.error) throw new Error(data.error);
+
+        const comments = getCgComments(_cgPost.subId, _cgPost.mpId);
+        data.comments.forEach(c => {
+            comments.push({
+                comment: c.comment,
+                status: 'pending',
+                isNew: true,
+                replyToLive: `u/${comment.author}: "${comment.body.slice(0, 80)}..."`,
+                addedAt: new Date().toISOString()
+            });
+        });
+        saveCgComments(_cgPost.subId, _cgPost.mpId, comments);
+        cgRenderFeed();
+        cgBuildSidebar();
+        toast('success', `Generated ${data.comments.length} replies`, `to u/${comment.author}`);
+    } catch (err) {
+        toast('error', 'Failed', err.message);
+    }
+}
+
+// Generate replies to one of our own comments
+async function cgReplyToOwn(idx) {
+    const apiKey = getClaudeKey();
+    if (!apiKey) return toast('warning', 'No Claude API key', 'Add in Settings.');
+    if (!_cgPost) return;
+    const comments = getCgComments(_cgPost.subId, _cgPost.mpId);
+    const target = comments[idx];
+    if (!target) return;
+
+    const count = Number(prompt('How many replies?', '2')) || 2;
+    const feedback = document.getElementById('cgFeedback').value.trim();
+
+    toast('info', 'Generating replies...', '', 4000);
+
+    try {
+        const res = await fetch(`${SERVER}/api/generate-comments`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                referenceComments: [{ author: 'target', body: target.comment, upvotes: 5 }],
+                postTitle: _cgPost.title,
+                postBody: _cgPost.body || '',
+                subreddit: _cgPost.subName,
+                count,
+                commentStyle: 'thread',
+                styleGuide: `Generate ${count} REPLIES to this comment:\n"${target.comment.slice(0, 500)}"\n\nThese must be direct replies — responding, debating, or adding to what was said.${feedback ? '\n\nAdditional: ' + feedback : ''}`,
+                apiKey
+            })
+        });
+        const data = await res.json();
+        if (data.error) throw new Error(data.error);
+
+        data.comments.forEach(c => {
+            comments.splice(idx + 1, 0, {
+                comment: c.comment,
+                status: 'pending',
+                isNew: true,
+                parentIndex: idx,
+                addedAt: new Date().toISOString()
+            });
+        });
+        saveCgComments(_cgPost.subId, _cgPost.mpId, comments);
+        cgRenderFeed();
+        cgBuildSidebar();
+        toast('success', `Generated ${data.comments.length} replies`, '');
+    } catch (err) {
+        toast('error', 'Failed', err.message);
+    }
 }
 
 function cgMarkPosted(i) {

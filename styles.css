@@ -3537,6 +3537,15 @@ select.input {
     background: var(--bg-hover);
 }
 
+.cg-reply-btn {
+    margin-left: auto;
+    opacity: 0;
+    transition: opacity 0.15s;
+}
+
+.cg-thread:hover .cg-reply-btn { opacity: 1; }
+.cg-c:hover .cg-reply-btn { opacity: 1; }
+
 .cg-c-ref-selected {
     background: rgba(70, 209, 96, 0.06) !important;
     border-left: 2px solid var(--accent-green);
