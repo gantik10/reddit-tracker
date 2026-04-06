@@ -3897,6 +3897,7 @@ async function cgGenerate() {
                 referenceComments: genType === 'paste' ? [{ author: 'ref', body: styleGuide, upvotes: 5 }] : refComments,
                 postTitle: _cgPost.title, postBody: _cgPost.body || '', subreddit: _cgPost.subName, count,
                 commentStyle: document.getElementById('cgGenStyle').value,
+                commentTone: document.getElementById('cgGenTone').value,
                 styleGuide: genType === 'paste' ? styleGuide : 'Match the style and tone of the reference comments.',
                 apiKey
             })

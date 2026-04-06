@@ -764,7 +764,7 @@ const server = http.createServer(async (req, res) => {
     // --- Comment Generator (Claude API) ---
     if (parsed.pathname === '/api/generate-comments' && req.method === 'POST') {
         const body = await readBody(req);
-        const { referenceComments, postTitle, postBody, subreddit, count, styleGuide, apiKey, commentStyle } = body;
+        const { referenceComments, postTitle, postBody, subreddit, count, styleGuide, apiKey, commentStyle, commentTone } = body;
 
         if (!referenceComments?.length || !postTitle || !apiKey) {
             res.writeHead(400, { 'Content-Type': 'application/json' });
@@ -801,6 +801,8 @@ ${styleMemory}
 ${styleGuide ? `STYLE INSTRUCTIONS: ${styleGuide}` : ''}
 
 COMMENT FORMAT: ${commentStyle === 'single' ? 'SINGLE COMMENTS ONLY — every comment is a standalone top-level comment from a different user. Each user appears only once. No replies or threads.' : commentStyle === 'thread' ? 'THREADS ONLY — create threaded conversations. Each thread has 2-3 users debating back-and-forth (3-6 messages per thread). Reuse the same usernames across threads. No standalone comments.' : 'MIXED — about 30% standalone single comments and 70% threaded conversations. Reuse usernames across threads.'}
+
+TONE: ${commentTone === 'positive' ? 'POSITIVE AND SUPPORTIVE — all comments must be positive, agreeing, praising, thanking, sharing good experiences, confirming the advice works. People are happy with the suggestion. Some ask genuine follow-up questions. NO negativity, NO skepticism, NO disagreement. Everyone likes what was suggested.' : commentTone === 'debate' ? 'DEBATE — create natural back-and-forth with different opinions. Some agree, some disagree, some are skeptical. Create real discussion tension.' : commentTone === 'questions' ? 'CURIOUS AND ASKING QUESTIONS — people are interested and ask genuine follow-up questions, want more details, ask for clarification, share partial experiences and want to learn more.' : 'NATURAL MIX — mix of supportive, curious, and occasionally mildly skeptical comments. Mostly positive overall.'}
 
 RULES:
 - Generate exactly ${count} comment entries total
