@@ -3734,104 +3734,41 @@ function cgClearSelection() {
     cgRenderFeed();
 }
 
-// Generate replies to a specific live comment
-async function cgReplyTo(liveIdx) {
-    const apiKey = getClaudeKey();
-    if (!apiKey) return toast('warning', 'No Claude API key', 'Add in Settings.');
-    if (!_cgPost) return;
-    const comment = window._cgFlatLive?.[liveIdx];
-    if (!comment) return;
+// Reply mode: pin a comment as context for generation
+let _cgReplyContext = null; // { author, body, source: 'live'|'own', ownIdx }
 
-    const count = Number(prompt('How many replies to generate?', '3')) || 3;
-    const feedback = document.getElementById('cgFeedback').value.trim();
-
-    toast('info', 'Generating replies...', `${count} replies to u/${comment.author}`, 4000);
-
-    try {
-        const res = await fetch(`${SERVER}/api/generate-comments`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                referenceComments: [{ author: comment.author, body: comment.body, upvotes: comment.upvotes }],
-                postTitle: _cgPost.title,
-                postBody: _cgPost.body || '',
-                subreddit: _cgPost.subName,
-                count,
-                commentStyle: 'thread',
-                styleGuide: `Generate ${count} REPLIES to this specific comment by u/${comment.author}:\n"${comment.body.slice(0, 500)}"\n\nThese must be direct replies to this comment — responding to what they said, agreeing, disagreeing, asking follow-ups, or adding to the discussion. Each reply from a different persona.${feedback ? '\n\nAdditional instructions: ' + feedback : ''}`,
-                apiKey
-            })
-        });
-        const data = await res.json();
-        if (data.error) throw new Error(data.error);
-
-        const comments = getCgComments(_cgPost.subId, _cgPost.mpId);
-        data.comments.forEach(c => {
-            comments.push({
-                comment: c.comment,
-                status: 'pending',
-                isNew: true,
-                replyToLive: `u/${comment.author}: "${comment.body.slice(0, 80)}..."`,
-                addedAt: new Date().toISOString()
-            });
-        });
-        saveCgComments(_cgPost.subId, _cgPost.mpId, comments);
-        cgRenderFeed();
-        cgBuildSidebar();
-        toast('success', `Generated ${data.comments.length} replies`, `to u/${comment.author}`);
-    } catch (err) {
-        toast('error', 'Failed', err.message);
-    }
+function cgReplyTo(liveIdx) {
+    const c = window._cgFlatLive?.[liveIdx];
+    if (!c) return;
+    _cgReplyContext = { author: c.author, body: c.body, source: 'live' };
+    cgShowReplyTarget();
 }
 
-// Generate replies to one of our own comments
-async function cgReplyToOwn(idx) {
-    const apiKey = getClaudeKey();
-    if (!apiKey) return toast('warning', 'No Claude API key', 'Add in Settings.');
-    if (!_cgPost) return;
+function cgReplyToOwn(idx) {
     const comments = getCgComments(_cgPost.subId, _cgPost.mpId);
-    const target = comments[idx];
-    if (!target) return;
+    const c = comments[idx];
+    if (!c) return;
+    _cgReplyContext = { author: `Account ${idx + 1}`, body: c.comment, source: 'own', ownIdx: idx };
+    cgShowReplyTarget();
+}
 
-    const count = Number(prompt('How many replies?', '2')) || 2;
-    const feedback = document.getElementById('cgFeedback').value.trim();
+function cgShowReplyTarget() {
+    if (!_cgReplyContext) return;
+    const el = document.getElementById('cgReplyTarget');
+    el.classList.remove('hidden');
+    document.getElementById('cgReplyTargetBody').innerHTML = `
+        <strong>${esc(_cgReplyContext.author)}</strong>
+        <div style="font-size:12px;color:var(--text-secondary);margin-top:4px;white-space:pre-wrap;">${esc(_cgReplyContext.body.slice(0, 300))}${_cgReplyContext.body.length > 300 ? '...' : ''}</div>
+    `;
+    document.getElementById('cgGenLabel').textContent = 'Generate replies to this comment';
+    // Scroll to top of generate section
+    document.querySelector('.cg-gen-section').scrollIntoView({ behavior: 'smooth' });
+}
 
-    toast('info', 'Generating replies...', '', 4000);
-
-    try {
-        const res = await fetch(`${SERVER}/api/generate-comments`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                referenceComments: [{ author: 'target', body: target.comment, upvotes: 5 }],
-                postTitle: _cgPost.title,
-                postBody: _cgPost.body || '',
-                subreddit: _cgPost.subName,
-                count,
-                commentStyle: 'thread',
-                styleGuide: `Generate ${count} REPLIES to this comment:\n"${target.comment.slice(0, 500)}"\n\nThese must be direct replies — responding, debating, or adding to what was said.${feedback ? '\n\nAdditional: ' + feedback : ''}`,
-                apiKey
-            })
-        });
-        const data = await res.json();
-        if (data.error) throw new Error(data.error);
-
-        data.comments.forEach(c => {
-            comments.splice(idx + 1, 0, {
-                comment: c.comment,
-                status: 'pending',
-                isNew: true,
-                parentIndex: idx,
-                addedAt: new Date().toISOString()
-            });
-        });
-        saveCgComments(_cgPost.subId, _cgPost.mpId, comments);
-        cgRenderFeed();
-        cgBuildSidebar();
-        toast('success', `Generated ${data.comments.length} replies`, '');
-    } catch (err) {
-        toast('error', 'Failed', err.message);
-    }
+function cgCancelReply() {
+    _cgReplyContext = null;
+    document.getElementById('cgReplyTarget').classList.add('hidden');
+    document.getElementById('cgGenLabel').textContent = 'Generate comments';
 }
 
 function cgMarkPosted(i) {
@@ -3935,6 +3872,10 @@ async function cgGenerate() {
         if (!styleGuide) { btn.disabled = false; btn.textContent = 'Generate'; return toast('warning', 'Empty', 'Paste reference text.'); }
     }
     if (feedback) styleGuide = (styleGuide ? styleGuide + '\n\n' : '') + 'USER FEEDBACK: ' + feedback;
+    // If replying to a specific comment, inject that context
+    if (_cgReplyContext) {
+        styleGuide = `Generate REPLIES to this specific comment by ${_cgReplyContext.author}:\n"${_cgReplyContext.body.slice(0, 500)}"\n\nThese must be direct replies to this comment — responding to what they said, agreeing, disagreeing, asking follow-ups, or adding to the discussion.\n\n${styleGuide}`;
+    }
 
     // Use selected live comments as reference, fall back to existing managed comments
     const selectedLive = (window._cgFlatLive || []).filter(c => c._selected);
@@ -3966,16 +3907,19 @@ async function cgGenerate() {
         // Add to comment list as new
         const comments = getCgComments(_cgPost.subId, _cgPost.mpId);
         const baseIdx = comments.length;
+        const replyTag = _cgReplyContext ? `${_cgReplyContext.author}: "${_cgReplyContext.body.slice(0, 60)}..."` : null;
         data.comments.forEach((c, ci) => {
             comments.push({
                 comment: c.comment,
                 status: 'pending',
                 isNew: true,
-                parentIndex: c.parentIndex != null ? baseIdx + c.parentIndex : null,
+                replyToLive: replyTag,
+                parentIndex: _cgReplyContext?.source === 'own' ? _cgReplyContext.ownIdx : (c.parentIndex != null ? baseIdx + c.parentIndex : null),
                 addedAt: new Date().toISOString()
             });
         });
         saveCgComments(_cgPost.subId, _cgPost.mpId, comments);
+        cgCancelReply(); // clear reply context
         cgRenderFeed(); cgBuildSidebar();
         toast('success', `Generated ${data.comments.length} comments`, '');
     } catch (err) { toast('error', 'Failed', err.message); }

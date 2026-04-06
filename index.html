@@ -312,8 +312,16 @@
 
                         <!-- Generate section -->
                         <div class="cg-gen-section">
+                            <!-- Reply target (shown when replying to specific comment) -->
+                            <div class="cg-reply-target hidden" id="cgReplyTarget">
+                                <div class="cg-reply-target-head">
+                                    <span>Generating replies to:</span>
+                                    <button class="btn btn-xs btn-ghost" onclick="cgCancelReply()">Cancel</button>
+                                </div>
+                                <div class="cg-reply-target-body" id="cgReplyTargetBody"></div>
+                            </div>
                             <div class="cg-gen-bar">
-                                <span class="cg-gen-label">Generate comments</span>
+                                <span class="cg-gen-label" id="cgGenLabel">Generate comments</span>
                                 <input type="number" class="input" id="cgCount" value="15" min="1" max="50" style="width:60px;padding:6px 8px;font-size:12px;">
                                 <select class="input" id="cgGenStyle" style="width:130px;padding:6px 8px;font-size:12px;">
                                     <option value="single">Single comments</option>
@@ -919,6 +927,6 @@
         <div class="rank-panel-result hidden" id="rankPanelResult"></div>
     </div>
 
-    <script src="app.js?v=20260406a"></script>
+    <script src="app.js?v=20260406b"></script>
 </body>
 </html>

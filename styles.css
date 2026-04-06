@@ -3537,6 +3537,30 @@ select.input {
     background: var(--bg-hover);
 }
 
+.cg-reply-target {
+    background: var(--bg-muted);
+    border: 1px solid var(--accent-blue);
+    border-radius: var(--radius-lg);
+    padding: 10px 14px;
+    margin-bottom: 8px;
+}
+
+.cg-reply-target-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--accent-blue);
+    text-transform: uppercase;
+    margin-bottom: 6px;
+}
+
+.cg-reply-target-body {
+    font-size: 13px;
+    line-height: 1.4;
+}
+
 .cg-reply-btn {
     margin-left: auto;
     opacity: 0;
