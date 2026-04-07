@@ -950,13 +950,17 @@ Return ONLY the JSON array, no other text.`;
         }
 
         try {
-            // Load reddit cookie from data.json
+            // Load reddit cookie — check data.json first, fallback to env file
             const DATA_FILE_MOD = path.join(__dirname, 'data.json');
+            const COOKIE_FILE = path.join(__dirname, 'reddit_cookie.txt');
             let redditCookie = '';
             try {
                 const d = JSON.parse(fs.readFileSync(DATA_FILE_MOD, 'utf8'));
                 redditCookie = d.keys?.lk_reddit_cookie || '';
             } catch {}
+            if (!redditCookie) {
+                try { redditCookie = fs.readFileSync(COOKIE_FILE, 'utf8').trim(); } catch {}
+            }
 
             const proxyPort = 10000 + Math.floor(Math.random() * 1000);
             const proxyUrl = `socks5://${PROXY_BASE.login}:${PROXY_BASE.password}@${PROXY_BASE.host}:${proxyPort}`;
