@@ -891,6 +891,78 @@ Return ONLY the JSON array, no other text.`;
         return;
     }
 
+    // --- Subreddit Search ---
+    if (parsed.pathname === '/api/search-subreddits' && req.method === 'POST') {
+        const body = await readBody(req);
+        const { keyword, after, limit } = body;
+        if (!keyword) {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: 'Missing keyword' }));
+            return;
+        }
+
+        console.log(`[SubSearch] Searching "${keyword}" after=${after || 'start'}...`);
+        try {
+            const afterParam = after ? `&after=${after}` : '';
+            const url = `https://www.reddit.com/subreddits/search.json?q=${encodeURIComponent(keyword)}&limit=${limit || 25}${afterParam}&sort=relevance`;
+            const raw = httpsRequest(url).data;
+            const data = JSON.parse(raw);
+
+            const subs = (data?.data?.children || []).map(c => {
+                const s = c.data;
+                return {
+                    name: s.display_name,
+                    title: s.title || '',
+                    description: s.public_description || '',
+                    subscribers: s.subscribers || 0,
+                    created: s.created_utc,
+                    subredditType: s.subreddit_type || 'public',
+                    over18: s.over18 || false,
+                    iconImg: (s.community_icon || s.icon_img || '').split('?')[0],
+                    bannerImg: (s.banner_background_image || s.banner_img || '').split('?')[0],
+                    bannerColor: s.banner_background_color || s.key_color || '#1A1A2E',
+                    primaryColor: s.primary_color || '#FF4500',
+                    url: `https://www.reddit.com/r/${s.display_name}/`,
+                };
+            });
+
+            const afterToken = data?.data?.after || null;
+            console.log(`[SubSearch] Found ${subs.length} subs, after=${afterToken}`);
+
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ success: true, subreddits: subs, after: afterToken }));
+        } catch (err) {
+            console.error(`[SubSearch] Error: ${err.message}`);
+            res.writeHead(500, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: err.message }));
+        }
+        return;
+    }
+
+    // --- Check subreddit moderators ---
+    if (parsed.pathname === '/api/check-mods' && req.method === 'POST') {
+        const body = await readBody(req);
+        const { subreddit } = body;
+        if (!subreddit) {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: 'Missing subreddit' }));
+            return;
+        }
+
+        try {
+            const raw = httpsRequest(`https://www.reddit.com/r/${subreddit}/about/moderators.json`).data;
+            const data = JSON.parse(raw);
+            const mods = data?.data?.children || [];
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ success: true, moderators: mods.length, modList: mods.map(m => m.name || m.data?.name).filter(Boolean) }));
+        } catch (err) {
+            // If we can't fetch mods (private/banned sub), report as unknown
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ success: true, moderators: -1, modList: [], error: err.message }));
+        }
+        return;
+    }
+
     // --- Proxy endpoint (Reddit, Ahrefs) ---
     if (parsed.pathname === '/api/proxy') {
         const targetUrl = parsed.searchParams.get('url');

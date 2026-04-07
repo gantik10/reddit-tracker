@@ -3377,6 +3377,147 @@ select.input {
     opacity: 1;
 }
 
+/* ===== Subreddit Search ===== */
+.ss-search-bar {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 12px;
+}
+
+.ss-filters {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    margin-bottom: 14px;
+    font-size: 13px;
+}
+
+.ss-filter-check {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    cursor: pointer;
+}
+
+.ss-result-count {
+    font-size: 12px;
+    color: var(--text-muted);
+    margin-left: auto;
+}
+
+.ss-results {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+    gap: 14px;
+}
+
+.ss-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+}
+
+.ss-card-banner {
+    height: 60px;
+    background-size: cover;
+    background-position: center;
+}
+
+.ss-card-identity {
+    display: flex;
+    gap: 10px;
+    padding: 0 14px;
+    margin-top: -18px;
+}
+
+.ss-card-avatar {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    border: 3px solid var(--bg-card);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 800;
+    font-size: 16px;
+    color: #fff;
+    flex-shrink: 0;
+    background-size: cover;
+    background-position: center;
+}
+
+.ss-card-info {
+    padding-top: 18px;
+    min-width: 0;
+}
+
+.ss-card-name {
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--text-primary);
+    text-decoration: none;
+}
+
+.ss-card-name:hover { color: var(--primary); }
+
+.ss-card-desc {
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-top: 2px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.ss-card-stats {
+    display: flex;
+    gap: 0;
+    padding: 10px 14px;
+    border-top: 1px solid var(--border);
+    margin-top: 10px;
+}
+
+.ss-stat {
+    flex: 1;
+    text-align: center;
+}
+
+.ss-stat-val {
+    font-size: 14px;
+    font-weight: 700;
+    display: block;
+}
+
+.ss-stat-lbl {
+    font-size: 9px;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    font-weight: 600;
+}
+
+.ss-no-mods {
+    color: var(--accent-green);
+}
+
+.ss-card-actions {
+    display: flex;
+    gap: 6px;
+    padding: 8px 14px 12px;
+}
+
+.ss-saved-badge {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--accent-green);
+    padding: 4px 12px;
+}
+
+@media (max-width: 600px) {
+    .ss-search-bar { flex-direction: column; }
+    .ss-results { grid-template-columns: 1fr; }
+}
+
 /* ===== Comment Workspace ===== */
 .cg-layout {
     display: grid;

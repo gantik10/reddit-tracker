@@ -3465,6 +3465,226 @@ openSubreddit = function(id) {
 
 
 // ==========================================
+//  SUBREDDIT SEARCH
+// ==========================================
+let _ssAfter = null;
+let _ssResults = [];
+let _ssTab = 'results';
+
+function openSubSearch() {
+    currentSubId = null;
+    document.getElementById('homeView').classList.add('hidden');
+    document.getElementById('detailView').classList.add('hidden');
+    document.getElementById('taskBoardView').classList.add('hidden');
+    document.getElementById('commentGenView').classList.add('hidden');
+    document.getElementById('subSearchView').classList.remove('hidden');
+    document.getElementById('addSubredditBtn').classList.add('hidden');
+    ssSetTab('results');
+    ssRenderSaved();
+}
+
+document.getElementById('ssKeyword')?.addEventListener('keydown', e => {
+    if (e.key === 'Enter') ssSearch();
+});
+
+async function ssSearch() {
+    const keyword = document.getElementById('ssKeyword').value.trim();
+    if (!keyword) return;
+    _ssAfter = null;
+    _ssResults = [];
+    document.getElementById('ssResults').innerHTML = '<div class="fetch-status loading"><span class="spinner"></span> Searching subreddits...</div>';
+    document.getElementById('ssLoadMore').classList.add('hidden');
+    await ssFetch(keyword);
+}
+
+async function ssLoadMore() {
+    const keyword = document.getElementById('ssKeyword').value.trim();
+    if (!keyword || !_ssAfter) return;
+    await ssFetch(keyword);
+}
+
+async function ssFetch(keyword) {
+    const btn = document.getElementById('ssSearchBtn');
+    btn.disabled = true; btn.textContent = 'Searching...';
+
+    try {
+        const res = await fetch(`${SERVER}/api/search-subreddits`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ keyword, after: _ssAfter, limit: 25 })
+        });
+        const data = await res.json();
+        if (data.error) throw new Error(data.error);
+
+        _ssAfter = data.after;
+        _ssResults = [..._ssResults, ...data.subreddits];
+
+        // Check mods for each subreddit
+        const noModsOnly = document.getElementById('ssNoMods').checked;
+        if (noModsOnly) {
+            toast('info', 'Checking moderators...', `${data.subreddits.length} subreddits`, 3000);
+            for (const sub of data.subreddits) {
+                try {
+                    const modRes = await fetch(`${SERVER}/api/check-mods`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ subreddit: sub.name })
+                    });
+                    const modData = await modRes.json();
+                    sub.moderators = modData.moderators;
+                    sub.modList = modData.modList || [];
+                } catch {
+                    sub.moderators = -1;
+                }
+                await new Promise(r => setTimeout(r, 500));
+            }
+        }
+
+        ssRenderResults();
+
+        if (_ssAfter) {
+            document.getElementById('ssLoadMore').classList.remove('hidden');
+        } else {
+            document.getElementById('ssLoadMore').classList.add('hidden');
+        }
+    } catch (err) {
+        document.getElementById('ssResults').innerHTML = `<div class="fetch-status error">${err.message}</div>`;
+    }
+
+    btn.disabled = false; btn.textContent = 'Search';
+}
+
+function ssRenderResults() {
+    const noModsOnly = document.getElementById('ssNoMods').checked;
+    let filtered = _ssResults;
+    if (noModsOnly) {
+        filtered = _ssResults.filter(s => s.moderators === 0);
+    }
+
+    const saved = getSsSaved();
+    const savedNames = new Set(saved.map(s => s.name.toLowerCase()));
+
+    document.getElementById('ssResultCount').textContent = noModsOnly
+        ? `${filtered.length} with no mods (${_ssResults.length} total searched)`
+        : `${_ssResults.length} results`;
+
+    const el = document.getElementById('ssResults');
+    if (!filtered.length) {
+        el.innerHTML = _ssResults.length
+            ? '<div class="tl-empty">No subreddits without moderators found yet. Click "Load More" to search deeper.</div>'
+            : '';
+        return;
+    }
+
+    el.innerHTML = filtered.map(s => {
+        const isSaved = savedNames.has(s.name.toLowerCase());
+        const age = s.created ? Math.floor((Date.now() / 1000 - s.created) / 86400) : 0;
+        const bannerStyle = s.bannerImg
+            ? `background-image:url('${esc(s.bannerImg)}');background-color:${s.bannerColor};`
+            : `background:${s.bannerColor || '#1A1A2E'};`;
+        const avatarStyle = s.iconImg
+            ? `background-image:url('${esc(s.iconImg)}');background-color:${s.primaryColor};`
+            : `background:${s.primaryColor || '#FF4500'};`;
+
+        return `<div class="ss-card">
+            <div class="ss-card-banner" style="${bannerStyle}"></div>
+            <div class="ss-card-identity">
+                <div class="ss-card-avatar" style="${avatarStyle}">${s.iconImg ? '' : esc(s.name[0].toUpperCase())}</div>
+                <div class="ss-card-info">
+                    <a href="${esc(s.url)}" target="_blank" rel="noopener" class="ss-card-name">r/${esc(s.name)}</a>
+                    <div class="ss-card-desc">${esc(s.description?.slice(0, 100) || s.title || '')}</div>
+                </div>
+            </div>
+            <div class="ss-card-stats">
+                <div class="ss-stat"><span class="ss-stat-val">${fmtNumAlways(s.subscribers)}</span><span class="ss-stat-lbl">Members</span></div>
+                <div class="ss-stat"><span class="ss-stat-val ${s.moderators === 0 ? 'ss-no-mods' : ''}">${s.moderators === -1 ? '?' : s.moderators}</span><span class="ss-stat-lbl">Mods</span></div>
+                <div class="ss-stat"><span class="ss-stat-val">${age > 365 ? Math.floor(age/365) + 'y' : age + 'd'}</span><span class="ss-stat-lbl">Age</span></div>
+                <div class="ss-stat"><span class="ss-stat-val">${s.subredditType}</span><span class="ss-stat-lbl">Type</span></div>
+            </div>
+            <div class="ss-card-actions">
+                ${isSaved ? '<span class="ss-saved-badge">Saved</span>' : `<button class="btn btn-sm btn-primary" onclick="ssSave('${esc(s.name)}')">Save to Take Over</button>`}
+                <a href="${esc(s.url)}" target="_blank" rel="noopener" class="btn btn-sm btn-ghost">View</a>
+            </div>
+        </div>`;
+    }).join('');
+}
+
+function ssSetTab(tab) {
+    _ssTab = tab;
+    document.getElementById('ssTabResults').classList.toggle('active', tab === 'results');
+    document.getElementById('ssTabSaved').classList.toggle('active', tab === 'saved');
+    document.getElementById('ssResultsTab').classList.toggle('hidden', tab !== 'results');
+    document.getElementById('ssSavedTab').classList.toggle('hidden', tab !== 'saved');
+    if (tab === 'saved') ssRenderSaved();
+}
+
+// Saved subreddits
+function getSsSaved() { return S.get('ss_saved'); }
+
+function ssSave(name) {
+    const sub = _ssResults.find(s => s.name === name);
+    if (!sub) return;
+    const saved = getSsSaved();
+    if (saved.find(s => s.name.toLowerCase() === name.toLowerCase())) return toast('info', 'Already saved', '');
+    saved.push({ ...sub, savedAt: new Date().toISOString(), status: 'pending' });
+    S.set('ss_saved', saved);
+    ssRenderResults();
+    ssRenderSaved();
+    toast('success', 'Saved', `r/${name} added to Take Over list`);
+}
+
+function ssRemoveSaved(name) {
+    S.set('ss_saved', getSsSaved().filter(s => s.name !== name));
+    ssRenderSaved();
+    ssRenderResults();
+}
+
+function ssRenderSaved() {
+    const saved = getSsSaved();
+    document.getElementById('ssSavedCount').textContent = saved.length ? `(${saved.length})` : '';
+    const el = document.getElementById('ssSavedList');
+    if (!saved.length) {
+        el.innerHTML = '<div class="tl-empty">No subreddits saved yet. Search and save the ones you want to take over.</div>';
+        return;
+    }
+    el.innerHTML = saved.map(s => {
+        const bannerStyle = s.bannerImg
+            ? `background-image:url('${esc(s.bannerImg)}');background-color:${s.bannerColor};`
+            : `background:${s.bannerColor || '#1A1A2E'};`;
+        const avatarStyle = s.iconImg
+            ? `background-image:url('${esc(s.iconImg)}');background-color:${s.primaryColor};`
+            : `background:${s.primaryColor || '#FF4500'};`;
+        return `<div class="ss-card">
+            <div class="ss-card-banner" style="${bannerStyle}"></div>
+            <div class="ss-card-identity">
+                <div class="ss-card-avatar" style="${avatarStyle}">${s.iconImg ? '' : esc(s.name[0].toUpperCase())}</div>
+                <div class="ss-card-info">
+                    <a href="${esc(s.url)}" target="_blank" rel="noopener" class="ss-card-name">r/${esc(s.name)}</a>
+                    <div class="ss-card-desc">${esc(s.description?.slice(0, 100) || '')}</div>
+                </div>
+            </div>
+            <div class="ss-card-stats">
+                <div class="ss-stat"><span class="ss-stat-val">${fmtNumAlways(s.subscribers)}</span><span class="ss-stat-lbl">Members</span></div>
+                <div class="ss-stat"><span class="ss-stat-val ss-no-mods">${s.moderators ?? '?'}</span><span class="ss-stat-lbl">Mods</span></div>
+                <div class="ss-stat"><span class="ss-stat-val">${fmtDate(s.savedAt)}</span><span class="ss-stat-lbl">Saved</span></div>
+            </div>
+            <div class="ss-card-actions">
+                <a href="https://www.reddit.com/r/redditrequest/" target="_blank" rel="noopener" class="btn btn-sm btn-primary">Request Takeover</a>
+                <a href="${esc(s.url)}" target="_blank" rel="noopener" class="btn btn-sm btn-ghost">View</a>
+                <button class="btn btn-sm btn-ghost danger" onclick="ssRemoveSaved('${esc(s.name)}')">Remove</button>
+            </div>
+        </div>`;
+    }).join('');
+}
+
+// Hide search view on navigation
+const _origGoHome2 = goHome;
+goHome = function() {
+    document.getElementById('subSearchView').classList.add('hidden');
+    _origGoHome2();
+};
+
+// ==========================================
 //  COMMENT WORKSPACE
 // ==========================================
 let _cgPost = null; // { subId, mpId, subName, title, url, body }

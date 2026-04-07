@@ -36,6 +36,7 @@
                 <button class="btn btn-primary" id="addSubredditBtn" onclick="openAddSubreddit()">+ Add Subreddit</button>
                 <button class="btn btn-ghost" id="tasksNavBtn" onclick="openTaskBoard()">Tasks</button>
                 <button class="btn btn-ghost" onclick="openCommentGen()">Comments</button>
+                <button class="btn btn-ghost" onclick="openSubSearch()">Search</button>
                 <button class="btn btn-ghost" onclick="openUpvoteShop()" id="upvoteNavBtn" style="display:none">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
                     Buy Votes
@@ -352,6 +353,46 @@
                         <div class="cg-comments-feed" id="cgCommentsFeed"></div>
                     </div>
                 </div>
+            </div>
+        </main>
+
+        <!-- SUBREDDIT SEARCH -->
+        <main class="main-content hidden" id="subSearchView">
+            <div class="tb-header">
+                <div class="tb-header-left">
+                    <button class="btn-back" onclick="goHome()">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>
+                        Home
+                    </button>
+                    <h1 class="tb-title">Subreddit Search</h1>
+                </div>
+            </div>
+
+            <div class="ss-search-bar">
+                <input type="text" class="input" id="ssKeyword" placeholder="Search subreddits by keyword (e.g. crypto, gaming, dating...)" style="flex:1;font-size:15px;padding:12px 16px;">
+                <button class="btn btn-primary" onclick="ssSearch()" id="ssSearchBtn" style="padding:12px 24px;">Search</button>
+            </div>
+
+            <div class="ss-filters">
+                <label class="ss-filter-check">
+                    <input type="checkbox" id="ssNoMods" checked> No moderators only
+                </label>
+                <span class="ss-result-count" id="ssResultCount"></span>
+            </div>
+
+            <!-- Tabs: Search Results / Looking to Take Over -->
+            <div class="cg-tabs" style="margin-bottom:14px;">
+                <button class="cg-tab active" onclick="ssSetTab('results')" id="ssTabResults">Search Results</button>
+                <button class="cg-tab" onclick="ssSetTab('saved')" id="ssTabSaved">Looking to Take Over <span id="ssSavedCount"></span></button>
+            </div>
+
+            <div id="ssResultsTab">
+                <div class="ss-results" id="ssResults"></div>
+                <button class="btn btn-ghost hidden" id="ssLoadMore" onclick="ssLoadMore()" style="width:100%;margin-top:12px;">Load More Results</button>
+            </div>
+
+            <div id="ssSavedTab" class="hidden">
+                <div class="ss-results" id="ssSavedList"></div>
             </div>
         </main>
 
@@ -934,6 +975,6 @@
         <div class="rank-panel-result hidden" id="rankPanelResult"></div>
     </div>
 
-    <script src="app.js?v=20260406d"></script>
+    <script src="app.js?v=20260407a"></script>
 </body>
 </html>
