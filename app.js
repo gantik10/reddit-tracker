@@ -3539,7 +3539,19 @@ async function ssFetch(keyword) {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ keyword, after: _ssAfter, limit: 25 })
         });
-        const data = await res.json();
+        const text = await res.text();
+        let data;
+        try { data = JSON.parse(text); } catch {
+            ssLog('Reddit returned invalid response, skipping to next keyword', 'ss-log-skip');
+            _ssAfter = null;
+            // Move to next keyword
+            if (_ssAutoLoad && _ssCurrentKwIdx < _ssKeywords.length - 1) {
+                _ssCurrentKwIdx++;
+                setTimeout(() => ssFetch(_ssKeywords[_ssCurrentKwIdx]), 500);
+            } else { _ssAutoLoad = false; }
+            btn.disabled = false; btn.textContent = 'Search';
+            return;
+        }
         if (data.error) throw new Error(data.error);
 
         _ssAfter = data.after;

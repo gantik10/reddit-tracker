@@ -906,6 +906,12 @@ Return ONLY the JSON array, no other text.`;
             const afterParam = after ? `&after=${after}` : '';
             const url = `https://www.reddit.com/subreddits/search.json?q=${encodeURIComponent(keyword)}&limit=${limit || 25}${afterParam}&sort=relevance`;
             const raw = httpsRequest(url).data;
+            if (!raw || raw.trim().startsWith('<')) {
+                // Reddit returned HTML — end of results or blocked
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ success: true, subreddits: [], after: null }));
+                return;
+            }
             const data = JSON.parse(raw);
 
             const subs = (data?.data?.children || []).map(c => {
