@@ -3490,6 +3490,19 @@ document.getElementById('ssKeyword')?.addEventListener('keydown', e => {
 
 let _ssKeywords = [];
 let _ssCurrentKwIdx = 0;
+let _ssTotalChecked = 0;
+let _ssSkippedUnreviewed = 0;
+let _ssSkippedMods = 0;
+
+function ssLog(text, cls) {
+    const body = document.getElementById('ssLogBody');
+    const line = document.createElement('div');
+    line.className = 'ss-log-line ' + (cls || '');
+    line.textContent = text;
+    body.insertBefore(line, body.firstChild);
+    // Keep max 50 lines
+    while (body.children.length > 50) body.removeChild(body.lastChild);
+}
 
 async function ssSearch() {
     const input = document.getElementById('ssKeyword').value.trim();
@@ -3499,8 +3512,14 @@ async function ssSearch() {
     _ssAfter = null;
     _ssResults = [];
     _ssAutoLoad = true;
-    document.getElementById('ssResults').innerHTML = `<div class="fetch-status loading"><span class="spinner"></span> Searching "${_ssKeywords[0]}" (1/${_ssKeywords.length} keywords)...</div>`;
+    _ssTotalChecked = 0;
+    _ssSkippedUnreviewed = 0;
+    _ssSkippedMods = 0;
+    document.getElementById('ssResults').innerHTML = '';
     document.getElementById('ssLoadMore').classList.add('hidden');
+    document.getElementById('ssLog').classList.remove('hidden');
+    document.getElementById('ssLogBody').innerHTML = '';
+    ssLog(`Starting search for: ${_ssKeywords.join(', ')}`);
     await ssFetch(_ssKeywords[0]);
 }
 
@@ -3525,13 +3544,24 @@ async function ssFetch(keyword) {
 
         _ssAfter = data.after;
         // Filter: only reviewed communities (non-reviewed get "Unreviewed Content" banner, not indexed by Google)
-        // Also deduplicate by name
         const existingNames = new Set(_ssResults.map(s => s.name.toLowerCase()));
-        const newSubs = data.subreddits.filter(s =>
-            !existingNames.has(s.name.toLowerCase()) &&
-            s.communityReviewed === true &&
-            !s.over18
-        );
+        const newSubs = [];
+        data.subreddits.forEach(s => {
+            _ssTotalChecked++;
+            if (existingNames.has(s.name.toLowerCase())) return;
+            if (!s.communityReviewed) {
+                _ssSkippedUnreviewed++;
+                ssLog(`r/${s.name} — unreviewed, skipped`, 'ss-log-skip');
+                return;
+            }
+            if (s.over18) {
+                ssLog(`r/${s.name} — NSFW, skipped`, 'ss-log-skip');
+                return;
+            }
+            newSubs.push(s);
+        });
+        ssLog(`Page: ${data.subreddits.length} subs, ${newSubs.length} reviewed & SFW → checking mods`);
+        document.getElementById('ssLogTitle').textContent = `Searching "${_ssKeywords[_ssCurrentKwIdx]}" — ${_ssTotalChecked} checked, ${_ssSkippedUnreviewed} unreviewed`;
         _ssResults = [..._ssResults, ...newSubs];
 
         // Only check mods for reviewed subs that passed the filter
@@ -3557,10 +3587,18 @@ async function ssFetch(keyword) {
             });
             const modData = await modRes.json();
             (modData.results || []).forEach(r => {
-                const sub = data.subreddits.find(s => s.name === r.name);
+                const sub = _ssResults.find(s => s.name === r.name);
                 if (sub) sub.moderators = r.moderators;
+                if (r.moderators === 0) {
+                    ssLog(`✅ r/${r.name} — 0 MODS — TAKEOVER CANDIDATE`, 'ss-log-found');
+                } else if (r.moderators > 0) {
+                    ssLog(`r/${r.name} — ${r.moderators} mods, removed`, 'ss-log-skip');
+                    _ssSkippedMods++;
+                }
             });
-        } catch {}
+        } catch {
+            ssLog('Mod check batch failed', 'ss-log-skip');
+        }
 
         // Only keep 0-mod subreddits
         _ssResults = _ssResults.filter(s => s.moderators === undefined || s.moderators === 0);
@@ -3584,7 +3622,10 @@ async function ssFetch(keyword) {
         } else {
             document.getElementById('ssLoadMore').classList.add('hidden');
             _ssAutoLoad = false;
-            toast('success', 'Search complete', `${noModCount} subreddits without moderators found across ${_ssKeywords.length} keyword(s)`);
+            ssLog(`DONE: ${noModCount} without mods from ${_ssTotalChecked} total (${_ssSkippedUnreviewed} unreviewed, ${_ssSkippedMods} had mods)`);
+            document.getElementById('ssLogTitle').textContent = `Complete — ${_ssTotalChecked} checked`;
+            document.querySelector('#ssLog .activity-spinner')?.remove();
+            toast('success', 'Search complete', `${noModCount} subreddits without moderators found`);
         }
     } catch (err) {
         document.getElementById('ssResults').innerHTML = `<div class="fetch-status error">${err.message}</div>`;
