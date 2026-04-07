@@ -989,7 +989,15 @@ Return ONLY the JSON array, no other text.`;
                         child.stdout.on('data', c => data += c);
                         child.on('close', () => {
                             try {
+                                if (data.startsWith('<') || !data.startsWith('{')) {
+                                    resolve({ name: subName, moderators: -1 });
+                                    return;
+                                }
                                 const d = JSON.parse(data);
+                                if (d.error || d.message === 'Forbidden') {
+                                    resolve({ name: subName, moderators: -1 });
+                                    return;
+                                }
                                 const mods = d?.data?.children || [];
                                 resolve({ name: subName, moderators: mods.length });
                             } catch {

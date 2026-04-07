@@ -3564,8 +3564,9 @@ async function ssFetch(keyword) {
         document.getElementById('ssLogTitle').textContent = `Searching "${_ssKeywords[_ssCurrentKwIdx]}" — ${_ssTotalChecked} checked, ${_ssSkippedUnreviewed} unreviewed`;
         _ssResults = [..._ssResults, ...newSubs];
 
-        // Only check mods for reviewed subs that passed the filter
-        const subsToCheck = newSubs.map(s => s.name);
+        // Only check mods for subs that haven't been checked yet
+        const alreadyChecked = new Set(_ssResults.filter(s => s.moderators !== undefined).map(s => s.name));
+        const subsToCheck = newSubs.filter(s => !alreadyChecked.has(s.name)).map(s => s.name);
         if (!subsToCheck.length) {
             ssRenderResults();
             // Continue auto-loading
