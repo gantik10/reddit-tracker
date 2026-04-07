@@ -939,46 +939,76 @@ Return ONLY the JSON array, no other text.`;
         return;
     }
 
-    // --- Check subreddit moderators (authenticated via cookie + proxy) ---
-    if (parsed.pathname === '/api/check-mods' && req.method === 'POST') {
+    // --- Batch check subreddit moderators (parallel, authenticated) ---
+    if (parsed.pathname === '/api/check-mods-batch' && req.method === 'POST') {
         const body = await readBody(req);
-        const { subreddit } = body;
-        if (!subreddit) {
+        const { subreddits } = body;
+        if (!subreddits?.length) {
             res.writeHead(400, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ error: 'Missing subreddit' }));
+            res.end(JSON.stringify({ error: 'Missing subreddits' }));
             return;
         }
 
+        // Load cookie
+        const COOKIE_FILE = path.join(__dirname, 'reddit_cookie.txt');
+        let redditCookie = '';
         try {
-            // Load reddit cookie — check data.json first, fallback to env file
-            const DATA_FILE_MOD = path.join(__dirname, 'data.json');
-            const COOKIE_FILE = path.join(__dirname, 'reddit_cookie.txt');
-            let redditCookie = '';
-            try {
-                const d = JSON.parse(fs.readFileSync(DATA_FILE_MOD, 'utf8'));
-                redditCookie = d.keys?.lk_reddit_cookie || '';
-            } catch {}
-            if (!redditCookie) {
-                try { redditCookie = fs.readFileSync(COOKIE_FILE, 'utf8').trim(); } catch {}
-            }
-
-            const proxyPort = 10000 + Math.floor(Math.random() * 1000);
-            const proxyUrl = `socks5://${PROXY_BASE.login}:${PROXY_BASE.password}@${PROXY_BASE.host}:${proxyPort}`;
-
-            let raw;
-            if (redditCookie) {
-                raw = execSync(`curl -sL --proxy "${proxyUrl}" -H "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" -H "Cookie: reddit_session=${redditCookie}" "https://www.reddit.com/r/${subreddit}/about/moderators.json" --max-time 15`, { encoding: 'utf8', timeout: 20000 });
-            } else {
-                raw = httpsRequest(`https://www.reddit.com/r/${subreddit}/about/moderators.json`).data;
-            }
-            const data = JSON.parse(raw);
-            const mods = data?.data?.children || [];
-            res.writeHead(200, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ success: true, moderators: mods.length, modList: mods.map(m => m.name || '').filter(Boolean) }));
-        } catch (err) {
-            res.writeHead(200, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ success: true, moderators: -1, modList: [], error: err.message }));
+            const d = JSON.parse(fs.readFileSync(path.join(__dirname, 'data.json'), 'utf8'));
+            redditCookie = d.keys?.lk_reddit_cookie || '';
+        } catch {}
+        if (!redditCookie) {
+            try { redditCookie = fs.readFileSync(COOKIE_FILE, 'utf8').trim(); } catch {}
         }
+
+        if (!redditCookie) {
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ results: subreddits.map(s => ({ name: s, moderators: -1 })) }));
+            return;
+        }
+
+        console.log(`[ModCheck] Batch checking ${subreddits.length} subreddits...`);
+
+        // Check in parallel (5 at a time)
+        const results = [];
+        const batchSize = 5;
+        for (let i = 0; i < subreddits.length; i += batchSize) {
+            const batch = subreddits.slice(i, i + batchSize);
+            const promises = batch.map(subName => {
+                return new Promise(resolve => {
+                    const proxyPort = 10000 + Math.floor(Math.random() * 1000);
+                    const proxyUrl = `socks5://${PROXY_BASE.login}:${PROXY_BASE.password}@${PROXY_BASE.host}:${proxyPort}`;
+                    try {
+                        const child = spawn('curl', [
+                            '-sL', '--proxy', proxyUrl, '--max-time', '10',
+                            '-H', 'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                            '-H', `Cookie: reddit_session=${redditCookie}`,
+                            `https://www.reddit.com/r/${subName}/about/moderators.json`
+                        ]);
+                        let data = '';
+                        child.stdout.on('data', c => data += c);
+                        child.on('close', () => {
+                            try {
+                                const d = JSON.parse(data);
+                                const mods = d?.data?.children || [];
+                                resolve({ name: subName, moderators: mods.length });
+                            } catch {
+                                resolve({ name: subName, moderators: -1 });
+                            }
+                        });
+                        child.on('error', () => resolve({ name: subName, moderators: -1 }));
+                        setTimeout(() => { try { child.kill(); } catch {} resolve({ name: subName, moderators: -1 }); }, 12000);
+                    } catch {
+                        resolve({ name: subName, moderators: -1 });
+                    }
+                });
+            });
+            const batchResults = await Promise.all(promises);
+            results.push(...batchResults);
+        }
+
+        console.log(`[ModCheck] Done. ${results.filter(r => r.moderators === 0).length}/${results.length} have 0 mods`);
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ results }));
         return;
     }
 

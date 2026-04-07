@@ -3488,15 +3488,20 @@ document.getElementById('ssKeyword')?.addEventListener('keydown', e => {
     if (e.key === 'Enter') ssSearch();
 });
 
+let _ssKeywords = [];
+let _ssCurrentKwIdx = 0;
+
 async function ssSearch() {
-    const keyword = document.getElementById('ssKeyword').value.trim();
-    if (!keyword) return;
+    const input = document.getElementById('ssKeyword').value.trim();
+    if (!input) return;
+    _ssKeywords = input.split(',').map(k => k.trim()).filter(Boolean);
+    _ssCurrentKwIdx = 0;
     _ssAfter = null;
     _ssResults = [];
-    _ssAutoLoad = true; // auto-paginate through ALL results
-    document.getElementById('ssResults').innerHTML = '<div class="fetch-status loading"><span class="spinner"></span> Searching all subreddits...</div>';
+    _ssAutoLoad = true;
+    document.getElementById('ssResults').innerHTML = `<div class="fetch-status loading"><span class="spinner"></span> Searching "${_ssKeywords[0]}" (1/${_ssKeywords.length} keywords)...</div>`;
     document.getElementById('ssLoadMore').classList.add('hidden');
-    await ssFetch(keyword);
+    await ssFetch(_ssKeywords[0]);
 }
 
 async function ssLoadMore() {
@@ -3519,46 +3524,48 @@ async function ssFetch(keyword) {
         if (data.error) throw new Error(data.error);
 
         _ssAfter = data.after;
-        _ssResults = [..._ssResults, ...data.subreddits];
+        // Deduplicate by name
+        const existingNames = new Set(_ssResults.map(s => s.name.toLowerCase()));
+        const newSubs = data.subreddits.filter(s => !existingNames.has(s.name.toLowerCase()));
+        _ssResults = [..._ssResults, ...newSubs];
 
-        // Check mods for each subreddit via server (authenticated + proxy)
-        for (const sub of data.subreddits) {
-            try {
-                const modRes = await fetch(`${SERVER}/api/check-mods`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ subreddit: sub.name })
-                });
-                const modData = await modRes.json();
-                sub.moderators = modData.moderators;
-                sub.modList = modData.modList || [];
-            } catch {
-                sub.moderators = -1;
-            }
-            // Only keep 0-mod subreddits in results
-            await new Promise(r => setTimeout(r, 300));
-        }
+        // Batch check mods (5 in parallel on server)
+        try {
+            const modRes = await fetch(`${SERVER}/api/check-mods-batch`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ subreddits: data.subreddits.map(s => s.name) })
+            });
+            const modData = await modRes.json();
+            (modData.results || []).forEach(r => {
+                const sub = data.subreddits.find(s => s.name === r.name);
+                if (sub) sub.moderators = r.moderators;
+            });
+        } catch {}
 
-        // Filter: only show subreddits with 0 moderators
-        const noModSubs = data.subreddits.filter(s => s.moderators === 0);
-        // Remove modded ones from _ssResults
+        // Only keep 0-mod subreddits
         _ssResults = _ssResults.filter(s => s.moderators === undefined || s.moderators === 0);
 
         ssRenderResults();
 
-        // Auto-load more if available
+        // Auto-load more or move to next keyword
+        const noModCount = _ssResults.filter(s => s.moderators === 0).length;
         if (_ssAfter) {
             document.getElementById('ssLoadMore').classList.remove('hidden');
             if (_ssAutoLoad) {
-                const noModCount = _ssResults.filter(s => s.moderators === 0).length;
-                toast('info', `${noModCount} without mods found...`, `Checked ${_ssResults.length + data.subreddits.filter(s => s.moderators > 0).length} total`, 2000);
-                setTimeout(() => ssLoadMore(), 500);
+                document.getElementById('ssResultCount').textContent = `${noModCount} without mods · searching "${_ssKeywords[_ssCurrentKwIdx]}" (${_ssCurrentKwIdx + 1}/${_ssKeywords.length})...`;
+                setTimeout(() => ssLoadMore(), 300);
             }
+        } else if (_ssAutoLoad && _ssCurrentKwIdx < _ssKeywords.length - 1) {
+            // Move to next keyword
+            _ssCurrentKwIdx++;
+            _ssAfter = null;
+            document.getElementById('ssResultCount').textContent = `${noModCount} without mods · searching "${_ssKeywords[_ssCurrentKwIdx]}" (${_ssCurrentKwIdx + 1}/${_ssKeywords.length})...`;
+            setTimeout(() => ssFetch(_ssKeywords[_ssCurrentKwIdx]), 300);
         } else {
             document.getElementById('ssLoadMore').classList.add('hidden');
             _ssAutoLoad = false;
-            const noModCount = _ssResults.filter(s => s.moderators === 0).length;
-            toast('success', 'Search complete', `${noModCount} subreddits without moderators found`);
+            toast('success', 'Search complete', `${noModCount} subreddits without moderators found across ${_ssKeywords.length} keyword(s)`);
         }
     } catch (err) {
         document.getElementById('ssResults').innerHTML = `<div class="fetch-status error">${err.message}</div>`;
