@@ -3521,23 +3521,44 @@ async function ssFetch(keyword) {
         _ssAfter = data.after;
         _ssResults = [..._ssResults, ...data.subreddits];
 
-        // No auth — user checks mods manually via link
-        data.subreddits.forEach(s => { s.moderators = -1; });
+        // Check mods for each subreddit via server (authenticated + proxy)
+        for (const sub of data.subreddits) {
+            try {
+                const modRes = await fetch(`${SERVER}/api/check-mods`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ subreddit: sub.name })
+                });
+                const modData = await modRes.json();
+                sub.moderators = modData.moderators;
+                sub.modList = modData.modList || [];
+            } catch {
+                sub.moderators = -1;
+            }
+            // Only keep 0-mod subreddits in results
+            await new Promise(r => setTimeout(r, 300));
+        }
+
+        // Filter: only show subreddits with 0 moderators
+        const noModSubs = data.subreddits.filter(s => s.moderators === 0);
+        // Remove modded ones from _ssResults
+        _ssResults = _ssResults.filter(s => s.moderators === undefined || s.moderators === 0);
 
         ssRenderResults();
 
         // Auto-load more if available
         if (_ssAfter) {
             document.getElementById('ssLoadMore').classList.remove('hidden');
-            // Auto-paginate: keep loading all pages
             if (_ssAutoLoad) {
-                toast('info', `Loaded ${_ssResults.length} subreddits...`, 'Searching for more', 2000);
-                setTimeout(() => ssLoadMore(), 1000);
+                const noModCount = _ssResults.filter(s => s.moderators === 0).length;
+                toast('info', `${noModCount} without mods found...`, `Checked ${_ssResults.length + data.subreddits.filter(s => s.moderators > 0).length} total`, 2000);
+                setTimeout(() => ssLoadMore(), 500);
             }
         } else {
             document.getElementById('ssLoadMore').classList.add('hidden');
             _ssAutoLoad = false;
-            toast('success', 'Search complete', `${_ssResults.length} subreddits found`);
+            const noModCount = _ssResults.filter(s => s.moderators === 0).length;
+            toast('success', 'Search complete', `${noModCount} subreddits without moderators found`);
         }
     } catch (err) {
         document.getElementById('ssResults').innerHTML = `<div class="fetch-status error">${err.message}</div>`;
@@ -3547,17 +3568,12 @@ async function ssFetch(keyword) {
 }
 
 function ssRenderResults() {
-    const showFilter = document.getElementById('ssNoMods').checked;
-    let filtered = _ssResults;
-    if (showFilter) {
-        filtered = _ssResults.filter(s => s._noMods !== false); // hide ones marked "Has Mods"
-    }
+    const filtered = _ssResults.filter(s => s.moderators === 0);
 
     const saved = getSsSaved();
     const savedNames = new Set(saved.map(s => s.name.toLowerCase()));
-    const noModsCount = _ssResults.filter(s => s._noMods === true).length;
 
-    document.getElementById('ssResultCount').textContent = `${_ssResults.length} found${noModsCount ? ` · ${noModsCount} marked no mods` : ''}${_ssAutoLoad ? ' · searching...' : ''}`;
+    document.getElementById('ssResultCount').textContent = `${filtered.length} subreddits without moderators${_ssAutoLoad ? ' · searching...' : ''}`;
 
     const el = document.getElementById('ssResults');
     if (!filtered.length) {
@@ -3569,8 +3585,6 @@ function ssRenderResults() {
 
     el.innerHTML = filtered.map(s => {
         const isSaved = savedNames.has(s.name.toLowerCase());
-        const isMarkedNoMods = s._noMods === true;
-        const isMarkedHasMods = s._noMods === false;
         const age = s.created ? Math.floor((Date.now() / 1000 - s.created) / 86400) : 0;
         const bannerStyle = s.bannerImg
             ? `background-image:url('${esc(s.bannerImg)}');background-color:${s.bannerColor};`
@@ -3579,7 +3593,7 @@ function ssRenderResults() {
             ? `background-image:url('${esc(s.iconImg)}');background-color:${s.primaryColor};`
             : `background:${s.primaryColor || '#FF4500'};`;
 
-        return `<div class="ss-card ${isMarkedNoMods ? 'ss-card-nomods' : ''} ${isMarkedHasMods ? 'ss-card-hasmods' : ''}">
+        return `<div class="ss-card ss-card-nomods">
             <div class="ss-card-banner" style="${bannerStyle}"></div>
             <div class="ss-card-identity">
                 <div class="ss-card-avatar" style="${avatarStyle}">${s.iconImg ? '' : esc(s.name[0].toUpperCase())}</div>
@@ -3590,13 +3604,13 @@ function ssRenderResults() {
             </div>
             <div class="ss-card-stats">
                 <div class="ss-stat"><span class="ss-stat-val">${fmtNumAlways(s.subscribers)}</span><span class="ss-stat-lbl">Members</span></div>
+                <div class="ss-stat"><span class="ss-stat-val ss-no-mods">0</span><span class="ss-stat-lbl">Mods</span></div>
                 <div class="ss-stat"><span class="ss-stat-val">${age > 365 ? Math.floor(age/365) + 'y' : age + 'd'}</span><span class="ss-stat-lbl">Age</span></div>
                 <div class="ss-stat"><span class="ss-stat-val">${s.subredditType}</span><span class="ss-stat-lbl">Type</span></div>
             </div>
             <div class="ss-card-actions">
-                <a href="https://www.reddit.com/mod/${esc(s.name)}/moderators/" target="_blank" rel="noopener" class="btn btn-sm btn-ghost" onclick="event.stopPropagation()">Check Mods</a>
-                ${isMarkedNoMods ? '<span class="ss-badge-nomods">No Mods</span>' : isMarkedHasMods ? '<span class="ss-badge-hasmods">Has Mods</span>' : `<button class="btn btn-xs btn-primary" onclick="ssMarkNoMods('${esc(s.name)}')">No Mods</button><button class="btn btn-xs btn-ghost" onclick="ssMarkHasMods('${esc(s.name)}')">Has Mods</button>`}
-                ${isSaved ? '<span class="ss-saved-badge">Saved</span>' : isMarkedNoMods ? `<button class="btn btn-sm btn-primary" onclick="ssSave('${esc(s.name)}')">Save</button>` : ''}
+                ${isSaved ? '<span class="ss-saved-badge">Saved</span>' : `<button class="btn btn-sm btn-primary" onclick="ssSave('${esc(s.name)}')">Save to Take Over</button>`}
+                <a href="${esc(s.url)}" target="_blank" rel="noopener" class="btn btn-sm btn-ghost">View</a>
             </div>
         </div>`;
     }).join('');

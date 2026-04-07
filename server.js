@@ -939,7 +939,7 @@ Return ONLY the JSON array, no other text.`;
         return;
     }
 
-    // --- Check subreddit moderators ---
+    // --- Check subreddit moderators (authenticated via cookie + proxy) ---
     if (parsed.pathname === '/api/check-mods' && req.method === 'POST') {
         const body = await readBody(req);
         const { subreddit } = body;
@@ -950,13 +950,28 @@ Return ONLY the JSON array, no other text.`;
         }
 
         try {
-            const raw = httpsRequest(`https://www.reddit.com/r/${subreddit}/about/moderators.json`).data;
+            // Load reddit cookie from data.json
+            const DATA_FILE_MOD = path.join(__dirname, 'data.json');
+            let redditCookie = '';
+            try {
+                const d = JSON.parse(fs.readFileSync(DATA_FILE_MOD, 'utf8'));
+                redditCookie = d.keys?.lk_reddit_cookie || '';
+            } catch {}
+
+            const proxyPort = 10000 + Math.floor(Math.random() * 1000);
+            const proxyUrl = `socks5://${PROXY_BASE.login}:${PROXY_BASE.password}@${PROXY_BASE.host}:${proxyPort}`;
+
+            let raw;
+            if (redditCookie) {
+                raw = execSync(`curl -sL --proxy "${proxyUrl}" -H "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" -H "Cookie: reddit_session=${redditCookie}" "https://www.reddit.com/r/${subreddit}/about/moderators.json" --max-time 15`, { encoding: 'utf8', timeout: 20000 });
+            } else {
+                raw = httpsRequest(`https://www.reddit.com/r/${subreddit}/about/moderators.json`).data;
+            }
             const data = JSON.parse(raw);
             const mods = data?.data?.children || [];
             res.writeHead(200, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ success: true, moderators: mods.length, modList: mods.map(m => m.name || m.data?.name).filter(Boolean) }));
+            res.end(JSON.stringify({ success: true, moderators: mods.length, modList: mods.map(m => m.name || '').filter(Boolean) }));
         } catch (err) {
-            // If we can't fetch mods (private/banned sub), report as unknown
             res.writeHead(200, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify({ success: true, moderators: -1, modList: [], error: err.message }));
         }
