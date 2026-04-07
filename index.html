@@ -375,7 +375,7 @@
 
             <div class="ss-filters">
                 <label class="ss-filter-check">
-                    <input type="checkbox" id="ssNoMods" checked> No moderators only
+                    <input type="checkbox" id="ssNoMods" checked onchange="ssRenderResults()"> Hide "Has Mods"
                 </label>
                 <span class="ss-result-count" id="ssResultCount"></span>
             </div>
@@ -975,6 +975,6 @@
         <div class="rank-panel-result hidden" id="rankPanelResult"></div>
     </div>
 
-    <script src="app.js?v=20260407a"></script>
+    <script src="app.js?v=20260407b"></script>
 </body>
 </html>

@@ -3506,6 +3506,27 @@ select.input {
     padding: 8px 14px 12px;
 }
 
+.ss-card-nomods { border-color: var(--accent-green); }
+.ss-card-hasmods { opacity: 0.4; }
+
+.ss-badge-nomods {
+    font-size: 10px;
+    font-weight: 700;
+    color: var(--accent-green);
+    background: rgba(70,209,96,0.12);
+    padding: 3px 8px;
+    border-radius: 3px;
+}
+
+.ss-badge-hasmods {
+    font-size: 10px;
+    font-weight: 700;
+    color: var(--text-muted);
+    background: var(--bg-muted);
+    padding: 3px 8px;
+    border-radius: 3px;
+}
+
 .ss-saved-badge {
     font-size: 11px;
     font-weight: 600;
