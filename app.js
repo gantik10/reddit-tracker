@@ -3524,17 +3524,36 @@ async function ssFetch(keyword) {
         if (data.error) throw new Error(data.error);
 
         _ssAfter = data.after;
-        // Deduplicate by name
+        // Filter: only reviewed communities (non-reviewed get "Unreviewed Content" banner, not indexed by Google)
+        // Also deduplicate by name
         const existingNames = new Set(_ssResults.map(s => s.name.toLowerCase()));
-        const newSubs = data.subreddits.filter(s => !existingNames.has(s.name.toLowerCase()));
+        const newSubs = data.subreddits.filter(s =>
+            !existingNames.has(s.name.toLowerCase()) &&
+            s.communityReviewed === true &&
+            !s.over18
+        );
         _ssResults = [..._ssResults, ...newSubs];
+
+        // Only check mods for reviewed subs that passed the filter
+        const subsToCheck = newSubs.map(s => s.name);
+        if (!subsToCheck.length) {
+            ssRenderResults();
+            // Continue auto-loading
+            if (_ssAfter && _ssAutoLoad) { setTimeout(() => ssLoadMore(), 300); }
+            else if (_ssAutoLoad && _ssCurrentKwIdx < _ssKeywords.length - 1) {
+                _ssCurrentKwIdx++; _ssAfter = null;
+                setTimeout(() => ssFetch(_ssKeywords[_ssCurrentKwIdx]), 300);
+            } else { _ssAutoLoad = false; }
+            btn.disabled = false; btn.textContent = 'Search';
+            return;
+        }
 
         // Batch check mods (5 in parallel on server)
         try {
             const modRes = await fetch(`${SERVER}/api/check-mods-batch`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ subreddits: data.subreddits.map(s => s.name) })
+                body: JSON.stringify({ subreddits: subsToCheck })
             });
             const modData = await modRes.json();
             (modData.results || []).forEach(r => {

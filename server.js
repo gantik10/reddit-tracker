@@ -918,6 +918,7 @@ Return ONLY the JSON array, no other text.`;
                     created: s.created_utc,
                     subredditType: s.subreddit_type || 'public',
                     over18: s.over18 || false,
+                    communityReviewed: s.community_reviewed || false,
                     iconImg: (s.community_icon || s.icon_img || '').split('?')[0],
                     bannerImg: (s.banner_background_image || s.banner_img || '').split('?')[0],
                     bannerColor: s.banner_background_color || s.key_color || '#1A1A2E',
