@@ -3378,6 +3378,68 @@ select.input {
 }
 
 /* ===== Subreddit Search ===== */
+.ss-smart-box {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 16px;
+    margin-bottom: 14px;
+}
+.ss-smart-input {
+    width: 100%;
+    font-size: 15px;
+    padding: 12px 14px;
+    resize: vertical;
+    min-height: 50px;
+    max-height: 150px;
+    line-height: 1.4;
+}
+.ss-smart-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: 10px;
+}
+.ss-smart-hint {
+    font-size: 12px;
+    color: var(--text-muted);
+    margin-left: auto;
+}
+.ss-manual-details {
+    margin-bottom: 12px;
+}
+.ss-manual-summary {
+    font-size: 13px;
+    color: var(--text-muted);
+    cursor: pointer;
+    padding: 6px 0;
+}
+.ss-manual-summary:hover { color: var(--text-secondary); }
+
+.ss-progress {
+    margin-bottom: 14px;
+}
+.ss-progress-bar {
+    height: 6px;
+    background: var(--bg-hover);
+    border-radius: 3px;
+    overflow: hidden;
+}
+.ss-progress-fill {
+    height: 100%;
+    background: var(--primary);
+    border-radius: 3px;
+    transition: width 0.5s ease;
+    width: 0%;
+}
+.ss-progress-text {
+    font-size: 12px;
+    color: var(--text-muted);
+    margin-top: 6px;
+    display: flex;
+    justify-content: space-between;
+}
+
 .ss-search-bar {
     display: flex;
     gap: 10px;

@@ -368,10 +368,30 @@
                 </div>
             </div>
 
-            <div class="ss-search-bar">
-                <input type="text" class="input" id="ssKeyword" placeholder="Search keywords (comma-separated: crypto, gaming, dating)" style="flex:1;font-size:15px;padding:12px 16px;">
-                <button class="btn btn-primary" onclick="ssSearch()" id="ssSearchBtn" style="padding:12px 24px;">Search</button>
+            <!-- Smart Search: natural language request -->
+            <div class="ss-smart-box">
+                <textarea class="input ss-smart-input" id="ssSmartInput" rows="2" placeholder="Describe what you're looking for... e.g. 'communities about dating apps for young people' or 'crypto trading and DeFi subreddits'"></textarea>
+                <div class="ss-smart-actions">
+                    <button class="btn btn-primary" onclick="ssSmartSearch()" id="ssSmartBtn" style="padding:10px 24px;">Find Communities</button>
+                    <button class="btn btn-ghost danger hidden" onclick="ssStopSearch()" id="ssStopBtn" style="padding:10px 18px;">Stop</button>
+                    <span class="ss-smart-hint" id="ssSmartHint">AI generates keywords from your request and searches all of Reddit</span>
+                </div>
             </div>
+
+            <!-- Progress bar for background search -->
+            <div class="ss-progress hidden" id="ssProgress">
+                <div class="ss-progress-bar"><div class="ss-progress-fill" id="ssProgressFill"></div></div>
+                <div class="ss-progress-text" id="ssProgressText"></div>
+            </div>
+
+            <!-- Manual keyword search (collapsible) -->
+            <details class="ss-manual-details">
+                <summary class="ss-manual-summary">Manual keyword search</summary>
+                <div class="ss-search-bar" style="margin-top:8px;">
+                    <input type="text" class="input" id="ssKeyword" placeholder="Search keywords (comma-separated: crypto, gaming, dating)" style="flex:1;font-size:15px;padding:12px 16px;">
+                    <button class="btn btn-primary" onclick="ssSearch()" id="ssSearchBtn" style="padding:12px 24px;">Search</button>
+                </div>
+            </details>
 
             <div class="ss-filters">
                 <span class="ss-result-count" id="ssResultCount"></span>

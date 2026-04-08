@@ -891,6 +891,82 @@ Return ONLY the JSON array, no other text.`;
         return;
     }
 
+    // --- Background Subreddit Search ---
+    if (parsed.pathname === '/api/sub-search-start' && req.method === 'POST') {
+        const body = await readBody(req);
+        const { request, apiKey } = body;
+        if (!request) {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: 'Missing request' }));
+            return;
+        }
+
+        // Generate keywords using Claude
+        console.log(`[SubSearch] Generating keywords for: "${request.slice(0, 60)}..."`);
+        let keywords = [];
+        if (apiKey) {
+            try {
+                const prompt = `Generate a comprehensive list of Reddit search keywords to find subreddits related to this request:\n\n"${request}"\n\nGenerate 30-50 keywords covering:\n- Direct topic keywords in English\n- Related topics and niches\n- Synonyms and variations\n- Broader category terms\n- Specific subtopics\n\nReturn ONLY a JSON array of strings, nothing else. Example: ["keyword1","keyword2"]`;
+                const claudeBody = JSON.stringify({ model: 'claude-sonnet-4-20250514', max_tokens: 1024, messages: [{ role: 'user', content: prompt }] });
+                const tmpFile = `/tmp/kw_${Date.now()}.json`;
+                fs.writeFileSync(tmpFile, claudeBody);
+                const raw = execSync(`curl -sL -X POST "https://api.anthropic.com/v1/messages" -H "x-api-key: ${apiKey}" -H "anthropic-version: 2023-06-01" -H "Content-Type: application/json" -d @${tmpFile}`, { encoding: 'utf8', maxBuffer: 5*1024*1024, timeout: 30000 });
+                fs.unlinkSync(tmpFile);
+                const result = JSON.parse(raw);
+                const content = result.content?.[0]?.text || '';
+                const match = content.match(/\[[\s\S]*\]/);
+                if (match) keywords = JSON.parse(match[0]);
+            } catch (e) {
+                console.log(`[SubSearch] AI keyword gen failed: ${e.message}`);
+            }
+        }
+        if (!keywords.length) keywords = request.split(',').map(k => k.trim()).filter(Boolean);
+
+        console.log(`[SubSearch] ${keywords.length} keywords: ${keywords.slice(0, 5).join(', ')}...`);
+
+        // Start background search
+        const searchId = Date.now();
+        const searchFile = path.join(__dirname, 'search_job.json');
+        fs.writeFileSync(searchFile, JSON.stringify({
+            id: searchId, status: 'running', request, keywords,
+            results: [], log: [`Starting search with ${keywords.length} keywords`],
+            totalChecked: 0, totalUnreviewed: 0, totalWithMods: 0,
+            startedAt: new Date().toISOString()
+        }, null, 2));
+
+        // Run search in background
+        runBackgroundSearch(searchId, keywords);
+
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ success: true, searchId, keywords }));
+        return;
+    }
+
+    if (parsed.pathname === '/api/sub-search-status' && req.method === 'GET') {
+        const searchFile = path.join(__dirname, 'search_job.json');
+        try {
+            const data = fs.readFileSync(searchFile, 'utf8');
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(data);
+        } catch {
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ status: 'none' }));
+        }
+        return;
+    }
+
+    if (parsed.pathname === '/api/sub-search-stop' && req.method === 'POST') {
+        const searchFile = path.join(__dirname, 'search_job.json');
+        try {
+            const data = JSON.parse(fs.readFileSync(searchFile, 'utf8'));
+            data.status = 'stopped';
+            fs.writeFileSync(searchFile, JSON.stringify(data, null, 2));
+        } catch {}
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ success: true }));
+        return;
+    }
+
     // --- Subreddit Search ---
     if (parsed.pathname === '/api/search-subreddits' && req.method === 'POST') {
         const body = await readBody(req);
@@ -1808,3 +1884,194 @@ async function serverCheckMoneyComments() {
         console.log(`[MC-Server] Checked ${updated} money comments`);
     }
 }
+
+// ==========================================
+//  BACKGROUND SUBREDDIT SEARCH
+// ==========================================
+async function runBackgroundSearch(searchId, keywords) {
+    const searchFile = path.join(__dirname, 'search_job.json');
+    const COOKIE_FILE = path.join(__dirname, 'reddit_cookie.txt');
+    let redditCookie = '';
+    try { redditCookie = fs.readFileSync(COOKIE_FILE, 'utf8').trim(); } catch {}
+    try {
+        const d = JSON.parse(fs.readFileSync(path.join(__dirname, 'data.json'), 'utf8'));
+        if (d.keys?.lk_reddit_cookie) redditCookie = d.keys.lk_reddit_cookie;
+    } catch {}
+
+    const seen = new Set();
+    const results = [];
+
+    function updateJob(updates) {
+        try {
+            const job = JSON.parse(fs.readFileSync(searchFile, 'utf8'));
+            if (job.status === 'stopped') return false; // user stopped
+            Object.assign(job, updates);
+            job.results = results;
+            fs.writeFileSync(searchFile, JSON.stringify(job, null, 2));
+            return true;
+        } catch { return false; }
+    }
+
+    function addLog(msg) {
+        try {
+            const job = JSON.parse(fs.readFileSync(searchFile, 'utf8'));
+            job.log.unshift(msg);
+            if (job.log.length > 100) job.log.length = 100;
+            fs.writeFileSync(searchFile, JSON.stringify(job, null, 2));
+        } catch {}
+    }
+
+    let totalChecked = 0, totalUnreviewed = 0, totalWithMods = 0;
+
+    for (let ki = 0; ki < keywords.length; ki++) {
+        const keyword = keywords[ki];
+        let after = null;
+
+        addLog(`Searching keyword ${ki + 1}/${keywords.length}: "${keyword}"`);
+        if (!updateJob({ currentKeyword: keyword, keywordIndex: ki })) break;
+
+        // Paginate through all results for this keyword
+        for (let page = 0; page < 40; page++) { // max 40 pages per keyword
+            try {
+                const job = JSON.parse(fs.readFileSync(searchFile, 'utf8'));
+                if (job.status === 'stopped') break;
+            } catch {}
+
+            const afterParam = after ? `&after=${after}` : '';
+            const url = `https://www.reddit.com/subreddits/search.json?q=${encodeURIComponent(keyword)}&limit=25${afterParam}&sort=relevance`;
+
+            let subs = [];
+            let gotData = false;
+            // Retry up to 3 times on rate limit / HTML response
+            for (let retry = 0; retry < 3; retry++) {
+                try {
+                    const raw = httpsRequest(url).data;
+                    if (!raw || raw.trim().startsWith('<')) {
+                        // Rate limited or HTML error — wait and retry
+                        const wait = (retry + 1) * 5000;
+                        addLog(`Rate limited on "${keyword}" page ${page + 1}, retrying in ${wait / 1000}s...`);
+                        await new Promise(r => setTimeout(r, wait));
+                        continue;
+                    }
+                    const data = JSON.parse(raw);
+                    subs = data?.data?.children?.map(c => c.data) || [];
+                    after = data?.data?.after;
+                    gotData = true;
+                    break;
+                } catch (e) {
+                    addLog(`Error fetching "${keyword}" page ${page + 1}: ${e.message}`);
+                    await new Promise(r => setTimeout(r, 3000));
+                }
+            }
+            if (!gotData) { addLog(`Skipping "${keyword}" — failed after retries`); break; }
+
+            if (!subs.length) break;
+
+            // Filter: reviewed, SFW, not seen
+            const newSubs = [];
+            for (const s of subs) {
+                totalChecked++;
+                if (seen.has(s.display_name?.toLowerCase())) continue;
+                seen.add(s.display_name?.toLowerCase());
+                if (!s.community_reviewed) { totalUnreviewed++; continue; }
+                if (s.over18) continue;
+                newSubs.push(s);
+            }
+
+            // Batch check mods for new subs
+            if (newSubs.length && !redditCookie) {
+                addLog(`No Reddit cookie — skipping mod check for ${newSubs.length} subs (add cookie in settings)`);
+                newSubs.forEach(s => {
+                    results.push({
+                        name: s.display_name, subscribers: s.subscribers || 0,
+                        description: s.public_description || s.title || '',
+                        subredditType: s.subreddit_type || 'public',
+                        created: s.created_utc, over18: false,
+                        iconImg: (s.community_icon || s.icon_img || '').split('?')[0],
+                        bannerImg: (s.banner_background_image || '').split('?')[0],
+                        bannerColor: s.banner_background_color || '#1A1A2E',
+                        primaryColor: s.primary_color || '#FF4500',
+                        url: `https://www.reddit.com/r/${s.display_name}/`,
+                        moderators: -1, foundAt: new Date().toISOString()
+                    });
+                });
+            }
+            if (newSubs.length && redditCookie) {
+                const batchSize = 5;
+                for (let i = 0; i < newSubs.length; i += batchSize) {
+                    const batch = newSubs.slice(i, i + batchSize);
+                    const checks = await Promise.all(batch.map(s => {
+                        return new Promise(resolve => {
+                            const proxyPort = 10000 + Math.floor(Math.random() * 1000);
+                            const proxyUrl = `socks5://${PROXY_BASE.login}:${PROXY_BASE.password}@${PROXY_BASE.host}:${proxyPort}`;
+                            try {
+                                const child = spawn('curl', ['-sL','--proxy',proxyUrl,'--max-time','10','-H','User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36','-H',`Cookie: reddit_session=${redditCookie}`,`https://www.reddit.com/r/${s.display_name}/about/moderators.json`]);
+                                let data = '';
+                                child.stdout.on('data', c => data += c);
+                                child.on('close', () => {
+                                    try {
+                                        if (data.startsWith('<')) { resolve(-1); return; }
+                                        const d = JSON.parse(data);
+                                        resolve(d?.data?.children?.length ?? -1);
+                                    } catch { resolve(-1); }
+                                });
+                                child.on('error', () => resolve(-1));
+                                setTimeout(() => { try { child.kill(); } catch {} resolve(-1); }, 12000);
+                            } catch { resolve(-1); }
+                        });
+                    }));
+
+                    batch.forEach((s, idx) => {
+                        const modCount = checks[idx];
+                        if (modCount === 0) {
+                            addLog(`✅ r/${s.display_name} — 0 MODS, ${s.subscribers || 0} members — FOUND`);
+                            results.push({
+                                name: s.display_name, subscribers: s.subscribers || 0,
+                                description: s.public_description || s.title || '',
+                                subredditType: s.subreddit_type || 'public',
+                                created: s.created_utc, over18: false,
+                                iconImg: (s.community_icon || s.icon_img || '').split('?')[0],
+                                bannerImg: (s.banner_background_image || '').split('?')[0],
+                                bannerColor: s.banner_background_color || '#1A1A2E',
+                                primaryColor: s.primary_color || '#FF4500',
+                                url: `https://www.reddit.com/r/${s.display_name}/`,
+                                moderators: 0, foundAt: new Date().toISOString()
+                            });
+                        } else if (modCount > 0) {
+                            totalWithMods++;
+                        }
+                    });
+                }
+            }
+
+            updateJob({ totalChecked, totalUnreviewed, totalWithMods });
+            if (!after) break;
+            await new Promise(r => setTimeout(r, 2000)); // rate limit delay
+        }
+
+        // Delay between keywords to avoid rate limits
+        if (ki < keywords.length - 1) {
+            await new Promise(r => setTimeout(r, 3000));
+        }
+    }
+
+    addLog(`DONE: ${results.length} subreddits without mods from ${totalChecked} total (${totalUnreviewed} unreviewed, ${totalWithMods} had mods)`);
+    updateJob({ status: 'complete', totalChecked, totalUnreviewed, totalWithMods, completedAt: new Date().toISOString() });
+    console.log(`[SubSearch] Complete: ${results.length} found from ${totalChecked} checked`);
+}
+
+// Resume background search if server restarts while search was running
+(function resumeSearch() {
+    const searchFile = path.join(__dirname, 'search_job.json');
+    try {
+        const job = JSON.parse(fs.readFileSync(searchFile, 'utf8'));
+        if (job.status === 'running' && job.keywords?.length) {
+            const resumeFrom = job.keywordIndex || 0;
+            const remainingKeywords = job.keywords.slice(resumeFrom);
+            console.log(`[SubSearch] Resuming search from keyword ${resumeFrom + 1}/${job.keywords.length}`);
+            job.log.unshift(`Server restarted — resuming from keyword "${remainingKeywords[0]}"`);
+            fs.writeFileSync(searchFile, JSON.stringify(job, null, 2));
+            runBackgroundSearch(job.id, remainingKeywords);
+        }
+    } catch {}
+})();

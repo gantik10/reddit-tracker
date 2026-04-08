@@ -3471,6 +3471,150 @@ let _ssAfter = null;
 let _ssResults = [];
 let _ssTab = 'results';
 let _ssAutoLoad = false;
+let _ssPollTimer = null;
+
+// --- Smart Search (server-side background) ---
+async function ssSmartSearch() {
+    const input = document.getElementById('ssSmartInput').value.trim();
+    if (!input) return;
+
+    const apiKey = getClaudeKey();
+    const btn = document.getElementById('ssSmartBtn');
+    const stopBtn = document.getElementById('ssStopBtn');
+    btn.disabled = true; btn.textContent = 'Starting...';
+
+    // Reset UI
+    _ssResults = [];
+    _ssAutoLoad = false;
+    document.getElementById('ssResults').innerHTML = '';
+    document.getElementById('ssLog').classList.remove('hidden');
+    document.getElementById('ssLogBody').innerHTML = '';
+    document.getElementById('ssProgress').classList.remove('hidden');
+    document.getElementById('ssProgressFill').style.width = '0%';
+    ssLog('Sending request to server...');
+
+    try {
+        const res = await fetch(`${SERVER}/api/sub-search-start`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ request: input, apiKey })
+        });
+        const data = await res.json();
+        if (data.error) throw new Error(data.error);
+
+        ssLog(`AI generated ${data.keywords.length} keywords: ${data.keywords.slice(0, 8).join(', ')}${data.keywords.length > 8 ? '...' : ''}`);
+        document.getElementById('ssSmartHint').textContent = `${data.keywords.length} keywords · searching in background`;
+        btn.textContent = 'Searching...';
+        stopBtn.classList.remove('hidden');
+
+        // Start polling
+        ssStartPolling();
+    } catch (err) {
+        ssLog(`Error: ${err.message}`, 'ss-log-skip');
+        btn.disabled = false; btn.textContent = 'Find Communities';
+        toast('error', 'Search failed', err.message);
+    }
+}
+
+async function ssStopSearch() {
+    try {
+        await fetch(`${SERVER}/api/sub-search-stop`, { method: 'POST' });
+        ssLog('Search stopped by user');
+    } catch {}
+    ssStopPolling();
+    document.getElementById('ssSmartBtn').disabled = false;
+    document.getElementById('ssSmartBtn').textContent = 'Find Communities';
+    document.getElementById('ssStopBtn').classList.add('hidden');
+}
+
+function ssStartPolling() {
+    if (_ssPollTimer) clearInterval(_ssPollTimer);
+    _ssPollTimer = setInterval(ssPollStatus, 2000);
+    ssPollStatus(); // immediate first check
+}
+
+function ssStopPolling() {
+    if (_ssPollTimer) { clearInterval(_ssPollTimer); _ssPollTimer = null; }
+}
+
+async function ssPollStatus() {
+    try {
+        const res = await fetch(`${SERVER}/api/sub-search-status`);
+        const job = await res.json();
+        if (job.status === 'none') { ssStopPolling(); return; }
+
+        // Update progress
+        const pct = job.keywords?.length ? Math.round(((job.keywordIndex || 0) / job.keywords.length) * 100) : 0;
+        document.getElementById('ssProgressFill').style.width = pct + '%';
+        document.getElementById('ssProgressText').innerHTML =
+            `<span>Keyword ${(job.keywordIndex || 0) + 1}/${job.keywords?.length || '?'}: "${job.currentKeyword || '...'}"</span>` +
+            `<span>${job.totalChecked || 0} checked · ${job.results?.length || 0} found · ${job.totalUnreviewed || 0} unreviewed</span>`;
+
+        // Update log title
+        document.getElementById('ssLogTitle').textContent =
+            `Searching "${job.currentKeyword || '...'}" — ${job.totalChecked || 0} checked`;
+
+        // Sync results
+        if (job.results?.length) {
+            _ssResults = job.results;
+            ssRenderResults();
+        }
+
+        // Sync log (show latest entries)
+        if (job.log?.length) {
+            const body = document.getElementById('ssLogBody');
+            body.innerHTML = '';
+            job.log.slice(0, 50).forEach(msg => {
+                const line = document.createElement('div');
+                line.className = 'ss-log-line ' + (msg.includes('FOUND') || msg.includes('0 MODS') ? 'ss-log-found' : msg.includes('skipped') || msg.includes('failed') ? 'ss-log-skip' : '');
+                line.textContent = msg;
+                body.appendChild(line);
+            });
+        }
+
+        // Check if done
+        if (job.status === 'complete' || job.status === 'stopped') {
+            ssStopPolling();
+            document.getElementById('ssProgressFill').style.width = '100%';
+            document.getElementById('ssSmartBtn').disabled = false;
+            document.getElementById('ssSmartBtn').textContent = 'Find Communities';
+            document.getElementById('ssStopBtn').classList.add('hidden');
+            document.querySelector('#ssLog .activity-spinner')?.remove();
+            document.getElementById('ssLogTitle').textContent =
+                `${job.status === 'complete' ? 'Complete' : 'Stopped'} — ${job.totalChecked || 0} checked, ${job.results?.length || 0} found`;
+            document.getElementById('ssSmartHint').textContent = 'Search complete';
+            if (job.status === 'complete') {
+                toast('success', 'Search complete', `${job.results?.length || 0} subreddits without moderators found`);
+            }
+        }
+    } catch (err) {
+        console.error('Poll error:', err);
+    }
+}
+
+// On page open, check if there's a running search
+function ssCheckRunningSearch() {
+    fetch(`${SERVER}/api/sub-search-status`).then(r => r.json()).then(job => {
+        if (job.status === 'running') {
+            document.getElementById('ssLog').classList.remove('hidden');
+            document.getElementById('ssProgress').classList.remove('hidden');
+            document.getElementById('ssSmartBtn').disabled = true;
+            document.getElementById('ssSmartBtn').textContent = 'Searching...';
+            document.getElementById('ssStopBtn').classList.remove('hidden');
+            document.getElementById('ssSmartInput').value = job.request || '';
+            ssStartPolling();
+        } else if (job.status === 'complete' && job.results?.length) {
+            // Show last completed results
+            _ssResults = job.results;
+            document.getElementById('ssLog').classList.remove('hidden');
+            document.getElementById('ssProgress').classList.remove('hidden');
+            document.getElementById('ssProgressFill').style.width = '100%';
+            document.getElementById('ssLogTitle').textContent = `Complete — ${job.totalChecked || 0} checked, ${job.results.length} found`;
+            document.querySelector('#ssLog .activity-spinner')?.remove();
+            ssRenderResults();
+        }
+    }).catch(() => {});
+}
 
 function openSubSearch() {
     currentSubId = null;
@@ -3482,8 +3626,12 @@ function openSubSearch() {
     document.getElementById('addSubredditBtn').classList.add('hidden');
     ssSetTab('results');
     ssRenderSaved();
+    ssCheckRunningSearch();
 }
 
+document.getElementById('ssSmartInput')?.addEventListener('keydown', e => {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); ssSmartSearch(); }
+});
 document.getElementById('ssKeyword')?.addEventListener('keydown', e => {
     if (e.key === 'Enter') ssSearch();
 });
@@ -3524,7 +3672,7 @@ async function ssSearch() {
 }
 
 async function ssLoadMore() {
-    const keyword = document.getElementById('ssKeyword').value.trim();
+    const keyword = _ssKeywords[_ssCurrentKwIdx];
     if (!keyword || !_ssAfter) return;
     await ssFetch(keyword);
 }
@@ -3648,12 +3796,12 @@ async function ssFetch(keyword) {
 }
 
 function ssRenderResults() {
-    const filtered = _ssResults.filter(s => s.moderators === 0);
+    const filtered = _ssResults.filter(s => s.moderators === 0 || s.moderators === -1);
 
     const saved = getSsSaved();
     const savedNames = new Set(saved.map(s => s.name.toLowerCase()));
 
-    document.getElementById('ssResultCount').textContent = `${filtered.length} subreddits without moderators${_ssAutoLoad ? ' · searching...' : ''}`;
+    document.getElementById('ssResultCount').textContent = `${filtered.length} subreddits found${_ssAutoLoad || _ssPollTimer ? ' · searching...' : ''}`;
 
     const el = document.getElementById('ssResults');
     if (!filtered.length) {
@@ -3684,7 +3832,7 @@ function ssRenderResults() {
             </div>
             <div class="ss-card-stats">
                 <div class="ss-stat"><span class="ss-stat-val">${fmtNumAlways(s.subscribers)}</span><span class="ss-stat-lbl">Members</span></div>
-                <div class="ss-stat"><span class="ss-stat-val ss-no-mods">0</span><span class="ss-stat-lbl">Mods</span></div>
+                <div class="ss-stat"><span class="ss-stat-val ss-no-mods">${s.moderators === -1 ? '?' : '0'}</span><span class="ss-stat-lbl">Mods</span></div>
                 <div class="ss-stat"><span class="ss-stat-val">${age > 365 ? Math.floor(age/365) + 'y' : age + 'd'}</span><span class="ss-stat-lbl">Age</span></div>
                 <div class="ss-stat"><span class="ss-stat-val">${s.subredditType}</span><span class="ss-stat-lbl">Type</span></div>
             </div>
