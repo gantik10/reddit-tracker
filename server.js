@@ -1997,70 +1997,67 @@ async function runBackgroundSearch(searchId, keywords) {
                 });
             }
             if (newSubs.length && redditCookie) {
-                // Helper: check mod count for a single sub
+                // Helper: check mod count for a single sub (direct, no proxy — more reliable)
                 function checkModCount(subName) {
                     return new Promise(resolve => {
-                        const proxyPort = 10000 + Math.floor(Math.random() * 1000);
-                        const proxyUrl = `socks5://${PROXY_BASE.login}:${PROXY_BASE.password}@${PROXY_BASE.host}:${proxyPort}`;
                         try {
-                            const child = spawn('curl', ['-sL','--proxy',proxyUrl,'--max-time','10','-H','User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36','-H',`Cookie: reddit_session=${redditCookie}`,`https://www.reddit.com/r/${subName}/about/moderators.json`]);
+                            const child = spawn('curl', ['-sL','--max-time','15','-H','User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36','-H',`Cookie: reddit_session=${redditCookie}`,`https://www.reddit.com/r/${subName}/about/moderators.json`]);
                             let data = '';
                             child.stdout.on('data', c => data += c);
                             child.on('close', () => {
                                 try {
                                     if (data.startsWith('<') || !data.trim()) { resolve(-1); return; }
                                     const d = JSON.parse(data);
-                                    if (d.error || d.reason === 'private' || d.message === 'Forbidden') { resolve(-2); return; } // private/banned
+                                    if (d.error || d.reason === 'private' || d.message === 'Forbidden') { resolve(-2); return; }
                                     resolve(d?.data?.children?.length ?? -1);
                                 } catch { resolve(-1); }
                             });
                             child.on('error', () => resolve(-1));
-                            setTimeout(() => { try { child.kill(); } catch {} resolve(-1); }, 12000);
+                            setTimeout(() => { try { child.kill(); } catch {} resolve(-1); }, 18000);
                         } catch { resolve(-1); }
                     });
                 }
 
-                const batchSize = 5;
+                const batchSize = 3; // smaller batches to avoid rate limiting
                 for (let i = 0; i < newSubs.length; i += batchSize) {
                     const batch = newSubs.slice(i, i + batchSize);
                     const checks = await Promise.all(batch.map(s => checkModCount(s.display_name)));
 
-                    // Retry failed ones (-1) with a different proxy
+                    // Retry failed ones (-1)
                     const retryIndices = [];
                     checks.forEach((c, idx) => { if (c === -1) retryIndices.push(idx); });
                     if (retryIndices.length) {
-                        await new Promise(r => setTimeout(r, 2000));
+                        await new Promise(r => setTimeout(r, 3000));
                         const retryChecks = await Promise.all(retryIndices.map(idx => checkModCount(batch[idx].display_name)));
                         retryIndices.forEach((origIdx, ri) => { checks[origIdx] = retryChecks[ri]; });
                     }
 
                     batch.forEach((s, idx) => {
                         const modCount = checks[idx];
-                        const subData = {
-                            name: s.display_name, subscribers: s.subscribers || 0,
-                            description: s.public_description || s.title || '',
-                            subredditType: s.subreddit_type || 'public',
-                            created: s.created_utc, over18: false,
-                            iconImg: (s.community_icon || s.icon_img || '').split('?')[0],
-                            bannerImg: (s.banner_background_image || '').split('?')[0],
-                            bannerColor: s.banner_background_color || '#1A1A2E',
-                            primaryColor: s.primary_color || '#FF4500',
-                            url: `https://www.reddit.com/r/${s.display_name}/`,
-                            foundAt: new Date().toISOString()
-                        };
                         if (modCount === 0) {
                             addLog(`✅ r/${s.display_name} — 0 MODS, ${s.subscribers || 0} members — FOUND`);
-                            results.push({ ...subData, moderators: 0 });
+                            results.push({
+                                name: s.display_name, subscribers: s.subscribers || 0,
+                                description: s.public_description || s.title || '',
+                                subredditType: s.subreddit_type || 'public',
+                                created: s.created_utc, over18: false,
+                                iconImg: (s.community_icon || s.icon_img || '').split('?')[0],
+                                bannerImg: (s.banner_background_image || '').split('?')[0],
+                                bannerColor: s.banner_background_color || '#1A1A2E',
+                                primaryColor: s.primary_color || '#FF4500',
+                                url: `https://www.reddit.com/r/${s.display_name}/`,
+                                moderators: 0, foundAt: new Date().toISOString()
+                            });
                         } else if (modCount > 0) {
                             totalWithMods++;
-                        } else if (modCount === -2) {
-                            // Private/banned — skip silently
-                        } else {
-                            // Failed check — still include as unknown
+                        } else if (modCount === -1) {
                             totalFailed++;
-                            results.push({ ...subData, moderators: -1 });
+                            addLog(`⚠ r/${s.display_name} — mod check failed after retry`);
                         }
+                        // -2 = private/banned, skip
                     });
+                    // Small delay between batches
+                    if (i + batchSize < newSubs.length) await new Promise(r => setTimeout(r, 1000));
                 }
             }
 

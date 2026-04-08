@@ -3796,7 +3796,7 @@ async function ssFetch(keyword) {
 }
 
 function ssRenderResults() {
-    const filtered = _ssResults.filter(s => s.moderators === 0 || s.moderators === -1);
+    const filtered = _ssResults.filter(s => s.moderators === 0);
 
     const saved = getSsSaved();
     const savedNames = new Set(saved.map(s => s.name.toLowerCase()));
