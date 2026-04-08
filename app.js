@@ -208,8 +208,10 @@ const S = {
                         if (serverKws.length > localKws.length) {
                             mp.googleKeywords = [...localKws, ...serverKws.slice(localKws.length)];
                         }
-                        // Merge money comment: take server if more recent
-                        if (serverMp.moneyComment?.checkedAt && (!mp.moneyComment?.checkedAt || new Date(serverMp.moneyComment.checkedAt) > new Date(mp.moneyComment.checkedAt))) {
+                        // Merge money comment: take server if more recent, but respect local deletion
+                        if (mp.moneyComment === undefined || mp.moneyComment === null) {
+                            // Local explicitly deleted — don't restore from server
+                        } else if (serverMp.moneyComment?.checkedAt && (!mp.moneyComment?.checkedAt || new Date(serverMp.moneyComment.checkedAt) > new Date(mp.moneyComment.checkedAt))) {
                             mp.moneyComment = serverMp.moneyComment;
                         }
                     }
