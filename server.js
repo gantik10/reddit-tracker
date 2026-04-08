@@ -2022,16 +2022,19 @@ async function runBackgroundSearch(searchId, keywords) {
                     });
                 }
 
-                // Check one at a time — each gets a unique proxy IP, no rate limiting
+                // Check one at a time, ~6s apart to stay under Reddit's 100req/10min session rate limit
                 for (let si = 0; si < newSubs.length; si++) {
                     const s = newSubs[si];
                     let modCount = await checkModCount(s.display_name);
 
-                    // Retry up to 2 more times on failure
+                    // Retry up to 2 more times on failure with increasing delay
                     for (let retry = 0; retry < 2 && modCount === -1; retry++) {
-                        await new Promise(r => setTimeout(r, 2000));
+                        await new Promise(r => setTimeout(r, 8000 * (retry + 1)));
                         modCount = await checkModCount(s.display_name);
                     }
+
+                    // Throttle: wait 6s between checks to respect Reddit session rate limit
+                    if (si < newSubs.length - 1) await new Promise(r => setTimeout(r, 6000));
 
                     if (modCount === 0) {
                         addLog(`✅ r/${s.display_name} — 0 MODS, ${s.subscribers || 0} members — FOUND`);
