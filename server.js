@@ -1997,67 +1997,64 @@ async function runBackgroundSearch(searchId, keywords) {
                 });
             }
             if (newSubs.length && redditCookie) {
-                // Helper: check mod count for a single sub (direct, no proxy — more reliable)
+                // Helper: check mod count via rotating proxy (each call = different IP = no rate limit)
                 function checkModCount(subName) {
                     return new Promise(resolve => {
+                        const proxyPort = 10000 + Math.floor(Math.random() * 1000);
+                        const proxyUrl = `socks5://${PROXY_BASE.login}:${PROXY_BASE.password}@${PROXY_BASE.host}:${proxyPort}`;
+                        let resolved = false;
                         try {
-                            const child = spawn('curl', ['-sL','--max-time','15','-H','User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36','-H',`Cookie: reddit_session=${redditCookie}`,`https://www.reddit.com/r/${subName}/about/moderators.json`]);
+                            const child = spawn('curl', ['-sL','--proxy',proxyUrl,'--max-time','20','-H','User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36','-H',`Cookie: reddit_session=${redditCookie}`,`https://www.reddit.com/r/${subName}/about/moderators.json`]);
                             let data = '';
                             child.stdout.on('data', c => data += c);
                             child.on('close', () => {
+                                if (resolved) return; resolved = true;
                                 try {
-                                    if (data.startsWith('<') || !data.trim()) { resolve(-1); return; }
+                                    if (!data.trim() || data.startsWith('<')) { resolve(-1); return; }
                                     const d = JSON.parse(data);
                                     if (d.error || d.reason === 'private' || d.message === 'Forbidden') { resolve(-2); return; }
                                     resolve(d?.data?.children?.length ?? -1);
                                 } catch { resolve(-1); }
                             });
-                            child.on('error', () => resolve(-1));
-                            setTimeout(() => { try { child.kill(); } catch {} resolve(-1); }, 18000);
-                        } catch { resolve(-1); }
+                            child.on('error', () => { if (!resolved) { resolved = true; resolve(-1); } });
+                            setTimeout(() => { try { child.kill(); } catch {} if (!resolved) { resolved = true; resolve(-1); } }, 25000);
+                        } catch { if (!resolved) { resolved = true; resolve(-1); } }
                     });
                 }
 
-                const batchSize = 3; // smaller batches to avoid rate limiting
-                for (let i = 0; i < newSubs.length; i += batchSize) {
-                    const batch = newSubs.slice(i, i + batchSize);
-                    const checks = await Promise.all(batch.map(s => checkModCount(s.display_name)));
+                // Check one at a time — each gets a unique proxy IP, no rate limiting
+                for (let si = 0; si < newSubs.length; si++) {
+                    const s = newSubs[si];
+                    let modCount = await checkModCount(s.display_name);
 
-                    // Retry failed ones (-1)
-                    const retryIndices = [];
-                    checks.forEach((c, idx) => { if (c === -1) retryIndices.push(idx); });
-                    if (retryIndices.length) {
-                        await new Promise(r => setTimeout(r, 3000));
-                        const retryChecks = await Promise.all(retryIndices.map(idx => checkModCount(batch[idx].display_name)));
-                        retryIndices.forEach((origIdx, ri) => { checks[origIdx] = retryChecks[ri]; });
+                    // Retry up to 2 more times on failure
+                    for (let retry = 0; retry < 2 && modCount === -1; retry++) {
+                        await new Promise(r => setTimeout(r, 2000));
+                        modCount = await checkModCount(s.display_name);
                     }
 
-                    batch.forEach((s, idx) => {
-                        const modCount = checks[idx];
-                        if (modCount === 0) {
-                            addLog(`✅ r/${s.display_name} — 0 MODS, ${s.subscribers || 0} members — FOUND`);
-                            results.push({
-                                name: s.display_name, subscribers: s.subscribers || 0,
-                                description: s.public_description || s.title || '',
-                                subredditType: s.subreddit_type || 'public',
-                                created: s.created_utc, over18: false,
-                                iconImg: (s.community_icon || s.icon_img || '').split('?')[0],
-                                bannerImg: (s.banner_background_image || '').split('?')[0],
-                                bannerColor: s.banner_background_color || '#1A1A2E',
-                                primaryColor: s.primary_color || '#FF4500',
-                                url: `https://www.reddit.com/r/${s.display_name}/`,
-                                moderators: 0, foundAt: new Date().toISOString()
-                            });
-                        } else if (modCount > 0) {
-                            totalWithMods++;
-                        } else if (modCount === -1) {
-                            totalFailed++;
-                            addLog(`⚠ r/${s.display_name} — mod check failed after retry`);
-                        }
-                        // -2 = private/banned, skip
-                    });
-                    // Small delay between batches
-                    if (i + batchSize < newSubs.length) await new Promise(r => setTimeout(r, 1000));
+                    if (modCount === 0) {
+                        addLog(`✅ r/${s.display_name} — 0 MODS, ${s.subscribers || 0} members — FOUND`);
+                        results.push({
+                            name: s.display_name, subscribers: s.subscribers || 0,
+                            description: s.public_description || s.title || '',
+                            subredditType: s.subreddit_type || 'public',
+                            created: s.created_utc, over18: false,
+                            iconImg: (s.community_icon || s.icon_img || '').split('?')[0],
+                            bannerImg: (s.banner_background_image || '').split('?')[0],
+                            bannerColor: s.banner_background_color || '#1A1A2E',
+                            primaryColor: s.primary_color || '#FF4500',
+                            url: `https://www.reddit.com/r/${s.display_name}/`,
+                            moderators: 0, foundAt: new Date().toISOString()
+                        });
+                    } else if (modCount > 0) {
+                        totalWithMods++;
+                        addLog(`r/${s.display_name} — ${modCount} mods`);
+                    } else if (modCount === -1) {
+                        totalFailed++;
+                        addLog(`⚠ r/${s.display_name} — mod check failed after retries`);
+                    }
+                    // -2 = private/banned, skip silently
                 }
             }
 
