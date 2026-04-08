@@ -1921,7 +1921,7 @@ async function runBackgroundSearch(searchId, keywords) {
         } catch {}
     }
 
-    let totalChecked = 0, totalUnreviewed = 0, totalWithMods = 0;
+    let totalChecked = 0, totalUnreviewed = 0, totalWithMods = 0, totalFailed = 0;
 
     for (let ki = 0; ki < keywords.length; ki++) {
         const keyword = keywords[ki];
@@ -1997,54 +1997,74 @@ async function runBackgroundSearch(searchId, keywords) {
                 });
             }
             if (newSubs.length && redditCookie) {
+                // Helper: check mod count for a single sub
+                function checkModCount(subName) {
+                    return new Promise(resolve => {
+                        const proxyPort = 10000 + Math.floor(Math.random() * 1000);
+                        const proxyUrl = `socks5://${PROXY_BASE.login}:${PROXY_BASE.password}@${PROXY_BASE.host}:${proxyPort}`;
+                        try {
+                            const child = spawn('curl', ['-sL','--proxy',proxyUrl,'--max-time','10','-H','User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36','-H',`Cookie: reddit_session=${redditCookie}`,`https://www.reddit.com/r/${subName}/about/moderators.json`]);
+                            let data = '';
+                            child.stdout.on('data', c => data += c);
+                            child.on('close', () => {
+                                try {
+                                    if (data.startsWith('<') || !data.trim()) { resolve(-1); return; }
+                                    const d = JSON.parse(data);
+                                    if (d.error || d.reason === 'private' || d.message === 'Forbidden') { resolve(-2); return; } // private/banned
+                                    resolve(d?.data?.children?.length ?? -1);
+                                } catch { resolve(-1); }
+                            });
+                            child.on('error', () => resolve(-1));
+                            setTimeout(() => { try { child.kill(); } catch {} resolve(-1); }, 12000);
+                        } catch { resolve(-1); }
+                    });
+                }
+
                 const batchSize = 5;
                 for (let i = 0; i < newSubs.length; i += batchSize) {
                     const batch = newSubs.slice(i, i + batchSize);
-                    const checks = await Promise.all(batch.map(s => {
-                        return new Promise(resolve => {
-                            const proxyPort = 10000 + Math.floor(Math.random() * 1000);
-                            const proxyUrl = `socks5://${PROXY_BASE.login}:${PROXY_BASE.password}@${PROXY_BASE.host}:${proxyPort}`;
-                            try {
-                                const child = spawn('curl', ['-sL','--proxy',proxyUrl,'--max-time','10','-H','User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36','-H',`Cookie: reddit_session=${redditCookie}`,`https://www.reddit.com/r/${s.display_name}/about/moderators.json`]);
-                                let data = '';
-                                child.stdout.on('data', c => data += c);
-                                child.on('close', () => {
-                                    try {
-                                        if (data.startsWith('<')) { resolve(-1); return; }
-                                        const d = JSON.parse(data);
-                                        resolve(d?.data?.children?.length ?? -1);
-                                    } catch { resolve(-1); }
-                                });
-                                child.on('error', () => resolve(-1));
-                                setTimeout(() => { try { child.kill(); } catch {} resolve(-1); }, 12000);
-                            } catch { resolve(-1); }
-                        });
-                    }));
+                    const checks = await Promise.all(batch.map(s => checkModCount(s.display_name)));
+
+                    // Retry failed ones (-1) with a different proxy
+                    const retryIndices = [];
+                    checks.forEach((c, idx) => { if (c === -1) retryIndices.push(idx); });
+                    if (retryIndices.length) {
+                        await new Promise(r => setTimeout(r, 2000));
+                        const retryChecks = await Promise.all(retryIndices.map(idx => checkModCount(batch[idx].display_name)));
+                        retryIndices.forEach((origIdx, ri) => { checks[origIdx] = retryChecks[ri]; });
+                    }
 
                     batch.forEach((s, idx) => {
                         const modCount = checks[idx];
+                        const subData = {
+                            name: s.display_name, subscribers: s.subscribers || 0,
+                            description: s.public_description || s.title || '',
+                            subredditType: s.subreddit_type || 'public',
+                            created: s.created_utc, over18: false,
+                            iconImg: (s.community_icon || s.icon_img || '').split('?')[0],
+                            bannerImg: (s.banner_background_image || '').split('?')[0],
+                            bannerColor: s.banner_background_color || '#1A1A2E',
+                            primaryColor: s.primary_color || '#FF4500',
+                            url: `https://www.reddit.com/r/${s.display_name}/`,
+                            foundAt: new Date().toISOString()
+                        };
                         if (modCount === 0) {
                             addLog(`✅ r/${s.display_name} — 0 MODS, ${s.subscribers || 0} members — FOUND`);
-                            results.push({
-                                name: s.display_name, subscribers: s.subscribers || 0,
-                                description: s.public_description || s.title || '',
-                                subredditType: s.subreddit_type || 'public',
-                                created: s.created_utc, over18: false,
-                                iconImg: (s.community_icon || s.icon_img || '').split('?')[0],
-                                bannerImg: (s.banner_background_image || '').split('?')[0],
-                                bannerColor: s.banner_background_color || '#1A1A2E',
-                                primaryColor: s.primary_color || '#FF4500',
-                                url: `https://www.reddit.com/r/${s.display_name}/`,
-                                moderators: 0, foundAt: new Date().toISOString()
-                            });
+                            results.push({ ...subData, moderators: 0 });
                         } else if (modCount > 0) {
                             totalWithMods++;
+                        } else if (modCount === -2) {
+                            // Private/banned — skip silently
+                        } else {
+                            // Failed check — still include as unknown
+                            totalFailed++;
+                            results.push({ ...subData, moderators: -1 });
                         }
                     });
                 }
             }
 
-            updateJob({ totalChecked, totalUnreviewed, totalWithMods });
+            updateJob({ totalChecked, totalUnreviewed, totalWithMods, totalFailed });
             if (!after) break;
             await new Promise(r => setTimeout(r, 2000)); // rate limit delay
         }
@@ -2055,8 +2075,10 @@ async function runBackgroundSearch(searchId, keywords) {
         }
     }
 
-    addLog(`DONE: ${results.length} subreddits without mods from ${totalChecked} total (${totalUnreviewed} unreviewed, ${totalWithMods} had mods)`);
-    updateJob({ status: 'complete', totalChecked, totalUnreviewed, totalWithMods, completedAt: new Date().toISOString() });
+    const noModCount = results.filter(r => r.moderators === 0).length;
+    const unknownCount = results.filter(r => r.moderators === -1).length;
+    addLog(`DONE: ${noModCount} without mods, ${unknownCount} unknown from ${totalChecked} total (${totalUnreviewed} unreviewed, ${totalWithMods} had mods, ${totalFailed} check failed)`);
+    updateJob({ status: 'complete', totalChecked, totalUnreviewed, totalWithMods, totalFailed, completedAt: new Date().toISOString() });
     console.log(`[SubSearch] Complete: ${results.length} found from ${totalChecked} checked`);
 }
 
