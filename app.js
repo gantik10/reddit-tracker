@@ -4558,7 +4558,7 @@ async function ccResearchKeywords() {
     const btn = document.getElementById('ccResearchBtn');
     btn.disabled = true; btn.textContent = 'Searching...';
     try {
-        const r = await fetch(SERVER + '/api/keyword-research', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ keyword: kw, ahrefsKey: getAhrefsKey() }) });
+        const r = await fetch(SERVER + '/api/keyword-research', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ keyword: kw, apiKey: getClaudeKey() }) });
         const d = await r.json();
         if (d.error) throw new Error(d.error);
         _ccDraft.secondaryKeywords = (d.keywords || []).map(k => ({ ...k, selected: false }));
