@@ -1556,10 +1556,19 @@ Return a JSON array of 7 strings. No explanations, just the JSON array.`;
         req.on('data', c => body += c);
         req.on('end', () => {
             try {
-                const { title, primaryKeyword, secondaryKeywords, subreddit, postType, apiKey } = JSON.parse(body);
+                const { title, primaryKeyword, secondaryKeywords, subreddit, postType, apiKey, referencePosts } = JSON.parse(body);
                 if (!apiKey) throw new Error('Missing Claude API key');
 
                 const kwList = (secondaryKeywords || []).map(k => k.keyword).join(', ');
+
+                let refSection = '';
+                if (referencePosts && referencePosts.length) {
+                    refSection = '\n\nREFERENCE POSTS (match their tone, structure, and writing style closely):\n';
+                    referencePosts.forEach((rp, i) => {
+                        refSection += `\n--- Reference ${i + 1}: "${rp.title}" (r/${rp.sub}) ---\n${rp.body.slice(0, 1200)}\n`;
+                    });
+                    refSection += '\nMATCH the writing style, paragraph structure, tone, and personality of these reference posts as closely as possible. The new post should feel like it was written by the same person.\n';
+                }
 
                 let prompt;
                 if (postType === 'money') {
@@ -1568,7 +1577,7 @@ Return a JSON array of 7 strings. No explanations, just the JSON array.`;
 TITLE: "${title}"
 PRIMARY KEYWORD: "${primaryKeyword}"
 SECONDARY KEYWORDS TO INCLUDE: ${kwList || 'none'}
-
+${refSection}
 RULES:
 - Write as an authentic Reddit user — casual, first-person, conversational
 - 150-400 words. Use paragraphs, not walls of text
@@ -1584,7 +1593,7 @@ Return ONLY the post body text. No title, no explanations.`;
                     prompt = `Write a Reddit post body for r/${subreddit || 'a subreddit'}.
 
 TITLE: "${title}"
-
+${refSection}
 Write 100-300 words as an authentic Reddit user. Casual, first-person, conversational. End with something that encourages discussion. No markdown headers, no lists unless natural. Sound real.
 
 Return ONLY the post body text.`;

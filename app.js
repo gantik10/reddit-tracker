@@ -4637,11 +4637,27 @@ function ccGoStep4() {
     ccRenderWizard();
 }
 
+let _ccRefPosts = []; // selected reference posts for body generation
+
 function ccRenderStep4(el) {
+    const subs = S.get('subreddits') || [];
+    const allMps = [];
+    subs.forEach(s => (s.moneyPosts || []).forEach(mp => allMps.push({ subName: s.name, title: mp.title, url: mp.url, id: mp.id, subId: s.id })));
+
     el.innerHTML = `<div class="cc-wizard">
         <div class="cc-step-header">Step 4 — Post Body <span class="cc-step-sub">${esc(_ccDraft.title.slice(0, 40))}${_ccDraft.title.length > 40 ? '...' : ''}</span></div>
-        <button class="btn btn-primary" id="ccGenBodyBtn" onclick="ccGenerateBody()" style="margin-bottom:12px;">Generate Body</button>
-        <textarea id="ccBodyText" class="cc-textarea" rows="12" placeholder="Post body text...">${esc(_ccDraft.body)}</textarea>
+
+        <label class="cc-label">Reference Posts (optional — AI will match their style)</label>
+        <div class="cc-ref-search-wrap">
+            <input id="ccRefSearch" class="cc-input" placeholder="Search money posts..." oninput="ccFilterRefPosts()" style="margin-bottom:6px;">
+            <div id="ccRefList" class="cc-ref-list">${ccRenderRefList(allMps, '')}</div>
+        </div>
+        <div id="ccRefSelected" class="cc-ref-selected">${ccRenderRefSelected()}</div>
+
+        <div style="display:flex;gap:8px;margin-top:14px;">
+            <button class="btn btn-primary" id="ccGenBodyBtn" onclick="ccGenerateBody()">Generate Body</button>
+        </div>
+        <textarea id="ccBodyText" class="cc-textarea" rows="12" placeholder="Post body text..." style="margin-top:12px;">${esc(_ccDraft.body)}</textarea>
         <div style="display:flex;gap:8px;margin-top:16px;">
             <button class="btn btn-ghost" onclick="_ccStep=3;ccRenderWizard()">← Back</button>
             <button class="btn btn-primary" onclick="ccSaveDraft()">Save Draft</button>
@@ -4649,12 +4665,87 @@ function ccRenderStep4(el) {
     </div>`;
 }
 
+function ccRenderRefList(allMps, query) {
+    const q = query.toLowerCase();
+    const filtered = q ? allMps.filter(mp => mp.title.toLowerCase().includes(q) || mp.subName.toLowerCase().includes(q)) : allMps.slice(0, 10);
+    if (!filtered.length) return '<div class="cc-hint">No matching posts</div>';
+    return filtered.map(mp => {
+        const isSelected = _ccRefPosts.some(r => r.id === mp.id);
+        return `<div class="cc-ref-item ${isSelected ? 'cc-ref-item-selected' : ''}" onclick="ccToggleRef(${mp.subId},${mp.id})">
+            <span class="cc-ref-sub">r/${esc(mp.subName)}</span>
+            <span class="cc-ref-title">${esc(mp.title.slice(0, 50))}${mp.title.length > 50 ? '...' : ''}</span>
+            ${isSelected ? '<span class="cc-ref-check">✓</span>' : ''}
+        </div>`;
+    }).join('');
+}
+
+function ccRenderRefSelected() {
+    if (!_ccRefPosts.length) return '<div class="cc-hint" style="margin-top:6px;">No reference posts selected — AI will generate from scratch</div>';
+    return _ccRefPosts.map(r => `<div class="cc-ref-tag">
+        <span>${esc(r.title.slice(0, 35))}${r.title.length > 35 ? '...' : ''}</span>
+        <span class="cc-ref-tag-x" onclick="ccRemoveRef(${r.id})">×</span>
+    </div>`).join('');
+}
+
+function ccFilterRefPosts() {
+    const q = document.getElementById('ccRefSearch').value;
+    const subs = S.get('subreddits') || [];
+    const allMps = [];
+    subs.forEach(s => (s.moneyPosts || []).forEach(mp => allMps.push({ subName: s.name, title: mp.title, url: mp.url, id: mp.id, subId: s.id })));
+    document.getElementById('ccRefList').innerHTML = ccRenderRefList(allMps, q);
+}
+
+function ccToggleRef(subId, mpId) {
+    const idx = _ccRefPosts.findIndex(r => r.id === mpId);
+    if (idx >= 0) {
+        _ccRefPosts.splice(idx, 1);
+    } else {
+        const subs = S.get('subreddits') || [];
+        const sub = subs.find(s => s.id === subId);
+        const mp = sub?.moneyPosts?.find(p => p.id === mpId);
+        if (mp) _ccRefPosts.push({ id: mp.id, subId, title: mp.title, url: mp.url, subName: sub.name });
+    }
+    ccFilterRefPosts();
+    document.getElementById('ccRefSelected').innerHTML = ccRenderRefSelected();
+}
+
+function ccRemoveRef(mpId) {
+    _ccRefPosts = _ccRefPosts.filter(r => r.id !== mpId);
+    ccFilterRefPosts();
+    document.getElementById('ccRefSelected').innerHTML = ccRenderRefSelected();
+}
+
 async function ccGenerateBody() {
     const btn = document.getElementById('ccGenBodyBtn');
     btn.disabled = true; btn.textContent = 'Generating...';
     try {
+        // Fetch body text of reference posts from Reddit
+        let refBodies = [];
+        for (const ref of _ccRefPosts) {
+            try {
+                const parsed = parsePostUrl(ref.url);
+                if (parsed) {
+                    const data = await redditFetch(`/comments/${parsed.postId}.json?limit=1`);
+                    const post = data?.[0]?.data?.children?.[0]?.data;
+                    if (post?.selftext) refBodies.push({ title: post.title || ref.title, body: post.selftext.slice(0, 1500), sub: ref.subName });
+                }
+            } catch (e) { console.log('[CC] Failed to fetch ref post:', e.message); }
+        }
+
         const selected = _ccDraft.secondaryKeywords.filter(k => k.selected);
-        const r = await fetch(SERVER + '/api/generate-body', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title: _ccDraft.title, primaryKeyword: _ccDraft.primaryKeyword, secondaryKeywords: selected, subreddit: _ccDraft.subredditName, postType: _ccDraft.type, apiKey: getClaudeKey() }) });
+        const r = await fetch(SERVER + '/api/generate-body', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                title: _ccDraft.title,
+                primaryKeyword: _ccDraft.primaryKeyword,
+                secondaryKeywords: selected,
+                subreddit: _ccDraft.subredditName,
+                postType: _ccDraft.type,
+                apiKey: getClaudeKey(),
+                referencePosts: refBodies
+            })
+        });
         const d = await r.json();
         if (d.error) throw new Error(d.error);
         _ccDraft.body = d.body || '';
