@@ -1488,28 +1488,37 @@ REFERENCE:
 KEY TRAITS: Long personal review, tested alternatives first, specific features praised, balanced (not overly positive), casual Reddit language, link as domain name naturally in text, ends with caveat/DYOR`
             };
 
-            const prompt = `Generate exactly ${count || 3} money comment variations for a Reddit post.
+            const prompt = `You are writing a Reddit comment that promotes a link. This is a MONEY COMMENT — it must feel like a genuine, helpful Reddit reply that naturally recommends something.
 
-POST CONTEXT:
+STEP 1 — READ THE POST CAREFULLY:
 Title: "${postTitle || 'Unknown'}"
-${postBody ? `Body: ${postBody.slice(0, 500)}` : ''}
+${postBody ? `Body: ${postBody.slice(0, 800)}` : ''}
 Subreddit: r/${subreddit || 'unknown'}
 
-PROMOTION DETAILS:
-Link to include: ${link}
-What we're promoting: ${context || 'See the link'}
+Understand what the poster is asking for. What problem do they have? What are they looking for? Your comment MUST directly answer their specific question or problem before recommending anything.
 
+STEP 2 — WHAT WE'RE PROMOTING:
+Link: ${link}
+Context from the operator: ${context || 'No additional context — make the recommendation generic enough to work regardless of what is behind the link.'}
+
+IMPORTANT: The link may rotate to different offers over time. Write comments that sell the EXPERIENCE and RESULT the user will get — NOT the specific product category. The comment body should still make sense even if what's behind the link changes tomorrow. Focus on: satisfaction, quality, better-than-alternatives, personal positive experience.
+
+STEP 3 — STYLE:
 ${styleExamples[style] || styleExamples.direct}
 
+Generate exactly ${count || 3} variations.
+
 RULES:
-- Each variation must include the link "${link}" naturally
-- Sound like a genuine Reddit user sharing personal experience — NOT an ad
+- FIRST respond to the post naturally — acknowledge what they're asking, maybe share a brief opinion on the topic
+- THEN transition into your recommendation with the link — as if you naturally thought of it while answering
+- Each variation must include "${link}" exactly as written
+- Sound like a real Reddit user who genuinely found something good — not a shill
 - Use proper capitalization
-- Match the reference style closely but vary the wording across variations
-- Include specific details that make it sound authentic (time using service, personal results, comparisons)
-- Don't be overly promotional — add caveats, "DYOR", "in my experience", etc.
-- Each variation should feel like a different person wrote it — different phrasing, different angle, different details
-- The comment should work as a standalone reply to the post above
+- DO NOT name the product category explicitly if the context says not to — describe the experience/results instead
+- Include believable personal details (how long you've used it, what you tried before, specific results)
+- Add authenticity markers: "honestly", "in my experience", caveats like "not perfect but...", "DYOR", "might not be for everyone"
+- Each variation needs a DIFFERENT angle/persona — different backstory, different reason for trying it, different detail highlighted
+- The comment must read as a DIRECT REPLY to this specific post — reference what the poster said
 
 Return a JSON array of objects: [{"comment": "the full comment text"}]
 Return ONLY the JSON array.`;
