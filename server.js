@@ -1451,7 +1451,7 @@ Return ONLY the JSON array, no other text.`;
     }
 
     // --- Content Creator: Keyword Research (Ahrefs) ---
-    if (method === 'POST' && parsed.pathname === '/api/keyword-research') {
+    if (req.method === 'POST' && parsed.pathname === '/api/keyword-research') {
         let body = '';
         req.on('data', c => body += c);
         req.on('end', () => {
@@ -1498,7 +1498,7 @@ Return ONLY the JSON array, no other text.`;
     }
 
     // --- Content Creator: Generate Titles (Claude) ---
-    if (method === 'POST' && parsed.pathname === '/api/generate-titles') {
+    if (req.method === 'POST' && parsed.pathname === '/api/generate-titles') {
         let body = '';
         req.on('data', c => body += c);
         req.on('end', () => {
@@ -1557,7 +1557,7 @@ Return a JSON array of 7 strings. No explanations, just the JSON array.`;
     }
 
     // --- Content Creator: Generate Body (Claude) ---
-    if (method === 'POST' && parsed.pathname === '/api/generate-body') {
+    if (req.method === 'POST' && parsed.pathname === '/api/generate-body') {
         let body = '';
         req.on('data', c => body += c);
         req.on('end', () => {
