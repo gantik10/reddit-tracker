@@ -805,14 +805,14 @@ COMMENT FORMAT: ${commentStyle === 'single' ? 'SINGLE COMMENTS ONLY — every co
 TONE: ${commentTone === 'positive' ? 'POSITIVE AND SUPPORTIVE — all comments must be positive, agreeing, praising, thanking, sharing good experiences, confirming the advice works. People are happy with the suggestion. Some ask genuine follow-up questions. NO negativity, NO skepticism, NO disagreement. Everyone likes what was suggested.' : commentTone === 'debate' ? 'DEBATE — create natural back-and-forth with different opinions. Some agree, some disagree, some are skeptical. Create real discussion tension.' : commentTone === 'questions' ? 'CURIOUS AND ASKING QUESTIONS — people are interested and ask genuine follow-up questions, want more details, ask for clarification, share partial experiences and want to learn more.' : 'NATURAL MIX — mix of supportive, curious, and occasionally mildly skeptical comments. Mostly positive overall.'}
 
 PERSONA RULES (CRITICAL — every account must sound like a DIFFERENT person):
-- Each username must have a DISTINCT writing style. Assign each account a persona:
-  * Some use proper capitalization and grammar. Others don't capitalize at all. Others capitalize randomly.
-  * Some write long detailed paragraphs. Others write 1-2 sentences max.
-  * Some use "lol", "lmao", "ngl". Others never use slang. Others use "tbh", "honestly" a lot.
-  * Some use periods at the end of sentences. Others never do. Others trail off with "..."
-  * Some are formal/professional. Others are very casual/slangy. Others are somewhere in between.
-- NEVER have all accounts use the same capitalization pattern. If one account doesn't capitalize after periods, the NEXT account MUST capitalize properly.
-- The reader should NOT be able to tell these comments were written by the same AI. They must feel like genuinely different humans.
+- ALL accounts MUST use proper capitalization. Start every sentence with a capital letter. This is non-negotiable.
+- Differentiate accounts through OTHER traits instead:
+  * Different sentence lengths (some write 1 sentence, others write full paragraphs)
+  * Different vocabulary and slang (some use "lol/ngl/tbh", others are more formal, others use "honestly/imo/fr")
+  * Different punctuation habits (some end with periods, others trail off, others use exclamation marks)
+  * Different expertise levels (some sound like beginners, others like experienced pros)
+  * Different emotional tone (some are chill, some are frustrated, some are enthusiastic)
+- The reader should NOT be able to tell these comments were written by the same AI.
 
 RULES:
 - Generate exactly ${count} comment entries total
