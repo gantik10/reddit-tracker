@@ -800,26 +800,26 @@ ${refText}
 ${styleMemory}
 ${styleGuide ? `STYLE INSTRUCTIONS: ${styleGuide}` : ''}
 
-COMMENT FORMAT: ${commentStyle === 'single' ? 'SINGLE COMMENTS ONLY — every comment is a standalone top-level comment from a different user. Each user appears only once. No replies or threads.' : commentStyle === 'thread' ? 'THREADS ONLY — create threaded conversations. Each thread has 2-3 users debating back-and-forth (3-6 messages per thread). Reuse the same usernames across threads. No standalone comments.' : 'MIXED — about 30% standalone single comments and 70% threaded conversations. Reuse usernames across threads.'}
+COMMENT FORMAT: ${commentStyle === 'single' ? 'SINGLE COMMENTS ONLY — every comment is a standalone top-level comment from a different user. Each user appears only once. No replies or threads.' : commentStyle === 'thread' ? 'THREADS ONLY — create threaded conversations. CRITICAL: Each thread uses EXACTLY 2 accounts talking back and forth. Account A posts the top-level comment, Account B replies, Account A replies back, etc. The SAME 2 accounts per thread. Across multiple threads you can reuse the same accounts.' : 'MIXED — about 30% standalone single comments and 70% threaded conversations. CRITICAL: Each thread uses EXACTLY 2 accounts talking back and forth — not 3, not 4, just 2 per thread. Standalone single comments each use a unique account.'}
 
 TONE: ${commentTone === 'positive' ? 'POSITIVE AND SUPPORTIVE — all comments must be positive, agreeing, praising, thanking, sharing good experiences, confirming the advice works. People are happy with the suggestion. Some ask genuine follow-up questions. NO negativity, NO skepticism, NO disagreement. Everyone likes what was suggested.' : commentTone === 'debate' ? 'DEBATE — create natural back-and-forth with different opinions. Some agree, some disagree, some are skeptical. Create real discussion tension.' : commentTone === 'questions' ? 'CURIOUS AND ASKING QUESTIONS — people are interested and ask genuine follow-up questions, want more details, ask for clarification, share partial experiences and want to learn more.' : 'NATURAL MIX — mix of supportive, curious, and occasionally mildly skeptical comments. Mostly positive overall.'}
 
 RULES:
 - Generate exactly ${count} comment entries total
-${commentStyle !== 'single' ? '- USE AS FEW ACCOUNTS AS POSSIBLE — reuse the same usernames across threads. We have limited accounts.\n- Each thread should be 3-6 messages long — real debates, not short exchanges' : '- Each comment from a unique user'}
+${commentStyle !== 'single' ? '- ACCOUNT OPTIMIZATION (CRITICAL — accounts cost money):\n  * Each thread = EXACTLY 2 accounts having a conversation (Account A and Account B)\n  * NEVER use 3+ different accounts in one thread\n  * Reuse the same 2-3 accounts across ALL threads to minimize total accounts\n  * Only standalone (non-threaded) comments need unique accounts\n  * Ideal: 2-3 total unique accounts for all threads + 1 unique per standalone comment\n- Each thread should be 3-6 messages long — real back-and-forth debates' : '- Each comment from a unique user'}
 - VARY comment lengths A LOT — some very short (1 sentence), some medium (2-3), some long (4-6). They must NOT look uniform or templated
 - SEO CRITICAL: Analyze the post title keywords. The comments MUST naturally include those keywords and related variations. Google shows Reddit comment snippets in search — write comments that would look good as a Google snippet
 - NEVER end a comment with a period. Reddit users almost never do that. End with no punctuation, or with "lol", "tbh", "honestly", emoji-style text, etc.
 - Comments must FEEL like real people talking — raw, unpolished, with typos occasionally, casual grammar, real Reddit energy. Not corporate or AI-sounding at all
 - Comments should feel like real Reddit users — casual, authentic, not salesy
-${commentStyle !== 'single' ? '- In threads: create natural debate — one skeptic, one advocate, sometimes a third voice' : ''}
+${commentStyle !== 'single' ? '- In threads: create natural debate between EXACTLY 2 people — one skeptic, one advocate. They go back and forth. NO third voice in any thread.' : ''}
 - Include personal experiences, opinions, specific recommendations
 - Use Reddit-style language (e.g. "honestly", "ngl", "in my experience", "tbh", "fr", "nah", etc.)
 - Do NOT use marketing language or be too promotional
 - Some comments should have slight grammar mistakes or informal writing to feel authentic
 
 Return as a JSON array. Each item has:
-- "username": Reddit-style username (REUSE usernames across threads)
+- "username": Reddit-style username (REUSE same 2 usernames within each thread, and reuse them across threads too)
 - "comment": the comment text (make them substantial, not one-liners)
 - "parentIndex": null for top-level, or the index (0-based) of the comment this replies to
 
