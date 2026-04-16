@@ -344,6 +344,37 @@
                             </div>
                             <textarea class="input" id="cgFeedback" rows="2" placeholder="Feedback: e.g. use fewer accounts, make comments longer, more threads, focus on keyword X..." style="margin-top:6px;font-size:12px;"></textarea>
                             <textarea class="input hidden" id="cgPasteRef" rows="4" placeholder="Paste reference comments or style instructions here..."></textarea>
+
+                            <!-- Money Comment Generator -->
+                            <div class="mc-gen-section" id="mcGenSection">
+                                <div class="mc-gen-header" onclick="mcToggle()">
+                                    <span>💰 Money Comment Generator</span>
+                                    <span class="mc-gen-arrow" id="mcArrow">▸</span>
+                                </div>
+                                <div class="mc-gen-body hidden" id="mcGenBody">
+                                    <div class="mc-gen-row">
+                                        <label class="mc-label">Link / URL</label>
+                                        <input class="input" id="mcLink" placeholder="https://example.com or https://docs.google.com/spreadsheets/..." style="font-size:12px;">
+                                    </div>
+                                    <div class="mc-gen-row">
+                                        <label class="mc-label">Context (what are you promoting?)</label>
+                                        <textarea class="input" id="mcContext" rows="2" placeholder="e.g. Best crypto signals group, we offer daily signals with entry/TP/SL..." style="font-size:12px;"></textarea>
+                                    </div>
+                                    <div class="mc-gen-row">
+                                        <label class="mc-label">Style</label>
+                                        <select class="input" id="mcStyle" style="font-size:12px;">
+                                            <option value="spreadsheet">📊 Spreadsheet Comparison (tested services, comparison table link)</option>
+                                            <option value="hyperlink">🔗 Direct Link with Hyperlink (personal rec, inline link)</option>
+                                            <option value="direct">💬 Direct Link Plain (longer review, natural mention)</option>
+                                        </select>
+                                    </div>
+                                    <div class="mc-gen-row">
+                                        <label class="mc-label">Variations</label>
+                                        <input type="number" class="input" id="mcCount" value="3" min="1" max="10" style="width:60px;font-size:12px;">
+                                    </div>
+                                    <button class="btn btn-sm btn-primary" onclick="mcGenerate()" id="mcGenBtn" style="margin-top:8px;">Generate Money Comment</button>
+                                </div>
+                            </div>
                         </div>
 
                         <!-- Our generated/managed comments -->

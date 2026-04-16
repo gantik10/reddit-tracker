@@ -1456,6 +1456,88 @@ Return ONLY the JSON array, no other text.`;
         return;
     }
 
+    // --- Money Comment Generator ---
+    if (req.method === 'POST' && parsed.pathname === '/api/generate-money-comment') {
+        const body = await readBody(req);
+        const { link, context, style, count, postTitle, postBody, subreddit, apiKey } = body;
+
+        if (!link || !apiKey) {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: 'Missing link or API key' }));
+            return;
+        }
+
+        try {
+            const styleExamples = {
+                spreadsheet: `STYLE: Spreadsheet Comparison
+You tested multiple services/providers. You compiled a comparison table/spreadsheet. You share the link to that spreadsheet naturally.
+REFERENCE:
+"I tried a handful of services, and [Brand] really stands out as the best site I can recommend for [service]. It has become my number one choice when it comes to service quality, affordable pricing, and non-drop [product]. I did many tests and even compiled a comparison table of different providers based on various criteria. You can check it out and test it on your own if you want: [LINK]"
+KEY TRAITS: Personal testing, comparison angle, casual confidence, spreadsheet/doc link at end, short-medium length`,
+
+                hyperlink: `STYLE: Direct Link with Hyperlink
+Personal recommendation with the link in markdown hyperlink format: Name (URL). Casual, first-person, brief.
+REFERENCE:
+"Futcoin (https://futcoin.net/en?ref=fc26) is my fav shop out there if you are looking for the safest option with both manual and automated delivery available there. I've started using them since fifa 23 and have no complaints so far, never received a warning or so from ea"
+KEY TRAITS: Brand name with URL in parentheses, personal experience, short, casual tone, specific details about usage history`,
+
+                direct: `STYLE: Direct Link Plain
+Longer review-style comment. Detailed personal experience. Link mentioned naturally mid-text or at end. Reads like a genuine review.
+REFERENCE:
+"I tried a handful of communities, and Momentocrypto.com really stands out as the best crypto signals group that I can recommend. Tbh I've tested many so called trading gurus, but the results have always been off over the long period. At least these guys don't charge a lot and offer transparency, and the win rate seems quite good for me over 3 months. They post a bunch of signals per day from different traders with understandable entries, take profit targets, and stop loss. What I like most is that they adjust their trades even if they go unplanned and sometimes turn them back into positive ROI - it doesn't always happen, but it's already more than most other communities offer. I'd still rather go with trading on your own, but if you are as lazy af as me, you can test it yourself, they had free signals for testing if I remember correctly. Still DYOR!!"
+KEY TRAITS: Long personal review, tested alternatives first, specific features praised, balanced (not overly positive), casual Reddit language, link as domain name naturally in text, ends with caveat/DYOR`
+            };
+
+            const prompt = `Generate exactly ${count || 3} money comment variations for a Reddit post.
+
+POST CONTEXT:
+Title: "${postTitle || 'Unknown'}"
+${postBody ? `Body: ${postBody.slice(0, 500)}` : ''}
+Subreddit: r/${subreddit || 'unknown'}
+
+PROMOTION DETAILS:
+Link to include: ${link}
+What we're promoting: ${context || 'See the link'}
+
+${styleExamples[style] || styleExamples.direct}
+
+RULES:
+- Each variation must include the link "${link}" naturally
+- Sound like a genuine Reddit user sharing personal experience — NOT an ad
+- Use proper capitalization
+- Match the reference style closely but vary the wording across variations
+- Include specific details that make it sound authentic (time using service, personal results, comparisons)
+- Don't be overly promotional — add caveats, "DYOR", "in my experience", etc.
+- Each variation should feel like a different person wrote it — different phrasing, different angle, different details
+- The comment should work as a standalone reply to the post above
+
+Return a JSON array of objects: [{"comment": "the full comment text"}]
+Return ONLY the JSON array.`;
+
+            const claudeBody = JSON.stringify({ model: 'claude-haiku-4-5-20251001', max_tokens: 4096, messages: [{ role: 'user', content: prompt }] });
+            const tmpFile = `/tmp/mc_${Date.now()}.json`;
+            fs.writeFileSync(tmpFile, claudeBody);
+            const raw = execSync(`curl -sL -X POST "https://api.anthropic.com/v1/messages" -H "x-api-key: ${apiKey}" -H "anthropic-version: 2023-06-01" -H "Content-Type: application/json" -d @${tmpFile}`, { encoding: 'utf8', maxBuffer: 10*1024*1024, timeout: 60000 });
+            fs.unlinkSync(tmpFile);
+
+            const result = JSON.parse(raw);
+            if (result.error) throw new Error(result.error.message || JSON.stringify(result.error));
+            const content = result.content?.[0]?.text || '';
+            const jsonMatch = content.match(/\[[\s\S]*\]/);
+            if (!jsonMatch) throw new Error('Failed to parse AI response');
+
+            const comments = JSON.parse(jsonMatch[0]);
+            console.log(`[MoneyComment] Generated ${comments.length} variations for "${link}"`);
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ success: true, comments }));
+        } catch (err) {
+            console.error(`[MoneyComment] Error: ${err.message}`);
+            res.writeHead(500, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: err.message }));
+        }
+        return;
+    }
+
     // --- Content Creator: Keyword Research (Ahrefs matching-terms) ---
     if (req.method === 'POST' && parsed.pathname === '/api/keyword-research') {
         let body = '';

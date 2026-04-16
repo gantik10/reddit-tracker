@@ -1,0 +1,489 @@
+{
+  "communities": {
+    "0": [
+      "app_applytheme",
+      "app_cgnewpost",
+      "app_cgopencustompost",
+      "app_checklogin",
+      "app_cleartlattach",
+      "app_closeordershistory",
+      "app_closerankpanel",
+      "app_fmtdatefull",
+      "app_fmtdatetime",
+      "app_fmtnum",
+      "app_isrecscollapsed",
+      "app_js",
+      "app_kanbancarddragend",
+      "app_kanbancarddragstart",
+      "app_mpdragend",
+      "app_mpdragover",
+      "app_mpdragstart",
+      "app_opensubreddit",
+      "app_rendergeneraltasks",
+      "app_renderkwhistpanel",
+      "app_renderrecommendations",
+      "app_setmptab",
+      "app_showrankpanel",
+      "app_showrankresult",
+      "app_simplehash",
+      "app_startautorefresh",
+      "app_taskdragend",
+      "app_taskdragover",
+      "app_taskdragstart",
+      "app_tbdragend",
+      "app_tbdragstart",
+      "app_toggleactivitybar",
+      "app_togglekeyvisibility",
+      "app_togglekwhist",
+      "app_togglerecs",
+      "app_toggleserp",
+      "app_updaterankprofile",
+      "app_uvstatusclass"
+    ],
+    "1": [
+      "app_addrecastask",
+      "app_addtasklog",
+      "app_analyzecompetitors",
+      "app_autocheckallmoneycomments",
+      "app_autocheckallranks",
+      "app_autocheckrank",
+      "app_autochecksubreddit",
+      "app_checkmoneycommentposition",
+      "app_clearrecommendations",
+      "app_closemodal",
+      "app_deletetask",
+      "app_fetchahrefsforpost",
+      "app_findtask",
+      "app_getserpapikey",
+      "app_getsub",
+      "app_homecheckall",
+      "app_kanbandrop",
+      "app_mpdrop",
+      "app_opensetmoneycomment",
+      "app_pickmoneycomment",
+      "app_refreshmoneypost",
+      "app_refreshrecommendations",
+      "app_refreshsubredditdata",
+      "app_removekeyword",
+      "app_removemoneycomment",
+      "app_renderdetail",
+      "app_saveahrefsupdate",
+      "app_savekeyword",
+      "app_savemoneypost",
+      "app_saverankupdate",
+      "app_savesettings",
+      "app_savetask",
+      "app_taskdrop",
+      "app_toast",
+      "app_toggletaskstatus",
+      "app_updatesub"
+    ],
+    "2": [
+      "app_addgeneraltask",
+      "app_addkeyword",
+      "app_buildgeneraltaskscard",
+      "app_checkmonthlyreset",
+      "app_cleartaskimg",
+      "app_deletegeneraltask",
+      "app_editgeneraltask",
+      "app_edittask",
+      "app_getgeneraltasks",
+      "app_gohome",
+      "app_openaddgeneraltask",
+      "app_openaddglobaltask",
+      "app_openaddmoneypost",
+      "app_openaddsubreddit",
+      "app_openaddsubreddittask",
+      "app_openaddtask",
+      "app_opengeneraltasklog",
+      "app_openmodal",
+      "app_opentasklog",
+      "app_populateassigneedropdown",
+      "app_renderhome",
+      "app_rendertaskloghistory",
+      "app_savesubreddit",
+      "app_tbedittask",
+      "app_tbopenlog",
+      "app_togglegeneraltaskstatus",
+      "app_updatekeywordrank"
+    ],
+    "3": [
+      "app_ccdeletedraft",
+      "app_ccinlinesave",
+      "app_ccmarkposted",
+      "app_ccopendraft",
+      "app_ccsavedraft",
+      "app_cgaddmanual",
+      "app_cgbuildsidebar",
+      "app_cgcancelreply",
+      "app_cgclearselection",
+      "app_cgcopyc",
+      "app_cgdelc",
+      "app_cggenerate",
+      "app_cgmarkpending",
+      "app_cgmarkposted",
+      "app_cgregen",
+      "app_cgrenderfeed",
+      "app_cgrenderworkspace",
+      "app_cgsaveedit",
+      "app_cgtoggleliveref2",
+      "app_getcgcomments",
+      "app_getclaudekey",
+      "app_getcontentdrafts",
+      "app_opencommentgen",
+      "app_savecgcomments",
+      "app_savecontentdrafts"
+    ],
+    "4": [
+      "app_ahrefsfetch",
+      "app_autorefreshall",
+      "app_ccgeneratebody",
+      "app_cgedit",
+      "app_cgopenpost",
+      "app_cleanimgurl",
+      "app_esc",
+      "app_fetchahrefsdata",
+      "app_fetchahrefsfortarget",
+      "app_fetchmoneypost",
+      "app_fetchsubreddit",
+      "app_fmtdate",
+      "app_fmtnumalways",
+      "app_initials",
+      "app_parseposturl",
+      "app_parsesubredditinput",
+      "app_proxyfetch",
+      "app_redditfetch",
+      "app_renderpostmetrics",
+      "app_renderserpresults",
+      "app_rendertaskrow",
+      "app_searchredditposts",
+      "app_selectsearchresult",
+      "app_tbtaskcard"
+    ],
+    "5": [
+      "app_checkorderstatus",
+      "app_checkrankwithproxy",
+      "app_checkupvotebalance",
+      "app_getdflogin",
+      "app_getdfpassword",
+      "app_getdolphinprofiles",
+      "app_getdolphintoken",
+      "app_getorderhistory",
+      "app_getupvoteshopkey",
+      "app_loaddolphinprofiles",
+      "app_loadrecentorders",
+      "app_openordershistory",
+      "app_opensettings",
+      "app_openupvoteshop",
+      "app_placeupvoteorder",
+      "app_quickbuycomment",
+      "app_quickbuypost",
+      "app_refreshorderstatuses",
+      "app_rendermoneycomment",
+      "app_renderordershistory",
+      "app_saveorderhistory",
+      "app_uvapi"
+    ],
+    "6": [
+      "app_getsssaved",
+      "app_opensubsearch",
+      "app_sscheckrunningsearch",
+      "app_ssfetch",
+      "app_ssloadmore",
+      "app_sslog",
+      "app_ssmarkhasmods",
+      "app_ssmarknomods",
+      "app_sspollstatus",
+      "app_ssremovesaved",
+      "app_ssrenderresults",
+      "app_ssrendersaved",
+      "app_sssave",
+      "app_sssearch",
+      "app_sssettab",
+      "app_sssmartsearch",
+      "app_ssstartpolling",
+      "app_ssstoppolling",
+      "app_ssstopsearch"
+    ],
+    "7": [
+      "server_autorankcheck",
+      "server_checkgooglerank",
+      "server_detectcaptcha",
+      "server_escmd",
+      "server_findpostinresults",
+      "server_generaterecommendations",
+      "server_getrandomproxyport",
+      "server_httpget",
+      "server_httpsrequest",
+      "server_js",
+      "server_killchromium",
+      "server_launchfreshchromium",
+      "server_polltelegramcommands",
+      "server_readbody",
+      "server_runbackgroundsearch",
+      "server_scrapegoogleresults",
+      "server_sendtelegramalert",
+      "server_servercheckmoneycomments"
+    ],
+    "8": [
+      "app_filterandsorttasks",
+      "app_gatheralltasks",
+      "app_opentaskboard",
+      "app_populatetbfilters",
+      "app_rendertaskboard",
+      "app_rendertbkanban",
+      "app_rendertblist",
+      "app_settbview",
+      "app_tbkanbandrop"
+    ],
+    "9": [
+      "app_ccfiltertitlerefposts",
+      "app_ccgeneratetitles",
+      "app_ccpicktitle",
+      "app_ccremovetitleref",
+      "app_ccrenderstep3",
+      "app_ccrendertitleoptions",
+      "app_ccrendertitlereflist",
+      "app_ccrendertitlerefselected",
+      "app_cctoggletitleref"
+    ],
+    "10": [
+      "app_ccrenderkwtable",
+      "app_ccrenderstep2",
+      "app_ccresearchkeywords",
+      "app_cctogglekw",
+      "app_getahrefskey",
+      "app_openupdateahrefs",
+      "app_rendermoneyposts"
+    ],
+    "11": [
+      "app_cceditdraft",
+      "app_ccgostep2",
+      "app_ccgostep3",
+      "app_ccgostep4",
+      "app_ccnewdraft",
+      "app_ccrenderstep1",
+      "app_ccrenderwizard"
+    ],
+    "12": [
+      "app_ccfilterrefposts",
+      "app_ccremoveref",
+      "app_ccrenderreflist",
+      "app_ccrenderrefselected",
+      "app_ccrenderstep4",
+      "app_cctoggleref"
+    ],
+    "13": [
+      "app_addteammember",
+      "app_deleteteammember",
+      "app_openteampanel",
+      "app_renderteamlist"
+    ],
+    "14": [
+      "app_activityadd",
+      "app_activityupdate",
+      "app_renderactivity"
+    ],
+    "15": [
+      "app_cgreplyto",
+      "app_cgreplytoown",
+      "app_cgshowreplytarget"
+    ],
+    "16": [
+      "app_confirmdelete",
+      "app_deletecurrentsubreddit",
+      "app_deletemoneypost"
+    ],
+    "17": [
+      "app_renderkanban",
+      "app_rendersubreddittasks",
+      "app_settaskview"
+    ]
+  },
+  "cohesion": {
+    "0": 0.06,
+    "1": 0.15,
+    "2": 0.11,
+    "3": 0.18,
+    "4": 0.12,
+    "5": 0.14,
+    "6": 0.15,
+    "7": 0.2,
+    "8": 0.22,
+    "9": 0.28,
+    "10": 0.29,
+    "11": 0.29,
+    "12": 0.47,
+    "13": 0.5,
+    "14": 0.67,
+    "15": 0.67,
+    "16": 0.67,
+    "17": 0.67
+  },
+  "gods": [
+    {
+      "id": "app_toast",
+      "label": "toast()",
+      "degree": 41
+    },
+    {
+      "id": "app_renderdetail",
+      "label": "renderDetail()",
+      "degree": 32
+    },
+    {
+      "id": "app_updatesub",
+      "label": "updateSub()",
+      "degree": 24
+    },
+    {
+      "id": "app_getsub",
+      "label": "getSub()",
+      "degree": 22
+    },
+    {
+      "id": "app_openmodal",
+      "label": "openModal()",
+      "degree": 17
+    },
+    {
+      "id": "app_esc",
+      "label": "esc()",
+      "degree": 15
+    },
+    {
+      "id": "app_autocheckrank",
+      "label": "autoCheckRank()",
+      "degree": 15
+    },
+    {
+      "id": "app_getgeneraltasks",
+      "label": "getGeneralTasks()",
+      "degree": 14
+    },
+    {
+      "id": "app_opensettings",
+      "label": "openSettings()",
+      "degree": 14
+    },
+    {
+      "id": "app_cgbuildsidebar",
+      "label": "cgBuildSidebar()",
+      "degree": 14
+    }
+  ],
+  "surprises": [
+    {
+      "source": "autoCheckRank()",
+      "target": "activityAdd()",
+      "source_files": [
+        "app.js",
+        "app.js"
+      ],
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "note": "Bridges community 14 \u2192 community 1"
+    },
+    {
+      "source": "toast()",
+      "target": "esc()",
+      "source_files": [
+        "app.js",
+        "app.js"
+      ],
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "note": "Bridges community 4 \u2192 community 1"
+    },
+    {
+      "source": "renderMoneyComment()",
+      "target": "esc()",
+      "source_files": [
+        "app.js",
+        "app.js"
+      ],
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "note": "Bridges community 4 \u2192 community 5"
+    },
+    {
+      "source": "cgRenderWorkspace()",
+      "target": "esc()",
+      "source_files": [
+        "app.js",
+        "app.js"
+      ],
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "note": "Bridges community 4 \u2192 community 3"
+    },
+    {
+      "source": "cgShowReplyTarget()",
+      "target": "esc()",
+      "source_files": [
+        "app.js",
+        "app.js"
+      ],
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "note": "Bridges community 4 \u2192 community 15"
+    }
+  ],
+  "questions": [
+    {
+      "type": "bridge_node",
+      "question": "Why does `toast()` connect `Auto-Check & Monitoring` to `UI & Navigation`, `Task Management`, `Comment Gen Workspace`, `Data Fetching & APIs`, `External Services (Upvote, Dolphin)`, `Subreddit Search`, `Task Board`, `Keyword Research & Ahrefs`, `Content Creator Wizard`?",
+      "why": "High betweenness centrality (0.010) - this node is a cross-community bridge."
+    },
+    {
+      "type": "bridge_node",
+      "question": "Why does `renderDetail()` connect `Auto-Check & Monitoring` to `UI & Navigation`, `Task Management`, `Data Fetching & APIs`, `Keyword Research & Ahrefs`, `Comment Reply Threading`?",
+      "why": "High betweenness centrality (0.005) - this node is a cross-community bridge."
+    },
+    {
+      "type": "bridge_node",
+      "question": "Why does `getSub()` connect `Auto-Check & Monitoring` to `UI & Navigation`, `Task Management`, `Data Fetching & APIs`, `External Services (Upvote, Dolphin)`, `Keyword Research & Ahrefs`, `Activity Log`, `Comment Reply Threading`?",
+      "why": "High betweenness centrality (0.003) - this node is a cross-community bridge."
+    },
+    {
+      "type": "low_cohesion",
+      "question": "Should `UI & Navigation` be split into smaller, more focused modules?",
+      "why": "Cohesion score 0.06 - nodes in this community are weakly interconnected."
+    },
+    {
+      "type": "low_cohesion",
+      "question": "Should `Task Management` be split into smaller, more focused modules?",
+      "why": "Cohesion score 0.11 - nodes in this community are weakly interconnected."
+    },
+    {
+      "type": "low_cohesion",
+      "question": "Should `Data Fetching & APIs` be split into smaller, more focused modules?",
+      "why": "Cohesion score 0.12 - nodes in this community are weakly interconnected."
+    },
+    {
+      "type": "low_cohesion",
+      "question": "Should `External Services (Upvote, Dolphin)` be split into smaller, more focused modules?",
+      "why": "Cohesion score 0.14 - nodes in this community are weakly interconnected."
+    }
+  ],
+  "labels": {
+    "0": "UI & Navigation",
+    "1": "Auto-Check & Monitoring",
+    "2": "Task Management",
+    "3": "Comment Gen Workspace",
+    "4": "Data Fetching & APIs",
+    "5": "External Services (Upvote, Dolphin)",
+    "6": "Subreddit Search",
+    "7": "Server Rank Checking",
+    "8": "Task Board",
+    "9": "Content Creator Titles",
+    "10": "Keyword Research & Ahrefs",
+    "11": "Content Creator Wizard",
+    "12": "Content Creator Body & Refs",
+    "13": "Team Management",
+    "14": "Activity Log",
+    "15": "Comment Reply Threading",
+    "16": "Delete Operations",
+    "17": "Kanban Views"
+  }
+}

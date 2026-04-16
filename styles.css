@@ -4660,6 +4660,21 @@ select.input {
 .cc-doc-cs-posted { background: #e8f5e9; color: #2e7d32; }
 [data-theme="dark"] .cc-doc-comment-status { background: rgba(255,152,0,0.15); }
 [data-theme="dark"] .cc-doc-cs-posted { background: rgba(76,175,80,0.15); }
+/* Money Comment Generator */
+.mc-gen-section { margin-top: 10px; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+.mc-gen-header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 10px 14px; cursor: pointer; font-size: 13px; font-weight: 600;
+    color: var(--text-primary); background: var(--bg-card);
+    transition: background 0.15s;
+}
+.mc-gen-header:hover { background: rgba(var(--primary-rgb), 0.04); }
+.mc-gen-arrow { font-size: 12px; color: var(--text-muted); }
+.mc-gen-body { padding: 12px 14px; background: var(--bg-primary); }
+.mc-gen-row { margin-bottom: 10px; }
+.mc-label { display: block; font-size: 11px; font-weight: 600; color: var(--text-muted); margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.3px; }
+.cg-c-money { border-left: 3px solid #ffc107 !important; }
+
 /* Inline editable title/body */
 .cc-edit-title {
     width: 100%;

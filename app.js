@@ -4229,10 +4229,11 @@ function cgRenderFeed() {
             const indent = c.parentIndex != null ? 24 : 0;
             const isReply = c.parentIndex != null;
             const acctNum = c.username ? usernameMap[c.username] : (i + 1);
-            return `<div class="cg-c ${isPosted ? 'cg-c-posted' : ''} ${isNew ? 'cg-c-new' : ''}" id="cgC${i}" style="margin-left:${indent}px">
+            const isMoney = c.isMoney;
+            return `<div class="cg-c ${isPosted ? 'cg-c-posted' : ''} ${isNew ? 'cg-c-new' : ''} ${isMoney ? 'cg-c-money' : ''}" id="cgC${i}" style="margin-left:${indent}px">
                 ${isReply ? '<div class="cg-thread-line" style="border-color:var(--accent-blue);position:absolute;left:-2px;top:0;bottom:0;"></div>' : ''}
                 <div class="cg-c-head">
-                    <span class="cg-c-num">Account ${acctNum}</span>
+                    <span class="cg-c-num">${isMoney ? '💰 Money' : 'Account ' + acctNum}</span>
                     ${isReply ? '<span style="font-size:9px;color:var(--text-muted);">reply</span>' : ''}
                     ${c.replyToLive ? `<span style="font-size:9px;color:var(--accent-blue);" title="${esc(c.replyToLive)}">replying to live</span>` : ''}
                     <span class="cg-c-badge ${isPosted ? 'cg-b-posted' : 'cg-b-pending'}">${isPosted ? 'Posted' : 'Pending'}</span>
@@ -4475,6 +4476,62 @@ async function cgGenerate() {
     } catch (err) { toast('error', 'Failed', err.message); }
 
     btn.disabled = false; btn.textContent = 'Generate';
+}
+
+// ==========================================
+//  MONEY COMMENT GENERATOR
+// ==========================================
+function mcToggle() {
+    const body = document.getElementById('mcGenBody');
+    const arrow = document.getElementById('mcArrow');
+    body.classList.toggle('hidden');
+    arrow.textContent = body.classList.contains('hidden') ? '▸' : '▾';
+}
+
+async function mcGenerate() {
+    const apiKey = getClaudeKey();
+    if (!apiKey) return toast('warning', 'No Claude API key', 'Add in Settings.');
+    if (!_cgPost) return toast('warning', 'No post selected', '');
+
+    const link = document.getElementById('mcLink').value.trim();
+    if (!link) return toast('warning', 'Enter a link', '');
+
+    const context = document.getElementById('mcContext').value.trim();
+    const style = document.getElementById('mcStyle').value;
+    const count = Number(document.getElementById('mcCount').value) || 3;
+    const btn = document.getElementById('mcGenBtn');
+    btn.disabled = true; btn.textContent = 'Generating...';
+
+    try {
+        const res = await fetch(`${SERVER}/api/generate-money-comment`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                link, context, style, count,
+                postTitle: _cgPost.title, postBody: _cgPost.body || '',
+                subreddit: _cgPost.subName, apiKey
+            })
+        });
+        const data = await res.json();
+        if (data.error) throw new Error(data.error);
+
+        const comments = getCgComments(_cgPost.subId, _cgPost.mpId);
+        (data.comments || []).forEach(c => {
+            comments.push({
+                comment: c.comment,
+                username: null,
+                status: 'pending',
+                isNew: true,
+                isMoney: true,
+                parentIndex: null,
+                addedAt: new Date().toISOString()
+            });
+        });
+        saveCgComments(_cgPost.subId, _cgPost.mpId, comments);
+        cgRenderFeed(); cgBuildSidebar();
+        toast('success', `Generated ${data.comments.length} money comment variations`, '');
+    } catch (err) { toast('error', 'Failed', err.message); }
+
+    btn.disabled = false; btn.textContent = 'Generate Money Comment';
 }
 
 // ==========================================
