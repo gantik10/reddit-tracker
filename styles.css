@@ -4547,6 +4547,125 @@ select.input {
 }
 .cc-new-btn:hover { opacity: 0.85; }
 .cc-sb-badge { font-size: 12px; margin-right: 4px; flex-shrink: 0; }
+/* Google Docs-style document preview */
+.cc-doc-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 16px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 10px 10px 0 0;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+.cc-doc-toolbar-left, .cc-doc-toolbar-right { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.cc-doc-sub { font-size: 12px; color: var(--text-muted); }
+.cc-doc-btn {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    padding: 5px 12px;
+    border-radius: 6px;
+    font-size: 12px;
+    cursor: pointer;
+    color: var(--text-primary);
+    transition: background 0.15s, border-color 0.15s;
+}
+.cc-doc-btn:hover { background: rgba(var(--primary-rgb), 0.06); border-color: var(--primary); }
+.cc-doc-btn-green { color: var(--accent-green); }
+.cc-doc-btn-green:hover { background: rgba(70,209,96,0.08); border-color: var(--accent-green); }
+.cc-doc-btn-red { color: var(--accent-red); }
+.cc-doc-btn-red:hover { background: rgba(255,82,82,0.08); border-color: var(--accent-red); }
+.cc-doc-paper {
+    background: #fff;
+    color: #1a1a1a;
+    border: 1px solid var(--border);
+    border-top: none;
+    border-radius: 0 0 10px 10px;
+    padding: 48px 56px;
+    min-height: 400px;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+    font-family: 'Georgia', 'Times New Roman', serif;
+    line-height: 1.8;
+}
+[data-theme="dark"] .cc-doc-paper {
+    background: #1e1e1e;
+    color: #e0e0e0;
+    box-shadow: 0 2px 16px rgba(0,0,0,0.3);
+}
+.cc-doc-title {
+    font-family: inherit;
+    font-size: 24px;
+    font-weight: 700;
+    color: #111;
+    margin: 0 0 20px;
+    line-height: 1.3;
+    border-bottom: 2px solid #eee;
+    padding-bottom: 16px;
+}
+[data-theme="dark"] .cc-doc-title { color: #f0f0f0; border-bottom-color: #333; }
+.cc-doc-body {
+    font-size: 15px;
+    line-height: 1.8;
+    color: #333;
+}
+.cc-doc-body p { margin: 0 0 14px; }
+[data-theme="dark"] .cc-doc-body { color: #ccc; }
+.cc-doc-comments-header {
+    margin-top: 32px;
+    padding-top: 20px;
+    border-top: 2px solid #eee;
+    font-family: -apple-system, system-ui, sans-serif;
+    font-size: 14px;
+    font-weight: 700;
+    color: #555;
+    margin-bottom: 12px;
+}
+[data-theme="dark"] .cc-doc-comments-header { border-top-color: #333; color: #999; }
+.cc-doc-comment {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 10px 0;
+    border-bottom: 1px solid #f0f0f0;
+    font-family: -apple-system, system-ui, sans-serif;
+}
+[data-theme="dark"] .cc-doc-comment { border-bottom-color: #2a2a2a; }
+.cc-doc-comment-num {
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    background: #f0f0f0;
+    color: #666;
+    font-size: 11px;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+[data-theme="dark"] .cc-doc-comment-num { background: #333; color: #aaa; }
+.cc-doc-comment-text { font-size: 13px; color: #444; line-height: 1.5; flex: 1; }
+[data-theme="dark"] .cc-doc-comment-text { color: #bbb; }
+.cc-doc-comment-status {
+    font-size: 10px;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 4px;
+    background: #fff3e0;
+    color: #e65100;
+    text-transform: uppercase;
+    flex-shrink: 0;
+}
+.cc-doc-cs-posted { background: #e8f5e9; color: #2e7d32; }
+[data-theme="dark"] .cc-doc-comment-status { background: rgba(255,152,0,0.15); }
+[data-theme="dark"] .cc-doc-cs-posted { background: rgba(76,175,80,0.15); }
+.cc-sb-sub-label { padding: 4px 14px 2px; font-size: 10px; font-weight: 600; color: var(--primary); opacity: 0.7; }
+@media (max-width: 768px) {
+    .cc-doc-paper { padding: 28px 24px; }
+    .cc-doc-title { font-size: 20px; }
+}
+
 /* Reference post picker */
 .cc-ref-search-wrap { margin-bottom: 10px; }
 .cc-ref-list { max-height: 180px; overflow-y: auto; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-card); }

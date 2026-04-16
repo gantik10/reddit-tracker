@@ -3990,36 +3990,34 @@ function cgBuildSidebar() {
             </div>`;
         });
     }
-    // Content Drafts section
+    // Content Drafts — grouped under subreddit
     const drafts = getContentDrafts();
-    const activeDrafts = drafts.filter(d => d.status === 'draft');
-    const postedDrafts = drafts.filter(d => d.status === 'posted');
     html += `<div class="cg-sb-sub" style="margin-top:12px;display:flex;align-items:center;justify-content:space-between;">
         <span>Content Drafts</span>
         <button class="cc-new-btn" onclick="ccNewDraft()" title="New post draft">+</button>
     </div>`;
-    if (activeDrafts.length) {
-        activeDrafts.forEach(d => {
-            const comments = getCgComments('draft', d.id);
-            const isActive = _cgPost?.mpId === d.id && _cgPost?.subId === 'draft';
-            html += `<div class="cg-sb-post ${isActive ? 'cg-sb-active' : ''}" onclick="ccOpenDraft(${d.id})">
-                <span class="cc-sb-badge cc-sb-badge-${d.type}">${d.type === 'money' ? '💰' : '💬'}</span>
-                <span class="cg-sb-title">${esc((d.title || 'Untitled').slice(0, 28))}${(d.title || '').length > 28 ? '...' : ''}</span>
-                ${comments.length ? `<span class="cg-sb-count">${comments.filter(c => c.status === 'posted').length}/${comments.length}</span>` : ''}
-            </div>`;
+    if (drafts.length) {
+        // Group by subreddit
+        const bySubMap = {};
+        drafts.forEach(d => {
+            const key = d.subredditName || 'Unassigned';
+            if (!bySubMap[key]) bySubMap[key] = [];
+            bySubMap[key].push(d);
         });
-    }
-    if (postedDrafts.length) {
-        html += `<div class="cc-sb-posted-label">Posted</div>`;
-        postedDrafts.slice(0, 5).forEach(d => {
-            const isActive = _cgPost?.mpId === d.id && _cgPost?.subId === 'draft';
-            html += `<div class="cg-sb-post cc-sb-posted ${isActive ? 'cg-sb-active' : ''}" onclick="ccOpenDraft(${d.id})">
-                <span class="cc-sb-badge">✓</span>
-                <span class="cg-sb-title">${esc((d.title || 'Untitled').slice(0, 28))}</span>
-            </div>`;
+        Object.entries(bySubMap).forEach(([subName, subDrafts]) => {
+            html += `<div class="cc-sb-sub-label">r/${esc(subName)}</div>`;
+            subDrafts.forEach(d => {
+                const comments = getCgComments('draft', d.id);
+                const isActive = _cgPost?.mpId === d.id && _cgPost?.subId === 'draft';
+                const isPosted = d.status === 'posted';
+                html += `<div class="cg-sb-post ${isActive ? 'cg-sb-active' : ''} ${isPosted ? 'cc-sb-posted' : ''}" onclick="ccOpenDraft(${d.id})">
+                    <span class="cc-sb-badge cc-sb-badge-${d.type}">${isPosted ? '✓' : d.type === 'money' ? '💰' : '💬'}</span>
+                    <span class="cg-sb-title">${esc((d.title || 'Untitled').slice(0, 28))}${(d.title || '').length > 28 ? '...' : ''}</span>
+                    ${comments.length ? `<span class="cg-sb-count">${comments.filter(c => c.status === 'posted').length}/${comments.length}</span>` : ''}
+                </div>`;
+            });
         });
-    }
-    if (!activeDrafts.length && !postedDrafts.length) {
+    } else {
         html += `<div style="padding:8px 14px;color:var(--text-muted);font-size:11px;">No drafts yet</div>`;
     }
 
@@ -4117,19 +4115,30 @@ function cgRenderWorkspace() {
     if (_cgPost.isDraft) {
         const d = _ccDraft || getContentDrafts().find(d => d.id === _cgPost.mpId);
         const kwBadges = (d?.secondaryKeywords || []).filter(k => k.selected).map(k => `<span class="cc-kw-badge">${esc(k.keyword)} <small>${k.volume.toLocaleString()}</small></span>`).join('');
+        const comments = getCgComments('draft', _cgPost.mpId);
         top.innerHTML = `
-            <div class="cc-draft-header">
-                <span class="cc-draft-badge cc-draft-badge-${d?.type || 'general'}">${d?.type === 'money' ? '💰 Money Post' : '💬 General Post'}</span>
-                <span class="cc-draft-status cc-draft-status-${d?.status || 'draft'}">${d?.status === 'posted' ? '✓ Posted' : '⬡ Draft'}</span>
-                <span class="cc-draft-sub">r/${esc(_cgPost.subName)}</span>
+            <div class="cc-doc-toolbar">
+                <div class="cc-doc-toolbar-left">
+                    <span class="cc-draft-badge cc-draft-badge-${d?.type || 'general'}">${d?.type === 'money' ? '💰 Money' : '💬 General'}</span>
+                    <span class="cc-draft-status cc-draft-status-${d?.status || 'draft'}">${d?.status === 'posted' ? '✓ Posted' : 'Draft'}</span>
+                    <span class="cc-doc-sub">r/${esc(_cgPost.subName)}</span>
+                </div>
+                <div class="cc-doc-toolbar-right">
+                    <button class="cc-doc-btn" onclick="ccEditDraft(${_cgPost.mpId})" title="Edit">✏️ Edit</button>
+                    ${d?.status !== 'posted' ? `<button class="cc-doc-btn cc-doc-btn-green" onclick="ccMarkPosted(${_cgPost.mpId})">✓ Posted</button>` : ''}
+                    <button class="cc-doc-btn cc-doc-btn-red" onclick="ccDeleteDraft(${_cgPost.mpId})" title="Delete">🗑</button>
+                </div>
             </div>
-            <h2 class="cg-post-title">${esc(_cgPost.title)}</h2>
-            ${_cgPost.body ? `<div class="cg-post-body">${esc(_cgPost.body).replace(/\n/g, '<br>')}</div>` : ''}
-            ${d?.primaryKeyword ? `<div class="cc-kw-row"><span class="cc-kw-primary">${esc(d.primaryKeyword)}</span>${kwBadges}</div>` : ''}
-            <div class="cc-draft-actions">
-                <button class="btn btn-ghost btn-sm" onclick="ccEditDraft(${_cgPost.mpId})">Edit Content</button>
-                ${d?.status !== 'posted' ? `<button class="btn btn-primary btn-sm" onclick="ccMarkPosted(${_cgPost.mpId})">Mark as Posted</button>` : ''}
-                <button class="btn btn-ghost btn-sm cc-btn-delete" onclick="ccDeleteDraft(${_cgPost.mpId})">Delete</button>
+            <div class="cc-doc-paper">
+                <h1 class="cc-doc-title">${esc(_cgPost.title)}</h1>
+                ${d?.primaryKeyword ? `<div class="cc-kw-row" style="margin-bottom:16px;"><span class="cc-kw-primary">${esc(d.primaryKeyword)}</span>${kwBadges}</div>` : ''}
+                <div class="cc-doc-body">${esc(_cgPost.body || '').replace(/\n\n/g, '</p><p>').replace(/\n/g, '<br>')}</div>
+                ${comments.length ? `<div class="cc-doc-comments-header">Comments (${comments.length})</div>` : ''}
+                ${comments.map((c, i) => `<div class="cc-doc-comment">
+                    <div class="cc-doc-comment-num">${i + 1}</div>
+                    <div class="cc-doc-comment-text">${esc(c.comment)}</div>
+                    <span class="cc-doc-comment-status ${c.status === 'posted' ? 'cc-doc-cs-posted' : ''}">${c.status}</span>
+                </div>`).join('')}
             </div>
         `;
     } else {
@@ -4840,7 +4849,7 @@ function ccOpenDraft(id) {
     if (wizPanel) wizPanel.classList.add('hidden');
     document.getElementById('cgEmptyWs').classList.add('hidden');
     document.getElementById('cgPostWs').classList.remove('hidden');
-    cgRenderPost();
+    cgRenderWorkspace();
     cgBuildSidebar();
 }
 
