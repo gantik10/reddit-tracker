@@ -1450,6 +1450,174 @@ Return ONLY the JSON array, no other text.`;
         return;
     }
 
+    // --- Content Creator: Keyword Research (Ahrefs) ---
+    if (method === 'POST' && parsed.pathname === '/api/keyword-research') {
+        let body = '';
+        req.on('data', c => body += c);
+        req.on('end', () => {
+            try {
+                const { keyword, ahrefsKey, country } = JSON.parse(body);
+                if (!keyword || !ahrefsKey) throw new Error('Missing keyword or ahrefsKey');
+
+                const params = new URLSearchParams({
+                    select: 'keyword,volume,keyword_difficulty',
+                    where: JSON.stringify({ and: [{ field: 'keyword', is: ['substring_of', keyword] }] }),
+                    country: country || 'us',
+                    limit: '50',
+                    order_by: 'volume:desc'
+                });
+                const url = `https://api.ahrefs.com/v3/keywords-explorer/google/related-terms?${params}`;
+                const raw = execSync(`curl -sL "${url}" -H "Authorization: Bearer ${ahrefsKey}" -H "Accept: application/json"`, { encoding: 'utf8', maxBuffer: 10*1024*1024, timeout: 30000 });
+                const result = JSON.parse(raw);
+
+                let keywords = [];
+                if (result.keywords) {
+                    keywords = result.keywords.map(k => ({
+                        keyword: k.keyword,
+                        volume: k.volume || 0,
+                        kd: k.keyword_difficulty || 0
+                    }));
+                } else if (result.terms) {
+                    keywords = result.terms.map(k => ({
+                        keyword: k.keyword || k.term,
+                        volume: k.volume || k.search_volume || 0,
+                        kd: k.keyword_difficulty || k.difficulty || 0
+                    }));
+                }
+
+                console.log(`[Keywords] Found ${keywords.length} related terms for "${keyword}"`);
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ success: true, keywords }));
+            } catch (err) {
+                console.error(`[Keywords] Error: ${err.message}`);
+                res.writeHead(500, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ error: err.message }));
+            }
+        });
+        return;
+    }
+
+    // --- Content Creator: Generate Titles (Claude) ---
+    if (method === 'POST' && parsed.pathname === '/api/generate-titles') {
+        let body = '';
+        req.on('data', c => body += c);
+        req.on('end', () => {
+            try {
+                const { primaryKeyword, secondaryKeywords, subreddit, postType, apiKey } = JSON.parse(body);
+                if (!apiKey) throw new Error('Missing Claude API key');
+
+                const kwList = (secondaryKeywords || []).map(k => `${k.keyword} (vol: ${k.volume}, KD: ${k.kd})`).join('\n');
+
+                let prompt;
+                if (postType === 'money') {
+                    prompt = `You are an expert Reddit SEO strategist. Generate exactly 7 Reddit post titles for r/${subreddit || 'a relevant subreddit'}.
+
+PRIMARY TARGET KEYWORD: "${primaryKeyword}"
+
+SECONDARY KEYWORDS (incorporate naturally where possible):
+${kwList || 'None provided'}
+
+RULES:
+- Each title must include the primary keyword (or a very close variation) naturally
+- Titles must sound authentic — like a real Reddit user asking a question, sharing experience, or starting a discussion
+- Mix formats: questions, "how I..." stories, "[Discussion]" threads, recommendations asks, comparisons
+- Weave secondary keywords into titles ONLY if it sounds natural — don't force them
+- Length: 40-120 characters. No clickbait, no ALL CAPS
+- These titles should attract organic Google search traffic for the target keywords
+- Think about search intent: what would someone searching "${primaryKeyword}" want to find on Reddit?
+
+Return a JSON array of 7 strings. No explanations, just the JSON array.`;
+                } else {
+                    prompt = `Generate 7 engaging Reddit post titles for r/${subreddit || 'a community'}. These should be general community posts — discussions, questions, sharing experiences, or casual conversations that would naturally appear in this subreddit. Mix of formats (questions, stories, discussions). Sound like a real user. Return a JSON array of 7 strings only.`;
+                }
+
+                const claudeBody = JSON.stringify({ model: 'claude-sonnet-4-20250514', max_tokens: 2048, messages: [{ role: 'user', content: prompt }] });
+                const tmpFile = `/tmp/cc_titles_${Date.now()}.json`;
+                fs.writeFileSync(tmpFile, claudeBody);
+                const raw = execSync(`curl -sL -X POST "https://api.anthropic.com/v1/messages" -H "x-api-key: ${apiKey}" -H "anthropic-version: 2023-06-01" -H "Content-Type: application/json" -d @${tmpFile}`, { encoding: 'utf8', maxBuffer: 10*1024*1024, timeout: 60000 });
+                fs.unlinkSync(tmpFile);
+
+                const result = JSON.parse(raw);
+                if (result.error) throw new Error(result.error.message || JSON.stringify(result.error));
+                const content = result.content?.[0]?.text || '';
+                const jsonMatch = content.match(/\[[\s\S]*\]/);
+                if (!jsonMatch) throw new Error('Failed to parse AI response');
+
+                const titles = JSON.parse(jsonMatch[0]);
+                console.log(`[Titles] Generated ${titles.length} titles for "${primaryKeyword}"`);
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ success: true, titles }));
+            } catch (err) {
+                console.error(`[Titles] Error: ${err.message}`);
+                res.writeHead(500, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ error: err.message }));
+            }
+        });
+        return;
+    }
+
+    // --- Content Creator: Generate Body (Claude) ---
+    if (method === 'POST' && parsed.pathname === '/api/generate-body') {
+        let body = '';
+        req.on('data', c => body += c);
+        req.on('end', () => {
+            try {
+                const { title, primaryKeyword, secondaryKeywords, subreddit, postType, apiKey } = JSON.parse(body);
+                if (!apiKey) throw new Error('Missing Claude API key');
+
+                const kwList = (secondaryKeywords || []).map(k => k.keyword).join(', ');
+
+                let prompt;
+                if (postType === 'money') {
+                    prompt = `Write a Reddit post body for r/${subreddit || 'a subreddit'}.
+
+TITLE: "${title}"
+PRIMARY KEYWORD: "${primaryKeyword}"
+SECONDARY KEYWORDS TO INCLUDE: ${kwList || 'none'}
+
+RULES:
+- Write as an authentic Reddit user — casual, first-person, conversational
+- 150-400 words. Use paragraphs, not walls of text
+- Include the primary keyword naturally in the first paragraph and 1-2 more times throughout
+- Weave in secondary keywords where they fit naturally — don't force any
+- Match the post format implied by the title (if it's a question, ask genuinely; if it's a story, tell it; if discussion, present a thoughtful take)
+- End with something that encourages comments (a question, asking for opinions, "anyone else?")
+- NO markdown headers, NO bullet-point lists (unless it's a comparison/recommendation post), NO "Edit:" sections
+- Sound like a real person, not a marketer
+
+Return ONLY the post body text. No title, no explanations.`;
+                } else {
+                    prompt = `Write a Reddit post body for r/${subreddit || 'a subreddit'}.
+
+TITLE: "${title}"
+
+Write 100-300 words as an authentic Reddit user. Casual, first-person, conversational. End with something that encourages discussion. No markdown headers, no lists unless natural. Sound real.
+
+Return ONLY the post body text.`;
+                }
+
+                const claudeBody = JSON.stringify({ model: 'claude-sonnet-4-20250514', max_tokens: 4096, messages: [{ role: 'user', content: prompt }] });
+                const tmpFile = `/tmp/cc_body_${Date.now()}.json`;
+                fs.writeFileSync(tmpFile, claudeBody);
+                const raw = execSync(`curl -sL -X POST "https://api.anthropic.com/v1/messages" -H "x-api-key: ${apiKey}" -H "anthropic-version: 2023-06-01" -H "Content-Type: application/json" -d @${tmpFile}`, { encoding: 'utf8', maxBuffer: 10*1024*1024, timeout: 60000 });
+                fs.unlinkSync(tmpFile);
+
+                const result = JSON.parse(raw);
+                if (result.error) throw new Error(result.error.message || JSON.stringify(result.error));
+                const text = result.content?.[0]?.text || '';
+
+                console.log(`[Body] Generated ${text.length} chars for "${title}"`);
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ success: true, body: text.trim() }));
+            } catch (err) {
+                console.error(`[Body] Error: ${err.message}`);
+                res.writeHead(500, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ error: err.message }));
+            }
+        });
+        return;
+    }
+
     // --- Static files ---
     let filePath = parsed.pathname === '/' ? '/index.html' : parsed.pathname;
     filePath = path.join(__dirname, filePath);

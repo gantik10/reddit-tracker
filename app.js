@@ -3946,6 +3946,8 @@ function openCommentGen() {
     document.getElementById('commentGenView').classList.add('hidden');
     document.getElementById('commentGenView').classList.remove('hidden');
     document.getElementById('addSubredditBtn').classList.add('hidden');
+    const wizPanel = document.getElementById('ccWizardPanel');
+    if (wizPanel) wizPanel.classList.add('hidden');
     cgBuildSidebar();
     document.getElementById('cgEmptyWs').classList.remove('hidden');
     document.getElementById('cgPostWs').classList.add('hidden');
@@ -3988,6 +3990,39 @@ function cgBuildSidebar() {
             </div>`;
         });
     }
+    // Content Drafts section
+    const drafts = getContentDrafts();
+    const activeDrafts = drafts.filter(d => d.status === 'draft');
+    const postedDrafts = drafts.filter(d => d.status === 'posted');
+    html += `<div class="cg-sb-sub" style="margin-top:12px;display:flex;align-items:center;justify-content:space-between;">
+        <span>Content Drafts</span>
+        <button class="cc-new-btn" onclick="ccNewDraft()" title="New post draft">+</button>
+    </div>`;
+    if (activeDrafts.length) {
+        activeDrafts.forEach(d => {
+            const comments = getCgComments('draft', d.id);
+            const isActive = _cgPost?.mpId === d.id && _cgPost?.subId === 'draft';
+            html += `<div class="cg-sb-post ${isActive ? 'cg-sb-active' : ''}" onclick="ccOpenDraft(${d.id})">
+                <span class="cc-sb-badge cc-sb-badge-${d.type}">${d.type === 'money' ? '💰' : '💬'}</span>
+                <span class="cg-sb-title">${esc((d.title || 'Untitled').slice(0, 28))}${(d.title || '').length > 28 ? '...' : ''}</span>
+                ${comments.length ? `<span class="cg-sb-count">${comments.filter(c => c.status === 'posted').length}/${comments.length}</span>` : ''}
+            </div>`;
+        });
+    }
+    if (postedDrafts.length) {
+        html += `<div class="cc-sb-posted-label">Posted</div>`;
+        postedDrafts.slice(0, 5).forEach(d => {
+            const isActive = _cgPost?.mpId === d.id && _cgPost?.subId === 'draft';
+            html += `<div class="cg-sb-post cc-sb-posted ${isActive ? 'cg-sb-active' : ''}" onclick="ccOpenDraft(${d.id})">
+                <span class="cc-sb-badge">✓</span>
+                <span class="cg-sb-title">${esc((d.title || 'Untitled').slice(0, 28))}</span>
+            </div>`;
+        });
+    }
+    if (!activeDrafts.length && !postedDrafts.length) {
+        html += `<div style="padding:8px 14px;color:var(--text-muted);font-size:11px;">No drafts yet</div>`;
+    }
+
     list.innerHTML = html || '<div style="padding:14px;color:var(--text-muted);font-size:12px;">No posts</div>';
 }
 
@@ -4074,18 +4109,39 @@ function cgNewPost() {
 function cgRenderWorkspace() {
     document.getElementById('cgEmptyWs').classList.add('hidden');
     document.getElementById('cgPostWs').classList.remove('hidden');
+    const wizPanel = document.getElementById('ccWizardPanel');
+    if (wizPanel) wizPanel.classList.add('hidden');
     cgBuildSidebar();
 
-    // Post header
     const top = document.getElementById('cgPostTop');
-    top.innerHTML = `
-        <h2 class="cg-post-title">${esc(_cgPost.title)}</h2>
-        ${_cgPost.body ? `<div class="cg-post-body">${esc(_cgPost.body).replace(/\n/g, '<br>')}</div>` : ''}
-        <div class="cg-post-meta">
-            r/${esc(_cgPost.subName)}
-            ${_cgPost.url ? ` · <a href="${esc(_cgPost.url)}" target="_blank" rel="noopener" style="color:var(--accent-blue)">View on Reddit</a>` : ''}
-        </div>
-    `;
+    if (_cgPost.isDraft) {
+        const d = _ccDraft || getContentDrafts().find(d => d.id === _cgPost.mpId);
+        const kwBadges = (d?.secondaryKeywords || []).filter(k => k.selected).map(k => `<span class="cc-kw-badge">${esc(k.keyword)} <small>${k.volume.toLocaleString()}</small></span>`).join('');
+        top.innerHTML = `
+            <div class="cc-draft-header">
+                <span class="cc-draft-badge cc-draft-badge-${d?.type || 'general'}">${d?.type === 'money' ? '💰 Money Post' : '💬 General Post'}</span>
+                <span class="cc-draft-status cc-draft-status-${d?.status || 'draft'}">${d?.status === 'posted' ? '✓ Posted' : '⬡ Draft'}</span>
+                <span class="cc-draft-sub">r/${esc(_cgPost.subName)}</span>
+            </div>
+            <h2 class="cg-post-title">${esc(_cgPost.title)}</h2>
+            ${_cgPost.body ? `<div class="cg-post-body">${esc(_cgPost.body).replace(/\n/g, '<br>')}</div>` : ''}
+            ${d?.primaryKeyword ? `<div class="cc-kw-row"><span class="cc-kw-primary">${esc(d.primaryKeyword)}</span>${kwBadges}</div>` : ''}
+            <div class="cc-draft-actions">
+                <button class="btn btn-ghost btn-sm" onclick="ccEditDraft(${_cgPost.mpId})">Edit Content</button>
+                ${d?.status !== 'posted' ? `<button class="btn btn-primary btn-sm" onclick="ccMarkPosted(${_cgPost.mpId})">Mark as Posted</button>` : ''}
+                <button class="btn btn-ghost btn-sm cc-btn-delete" onclick="ccDeleteDraft(${_cgPost.mpId})">Delete</button>
+            </div>
+        `;
+    } else {
+        top.innerHTML = `
+            <h2 class="cg-post-title">${esc(_cgPost.title)}</h2>
+            ${_cgPost.body ? `<div class="cg-post-body">${esc(_cgPost.body).replace(/\n/g, '<br>')}</div>` : ''}
+            <div class="cg-post-meta">
+                r/${esc(_cgPost.subName)}
+                ${_cgPost.url ? ` · <a href="${esc(_cgPost.url)}" target="_blank" rel="noopener" style="color:var(--accent-blue)">View on Reddit</a>` : ''}
+            </div>
+        `;
+    }
 
     cgRenderFeed();
 }
@@ -4408,6 +4464,255 @@ async function cgGenerate() {
     } catch (err) { toast('error', 'Failed', err.message); }
 
     btn.disabled = false; btn.textContent = 'Generate';
+}
+
+// ==========================================
+//  CONTENT CREATOR (inside Comment Gen workspace)
+// ==========================================
+let _ccDraft = null;
+let _ccStep = 1;
+
+function getContentDrafts() { return S.get('content_drafts') || []; }
+function saveContentDrafts(d) { S.set('content_drafts', d); }
+
+function ccNewDraft() {
+    _ccDraft = { id: Date.now(), type: null, subredditId: null, subredditName: '', primaryKeyword: '', secondaryKeywords: [], title: '', body: '', titleOptions: [], status: 'draft', createdAt: new Date().toISOString(), postedAt: null };
+    _ccStep = 1;
+    document.getElementById('cgEmptyWs').classList.add('hidden');
+    document.getElementById('cgPostWs').classList.add('hidden');
+    ccRenderWizard();
+}
+
+function ccRenderWizard() {
+    const ws = document.getElementById('cgWorkspace');
+    let el = document.getElementById('ccWizardPanel');
+    if (!el) { el = document.createElement('div'); el.id = 'ccWizardPanel'; ws.appendChild(el); }
+    el.classList.remove('hidden');
+    document.getElementById('cgEmptyWs').classList.add('hidden');
+    document.getElementById('cgPostWs').classList.add('hidden');
+
+    if (_ccStep === 1) ccRenderStep1(el);
+    else if (_ccStep === 2) ccRenderStep2(el);
+    else if (_ccStep === 3) ccRenderStep3(el);
+    else if (_ccStep === 4) ccRenderStep4(el);
+}
+
+function ccRenderStep1(el) {
+    const subs = S.get('subreddits') || [];
+    el.innerHTML = `<div class="cc-wizard">
+        <div class="cc-step-header">Step 1 — Choose Subreddit & Post Type</div>
+        <label class="cc-label">Subreddit</label>
+        <select id="ccSubSelect" class="cc-select">
+            <option value="">Select...</option>
+            ${subs.map(s => `<option value="${s.id}" ${_ccDraft.subredditId === s.id ? 'selected' : ''}>r/${esc(s.name)}</option>`).join('')}
+        </select>
+        <label class="cc-label" style="margin-top:16px;">Post Type</label>
+        <div class="cc-type-cards">
+            <div class="cc-type-card ${_ccDraft.type === 'money' ? 'active' : ''}" onclick="document.querySelectorAll('.cc-type-card').forEach(c=>c.classList.remove('active'));this.classList.add('active');_ccDraft.type='money'">
+                <span class="cc-type-icon">💰</span>
+                <strong>Money Post</strong>
+                <small>SEO-targeted, keyword-optimized</small>
+            </div>
+            <div class="cc-type-card ${_ccDraft.type === 'general' ? 'active' : ''}" onclick="document.querySelectorAll('.cc-type-card').forEach(c=>c.classList.remove('active'));this.classList.add('active');_ccDraft.type='general'">
+                <span class="cc-type-icon">💬</span>
+                <strong>General Post</strong>
+                <small>Community filler, discussions</small>
+            </div>
+        </div>
+        <button class="btn btn-primary" style="margin-top:20px;" onclick="ccGoStep2()">Next →</button>
+    </div>`;
+}
+
+function ccGoStep2() {
+    const sel = document.getElementById('ccSubSelect');
+    const subs = S.get('subreddits') || [];
+    const sub = subs.find(s => s.id === +sel.value);
+    if (!sub) return toast('error', 'Select a subreddit', '');
+    if (!_ccDraft.type) return toast('error', 'Select a post type', '');
+    _ccDraft.subredditId = sub.id;
+    _ccDraft.subredditName = sub.name;
+    _ccStep = _ccDraft.type === 'money' ? 2 : 3;
+    ccRenderWizard();
+}
+
+function ccRenderStep2(el) {
+    el.innerHTML = `<div class="cc-wizard">
+        <div class="cc-step-header">Step 2 — Keyword Research <span class="cc-step-sub">r/${esc(_ccDraft.subredditName)}</span></div>
+        <label class="cc-label">Target Keyword</label>
+        <div style="display:flex;gap:8px;">
+            <input id="ccKeywordInput" class="cc-input" placeholder="e.g. buy telegram members" value="${esc(_ccDraft.primaryKeyword)}">
+            <button class="btn btn-primary" id="ccResearchBtn" onclick="ccResearchKeywords()">Research</button>
+        </div>
+        <div id="ccKwResults" style="margin-top:16px;">${_ccDraft.secondaryKeywords.length ? ccRenderKwTable() : '<div class="cc-hint">Enter a keyword and click Research to find related terms with search volume</div>'}</div>
+        <div style="display:flex;gap:8px;margin-top:16px;">
+            <button class="btn btn-ghost" onclick="_ccStep=1;ccRenderWizard()">← Back</button>
+            <button class="btn btn-primary" onclick="ccGoStep3()">Next →</button>
+        </div>
+    </div>`;
+}
+
+async function ccResearchKeywords() {
+    const kw = document.getElementById('ccKeywordInput').value.trim();
+    if (!kw) return toast('error', 'Enter a keyword', '');
+    _ccDraft.primaryKeyword = kw;
+    const btn = document.getElementById('ccResearchBtn');
+    btn.disabled = true; btn.textContent = 'Searching...';
+    try {
+        const r = await fetch(SERVER + '/api/keyword-research', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ keyword: kw, ahrefsKey: getAhrefsKey() }) });
+        const d = await r.json();
+        if (d.error) throw new Error(d.error);
+        _ccDraft.secondaryKeywords = (d.keywords || []).map(k => ({ ...k, selected: false }));
+        document.getElementById('ccKwResults').innerHTML = ccRenderKwTable();
+        toast('success', `Found ${d.keywords?.length || 0} related keywords`, '');
+    } catch (e) { toast('error', 'Research failed', e.message); }
+    btn.disabled = false; btn.textContent = 'Research';
+}
+
+function ccRenderKwTable() {
+    if (!_ccDraft.secondaryKeywords.length) return '<div class="cc-hint">No related keywords found. Try a different term.</div>';
+    return `<table class="cc-kw-table"><thead><tr><th></th><th>Keyword</th><th>Volume</th><th>KD</th></tr></thead><tbody>
+        ${_ccDraft.secondaryKeywords.map((k, i) => `<tr onclick="ccToggleKw(${i})" class="${k.selected ? 'cc-kw-selected' : ''}">
+            <td><input type="checkbox" ${k.selected ? 'checked' : ''} onclick="event.stopPropagation();ccToggleKw(${i})"></td>
+            <td>${esc(k.keyword)}</td>
+            <td>${k.volume.toLocaleString()}</td>
+            <td><span class="cc-kd ${k.kd < 30 ? 'cc-kd-easy' : k.kd < 60 ? 'cc-kd-med' : 'cc-kd-hard'}">${k.kd}</span></td>
+        </tr>`).join('')}</tbody></table>`;
+}
+
+function ccToggleKw(i) {
+    _ccDraft.secondaryKeywords[i].selected = !_ccDraft.secondaryKeywords[i].selected;
+    document.getElementById('ccKwResults').innerHTML = ccRenderKwTable();
+}
+
+function ccGoStep3() {
+    if (_ccDraft.type === 'money' && !_ccDraft.primaryKeyword) return toast('error', 'Enter a target keyword', '');
+    _ccStep = 3;
+    ccRenderWizard();
+}
+
+function ccRenderStep3(el) {
+    const isM = _ccDraft.type === 'money';
+    el.innerHTML = `<div class="cc-wizard">
+        <div class="cc-step-header">Step 3 — Title ${isM ? `<span class="cc-step-sub">"${esc(_ccDraft.primaryKeyword)}"</span>` : `<span class="cc-step-sub">r/${esc(_ccDraft.subredditName)}</span>`}</div>
+        <button class="btn btn-primary" id="ccGenTitlesBtn" onclick="ccGenerateTitles()">Generate Title Options</button>
+        <div id="ccTitleOptions" style="margin-top:16px;">${_ccDraft.titleOptions.length ? ccRenderTitleOptions() : ''}</div>
+        <label class="cc-label" style="margin-top:16px;">Or write your own</label>
+        <input id="ccCustomTitle" class="cc-input" placeholder="Custom title..." value="${esc(_ccDraft.title)}">
+        <div style="display:flex;gap:8px;margin-top:16px;">
+            <button class="btn btn-ghost" onclick="_ccStep=${isM ? 2 : 1};ccRenderWizard()">← Back</button>
+            <button class="btn btn-primary" onclick="ccGoStep4()">Next →</button>
+        </div>
+    </div>`;
+}
+
+async function ccGenerateTitles() {
+    const btn = document.getElementById('ccGenTitlesBtn');
+    btn.disabled = true; btn.textContent = 'Generating...';
+    try {
+        const selected = _ccDraft.secondaryKeywords.filter(k => k.selected);
+        const r = await fetch(SERVER + '/api/generate-titles', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ primaryKeyword: _ccDraft.primaryKeyword, secondaryKeywords: selected, subreddit: _ccDraft.subredditName, postType: _ccDraft.type, apiKey: getClaudeKey() }) });
+        const d = await r.json();
+        if (d.error) throw new Error(d.error);
+        _ccDraft.titleOptions = d.titles || [];
+        document.getElementById('ccTitleOptions').innerHTML = ccRenderTitleOptions();
+    } catch (e) { toast('error', 'Failed', e.message); }
+    btn.disabled = false; btn.textContent = 'Generate Title Options';
+}
+
+function ccRenderTitleOptions() {
+    return _ccDraft.titleOptions.map((t, i) => `<div class="cc-title-opt ${_ccDraft.title === t ? 'active' : ''}" onclick="ccPickTitle(${i})">${esc(t)}</div>`).join('');
+}
+
+function ccPickTitle(i) {
+    _ccDraft.title = _ccDraft.titleOptions[i];
+    document.getElementById('ccCustomTitle').value = _ccDraft.title;
+    document.getElementById('ccTitleOptions').innerHTML = ccRenderTitleOptions();
+}
+
+function ccGoStep4() {
+    const custom = document.getElementById('ccCustomTitle').value.trim();
+    if (custom) _ccDraft.title = custom;
+    if (!_ccDraft.title) return toast('error', 'Choose or write a title', '');
+    _ccStep = 4;
+    ccRenderWizard();
+}
+
+function ccRenderStep4(el) {
+    el.innerHTML = `<div class="cc-wizard">
+        <div class="cc-step-header">Step 4 — Post Body <span class="cc-step-sub">${esc(_ccDraft.title.slice(0, 40))}${_ccDraft.title.length > 40 ? '...' : ''}</span></div>
+        <button class="btn btn-primary" id="ccGenBodyBtn" onclick="ccGenerateBody()" style="margin-bottom:12px;">Generate Body</button>
+        <textarea id="ccBodyText" class="cc-textarea" rows="12" placeholder="Post body text...">${esc(_ccDraft.body)}</textarea>
+        <div style="display:flex;gap:8px;margin-top:16px;">
+            <button class="btn btn-ghost" onclick="_ccStep=3;ccRenderWizard()">← Back</button>
+            <button class="btn btn-primary" onclick="ccSaveDraft()">Save Draft</button>
+        </div>
+    </div>`;
+}
+
+async function ccGenerateBody() {
+    const btn = document.getElementById('ccGenBodyBtn');
+    btn.disabled = true; btn.textContent = 'Generating...';
+    try {
+        const selected = _ccDraft.secondaryKeywords.filter(k => k.selected);
+        const r = await fetch(SERVER + '/api/generate-body', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title: _ccDraft.title, primaryKeyword: _ccDraft.primaryKeyword, secondaryKeywords: selected, subreddit: _ccDraft.subredditName, postType: _ccDraft.type, apiKey: getClaudeKey() }) });
+        const d = await r.json();
+        if (d.error) throw new Error(d.error);
+        _ccDraft.body = d.body || '';
+        document.getElementById('ccBodyText').value = _ccDraft.body;
+    } catch (e) { toast('error', 'Failed', e.message); }
+    btn.disabled = false; btn.textContent = 'Generate Body';
+}
+
+function ccSaveDraft() {
+    _ccDraft.body = document.getElementById('ccBodyText').value.trim();
+    if (!_ccDraft.body) return toast('error', 'Body is empty', '');
+    const drafts = getContentDrafts();
+    const idx = drafts.findIndex(d => d.id === _ccDraft.id);
+    if (idx >= 0) drafts[idx] = _ccDraft; else drafts.push(_ccDraft);
+    saveContentDrafts(drafts);
+    toast('success', 'Draft saved', _ccDraft.title);
+    cgBuildSidebar();
+    ccOpenDraft(_ccDraft.id);
+}
+
+function ccOpenDraft(id) {
+    const drafts = getContentDrafts();
+    const draft = drafts.find(d => d.id === id);
+    if (!draft) return;
+    _ccDraft = draft;
+    _cgPost = { subId: 'draft', mpId: draft.id, subName: draft.subredditName, title: draft.title, url: '', body: draft.body, liveComments: [], isDraft: true, draftType: draft.type, draftStatus: draft.status, draftPrimaryKw: draft.primaryKeyword, draftSecondaryKws: draft.secondaryKeywords };
+    const wizPanel = document.getElementById('ccWizardPanel');
+    if (wizPanel) wizPanel.classList.add('hidden');
+    document.getElementById('cgEmptyWs').classList.add('hidden');
+    document.getElementById('cgPostWs').classList.remove('hidden');
+    cgRenderPost();
+    cgBuildSidebar();
+}
+
+function ccMarkPosted(id) {
+    const drafts = getContentDrafts();
+    const d = drafts.find(d => d.id === id);
+    if (d) { d.status = 'posted'; d.postedAt = new Date().toISOString(); saveContentDrafts(drafts); toast('success', 'Marked as posted', d.title); cgBuildSidebar(); if (_cgPost?.mpId === id) ccOpenDraft(id); }
+}
+
+function ccDeleteDraft(id) {
+    if (!confirm('Delete this draft?')) return;
+    let drafts = getContentDrafts();
+    drafts = drafts.filter(d => d.id !== id);
+    saveContentDrafts(drafts);
+    localStorage.removeItem(`lk_cg_draft_${id}`);
+    toast('success', 'Draft deleted', '');
+    cgBuildSidebar();
+    document.getElementById('cgPostWs').classList.add('hidden');
+    document.getElementById('cgEmptyWs').classList.remove('hidden');
+}
+
+function ccEditDraft(id) {
+    const drafts = getContentDrafts();
+    _ccDraft = drafts.find(d => d.id === id);
+    if (!_ccDraft) return;
+    _ccStep = _ccDraft.type === 'money' ? 2 : 3;
+    ccRenderWizard();
 }
 
 // ==========================================
