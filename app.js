@@ -4213,15 +4213,26 @@ function cgRenderFeed() {
         <button class="btn btn-xs btn-ghost" onclick="cgAddManual()">+ Add manually</button>
     </div>`;
 
+    // Build username → account number map (so same username = same account number)
+    const usernameMap = {};
+    let accountCounter = 0;
+    comments.forEach(c => {
+        const uname = c.username || null;
+        if (uname && !(uname in usernameMap)) {
+            usernameMap[uname] = ++accountCounter;
+        }
+    });
+
     ourHtml += comments.map((c, i) => {
             const isPosted = c.status === 'posted';
             const isNew = c.isNew;
             const indent = c.parentIndex != null ? 24 : 0;
             const isReply = c.parentIndex != null;
+            const acctNum = c.username ? usernameMap[c.username] : (i + 1);
             return `<div class="cg-c ${isPosted ? 'cg-c-posted' : ''} ${isNew ? 'cg-c-new' : ''}" id="cgC${i}" style="margin-left:${indent}px">
                 ${isReply ? '<div class="cg-thread-line" style="border-color:var(--accent-blue);position:absolute;left:-2px;top:0;bottom:0;"></div>' : ''}
                 <div class="cg-c-head">
-                    <span class="cg-c-num">Account ${i + 1}</span>
+                    <span class="cg-c-num">Account ${acctNum}</span>
                     ${isReply ? '<span style="font-size:9px;color:var(--text-muted);">reply</span>' : ''}
                     ${c.replyToLive ? `<span style="font-size:9px;color:var(--accent-blue);" title="${esc(c.replyToLive)}">replying to live</span>` : ''}
                     <span class="cg-c-badge ${isPosted ? 'cg-b-posted' : 'cg-b-pending'}">${isPosted ? 'Posted' : 'Pending'}</span>
@@ -4270,7 +4281,8 @@ function cgReplyToOwn(idx) {
     const comments = getCgComments(_cgPost.subId, _cgPost.mpId);
     const c = comments[idx];
     if (!c) return;
-    _cgReplyContext = { author: `Account ${idx + 1}`, body: c.comment, source: 'own', ownIdx: idx };
+    const acctLabel = c.username || `Account ${idx + 1}`;
+    _cgReplyContext = { author: acctLabel, body: c.comment, source: 'own', ownIdx: idx };
     cgShowReplyTarget();
 }
 
@@ -4448,6 +4460,7 @@ async function cgGenerate() {
         data.comments.forEach((c, ci) => {
             comments.push({
                 comment: c.comment,
+                username: c.username || null,
                 status: 'pending',
                 isNew: true,
                 replyToLive: replyTag,
