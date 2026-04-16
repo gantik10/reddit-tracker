@@ -1450,47 +1450,36 @@ Return ONLY the JSON array, no other text.`;
         return;
     }
 
-    // --- Content Creator: Keyword Research (Claude AI) ---
+    // --- Content Creator: Keyword Research (Ahrefs matching-terms) ---
     if (req.method === 'POST' && parsed.pathname === '/api/keyword-research') {
         let body = '';
         req.on('data', c => body += c);
         req.on('end', () => {
             try {
-                const { keyword, apiKey } = JSON.parse(body);
+                const { keyword, ahrefsKey, country } = JSON.parse(body);
                 if (!keyword) throw new Error('Missing keyword');
-                if (!apiKey) throw new Error('Missing Claude API key');
+                if (!ahrefsKey) throw new Error('Missing Ahrefs API key');
 
-                const prompt = `You are an SEO keyword researcher. For the seed keyword "${keyword}", generate 20-30 related search terms that people actually type into Google.
-
-RULES:
-- Include close variations, long-tail versions, question-based queries, comparison queries
-- Focus on keywords with commercial or transactional intent (people looking to buy/use/find)
-- Include both high-volume obvious terms and lower-volume long-tail opportunities
-- Estimate monthly search volume (US) and keyword difficulty (0-100) based on your training data
-- Be realistic with volume estimates — don't inflate
-
-Return a JSON array of objects: [{"keyword": "term", "volume": 1000, "kd": 35}]
-Sort by estimated volume descending. Return ONLY the JSON array, no explanations.`;
-
-                const claudeBody = JSON.stringify({ model: 'claude-sonnet-4-20250514', max_tokens: 4096, messages: [{ role: 'user', content: prompt }] });
-                const tmpFile = `/tmp/cc_kw_${Date.now()}.json`;
-                fs.writeFileSync(tmpFile, claudeBody);
-                const raw = execSync(`curl -sL -X POST "https://api.anthropic.com/v1/messages" -H "x-api-key: ${apiKey}" -H "anthropic-version: 2023-06-01" -H "Content-Type: application/json" -d @${tmpFile}`, { encoding: 'utf8', maxBuffer: 10*1024*1024, timeout: 60000 });
-                fs.unlinkSync(tmpFile);
-
+                const params = new URLSearchParams({
+                    select: 'keyword,volume,difficulty',
+                    keywords: keyword,
+                    country: country || 'us',
+                    limit: '30',
+                    order_by: 'volume:desc'
+                });
+                const url = `https://api.ahrefs.com/v3/keywords-explorer/matching-terms?${params}`;
+                const raw = execSync(`curl -sL "${url}" -H "Authorization: Bearer ${ahrefsKey}" -H "Accept: application/json"`, { encoding: 'utf8', maxBuffer: 10*1024*1024, timeout: 30000 });
                 const result = JSON.parse(raw);
-                if (result.error) throw new Error(result.error.message || JSON.stringify(result.error));
-                const content = result.content?.[0]?.text || '';
-                const jsonMatch = content.match(/\[[\s\S]*\]/);
-                if (!jsonMatch) throw new Error('Failed to parse AI response');
 
-                const keywords = JSON.parse(jsonMatch[0]).map(k => ({
-                    keyword: k.keyword || k.term,
+                if (result.error) throw new Error(result.error);
+
+                const keywords = (result.keywords || []).map(k => ({
+                    keyword: k.keyword,
                     volume: k.volume || 0,
-                    kd: k.kd || k.keyword_difficulty || 0
+                    kd: k.difficulty ?? null
                 }));
 
-                console.log(`[Keywords] AI generated ${keywords.length} related terms for "${keyword}"`);
+                console.log(`[Keywords] Ahrefs found ${keywords.length} matching terms for "${keyword}"`);
                 res.writeHead(200, { 'Content-Type': 'application/json' });
                 res.end(JSON.stringify({ success: true, keywords }));
             } catch (err) {

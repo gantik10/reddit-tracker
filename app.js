@@ -4558,7 +4558,7 @@ async function ccResearchKeywords() {
     const btn = document.getElementById('ccResearchBtn');
     btn.disabled = true; btn.textContent = 'Searching...';
     try {
-        const r = await fetch(SERVER + '/api/keyword-research', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ keyword: kw, apiKey: getClaudeKey() }) });
+        const r = await fetch(SERVER + '/api/keyword-research', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ keyword: kw, ahrefsKey: getAhrefsKey() }) });
         const d = await r.json();
         if (d.error) throw new Error(d.error);
         _ccDraft.secondaryKeywords = (d.keywords || []).map(k => ({ ...k, selected: false }));
@@ -4575,7 +4575,7 @@ function ccRenderKwTable() {
             <td><input type="checkbox" ${k.selected ? 'checked' : ''} onclick="event.stopPropagation();ccToggleKw(${i})"></td>
             <td>${esc(k.keyword)}</td>
             <td>${k.volume.toLocaleString()}</td>
-            <td><span class="cc-kd ${k.kd < 30 ? 'cc-kd-easy' : k.kd < 60 ? 'cc-kd-med' : 'cc-kd-hard'}">${k.kd}</span></td>
+            <td><span class="cc-kd ${k.kd == null ? '' : k.kd < 30 ? 'cc-kd-easy' : k.kd < 60 ? 'cc-kd-med' : 'cc-kd-hard'}">${k.kd ?? '—'}</span></td>
         </tr>`).join('')}</tbody></table>`;
 }
 
