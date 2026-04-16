@@ -766,7 +766,7 @@ const server = http.createServer(async (req, res) => {
         const body = await readBody(req);
         const { referenceComments, postTitle, postBody, subreddit, count, styleGuide, apiKey, commentStyle, commentTone } = body;
 
-        if (!referenceComments?.length || !postTitle || !apiKey) {
+        if (!postTitle || !apiKey) {
             res.writeHead(400, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify({ error: 'Missing required fields' }));
             return;
@@ -775,7 +775,7 @@ const server = http.createServer(async (req, res) => {
         console.log(`[CommentGen] Generating ${count} comments for "${postTitle.slice(0, 40)}..."`);
 
         try {
-            const refText = referenceComments.map((c, i) => `Comment ${i + 1} (by u/${c.author}, ${c.upvotes} upvotes):\n${c.body}`).join('\n\n');
+            const refText = (referenceComments || []).length ? referenceComments.map((c, i) => `Comment ${i + 1} (by u/${c.author}, ${c.upvotes} upvotes):\n${c.body}`).join('\n\n') : 'No reference comments provided. Generate authentic Reddit-style comments based on the post context alone.';
 
             // Load learned style memory
             const styleMemoryFile = path.join(__dirname, 'style_memory.json');
