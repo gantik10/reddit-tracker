@@ -1497,10 +1497,15 @@ Return ONLY the JSON array, no other text.`;
         req.on('data', c => body += c);
         req.on('end', () => {
             try {
-                const { primaryKeyword, secondaryKeywords, subreddit, postType, apiKey } = JSON.parse(body);
+                const { primaryKeyword, secondaryKeywords, subreddit, postType, apiKey, referenceTitles } = JSON.parse(body);
                 if (!apiKey) throw new Error('Missing Claude API key');
 
                 const kwList = (secondaryKeywords || []).map(k => `${k.keyword} (vol: ${k.volume}, KD: ${k.kd})`).join('\n');
+
+                let refSection = '';
+                if (referenceTitles && referenceTitles.length) {
+                    refSection = '\nREFERENCE TITLES (match their style, length, and format closely):\n' + referenceTitles.map((t, i) => `${i + 1}. "${t}"`).join('\n') + '\n\nGenerate titles that follow the SAME pattern, format, and length as these references. If they use questions, use questions. If they start with "Best..." or "Where to...", follow that pattern.\n';
+                }
 
                 let prompt;
                 if (postType === 'money') {
@@ -1510,7 +1515,7 @@ PRIMARY TARGET KEYWORD: "${primaryKeyword}"
 
 SECONDARY KEYWORDS (incorporate naturally where possible):
 ${kwList || 'None provided'}
-
+${refSection}
 RULES:
 - Each title must include the primary keyword (or a very close variation) naturally
 - Titles must sound authentic — like a real Reddit user asking a question, sharing experience, or starting a discussion
@@ -1522,7 +1527,7 @@ RULES:
 
 Return a JSON array of 7 strings. No explanations, just the JSON array.`;
                 } else {
-                    prompt = `Generate 7 engaging Reddit post titles for r/${subreddit || 'a community'}. These should be general community posts — discussions, questions, sharing experiences, or casual conversations that would naturally appear in this subreddit. Mix of formats (questions, stories, discussions). Sound like a real user. Return a JSON array of 7 strings only.`;
+                    prompt = `Generate 7 engaging Reddit post titles for r/${subreddit || 'a community'}.${refSection ? '\n' + refSection : ''} These should be general community posts — discussions, questions, sharing experiences, or casual conversations that would naturally appear in this subreddit. Mix of formats (questions, stories, discussions). Sound like a real user. Return a JSON array of 7 strings only.`;
                 }
 
                 const claudeBody = JSON.stringify({ model: 'claude-sonnet-4-20250514', max_tokens: 2048, messages: [{ role: 'user', content: prompt }] });
@@ -1580,13 +1585,14 @@ SECONDARY KEYWORDS TO INCLUDE: ${kwList || 'none'}
 ${refSection}
 RULES:
 - Write as an authentic Reddit user — casual, first-person, conversational
-- 150-400 words. Use paragraphs, not walls of text
+- CRITICAL: Match the LENGTH of the reference posts closely. If the reference is ~120 words, write ~120 words. If no reference, write 100-180 words MAX. Shorter is always better on Reddit.
 - Include the primary keyword naturally in the first paragraph and 1-2 more times throughout
 - Weave in secondary keywords where they fit naturally — don't force any
 - Match the post format implied by the title (if it's a question, ask genuinely; if it's a story, tell it; if discussion, present a thoughtful take)
 - End with something that encourages comments (a question, asking for opinions, "anyone else?")
 - NO markdown headers, NO bullet-point lists (unless it's a comparison/recommendation post), NO "Edit:" sections
 - Sound like a real person, not a marketer
+- 2-3 short paragraphs max. Nobody reads walls of text on Reddit.
 
 Return ONLY the post body text. No title, no explanations.`;
                 } else {

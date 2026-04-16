@@ -4590,11 +4590,25 @@ function ccGoStep3() {
     ccRenderWizard();
 }
 
+let _ccTitleRefPosts = [];
+
 function ccRenderStep3(el) {
     const isM = _ccDraft.type === 'money';
+    const subs = S.get('subreddits') || [];
+    const allMps = [];
+    subs.forEach(s => (s.moneyPosts || []).forEach(mp => allMps.push({ subName: s.name, title: mp.title, url: mp.url, id: mp.id, subId: s.id })));
+
     el.innerHTML = `<div class="cc-wizard">
         <div class="cc-step-header">Step 3 — Title ${isM ? `<span class="cc-step-sub">"${esc(_ccDraft.primaryKeyword)}"</span>` : `<span class="cc-step-sub">r/${esc(_ccDraft.subredditName)}</span>`}</div>
-        <button class="btn btn-primary" id="ccGenTitlesBtn" onclick="ccGenerateTitles()">Generate Title Options</button>
+
+        <label class="cc-label">Reference Post Titles (optional)</label>
+        <div class="cc-ref-search-wrap">
+            <input id="ccTitleRefSearch" class="cc-input" placeholder="Search money posts for title reference..." oninput="ccFilterTitleRefPosts()" style="margin-bottom:6px;">
+            <div id="ccTitleRefList" class="cc-ref-list">${ccRenderTitleRefList(allMps, '')}</div>
+        </div>
+        <div id="ccTitleRefSelected" class="cc-ref-selected">${ccRenderTitleRefSelected()}</div>
+
+        <button class="btn btn-primary" id="ccGenTitlesBtn" onclick="ccGenerateTitles()" style="margin-top:14px;">Generate Title Options</button>
         <div id="ccTitleOptions" style="margin-top:16px;">${_ccDraft.titleOptions.length ? ccRenderTitleOptions() : ''}</div>
         <label class="cc-label" style="margin-top:16px;">Or write your own</label>
         <input id="ccCustomTitle" class="cc-input" placeholder="Custom title..." value="${esc(_ccDraft.title)}">
@@ -4605,12 +4619,62 @@ function ccRenderStep3(el) {
     </div>`;
 }
 
+function ccRenderTitleRefList(allMps, query) {
+    const q = query.toLowerCase();
+    const filtered = q ? allMps.filter(mp => mp.title.toLowerCase().includes(q) || mp.subName.toLowerCase().includes(q)) : allMps.slice(0, 10);
+    if (!filtered.length) return '<div class="cc-hint">No matching posts</div>';
+    return filtered.map(mp => {
+        const isSelected = _ccTitleRefPosts.some(r => r.id === mp.id);
+        return `<div class="cc-ref-item ${isSelected ? 'cc-ref-item-selected' : ''}" onclick="ccToggleTitleRef(${mp.subId},${mp.id})">
+            <span class="cc-ref-sub">r/${esc(mp.subName)}</span>
+            <span class="cc-ref-title">${esc(mp.title.slice(0, 50))}${mp.title.length > 50 ? '...' : ''}</span>
+            ${isSelected ? '<span class="cc-ref-check">✓</span>' : ''}
+        </div>`;
+    }).join('');
+}
+
+function ccRenderTitleRefSelected() {
+    if (!_ccTitleRefPosts.length) return '';
+    return _ccTitleRefPosts.map(r => `<div class="cc-ref-tag">
+        <span>${esc(r.title.slice(0, 35))}${r.title.length > 35 ? '...' : ''}</span>
+        <span class="cc-ref-tag-x" onclick="ccRemoveTitleRef(${r.id})">×</span>
+    </div>`).join('');
+}
+
+function ccFilterTitleRefPosts() {
+    const q = document.getElementById('ccTitleRefSearch').value;
+    const subs = S.get('subreddits') || [];
+    const allMps = [];
+    subs.forEach(s => (s.moneyPosts || []).forEach(mp => allMps.push({ subName: s.name, title: mp.title, url: mp.url, id: mp.id, subId: s.id })));
+    document.getElementById('ccTitleRefList').innerHTML = ccRenderTitleRefList(allMps, q);
+}
+
+function ccToggleTitleRef(subId, mpId) {
+    const idx = _ccTitleRefPosts.findIndex(r => r.id === mpId);
+    if (idx >= 0) { _ccTitleRefPosts.splice(idx, 1); }
+    else {
+        const subs = S.get('subreddits') || [];
+        const sub = subs.find(s => s.id === subId);
+        const mp = sub?.moneyPosts?.find(p => p.id === mpId);
+        if (mp) _ccTitleRefPosts.push({ id: mp.id, subId, title: mp.title, subName: sub.name });
+    }
+    ccFilterTitleRefPosts();
+    document.getElementById('ccTitleRefSelected').innerHTML = ccRenderTitleRefSelected();
+}
+
+function ccRemoveTitleRef(mpId) {
+    _ccTitleRefPosts = _ccTitleRefPosts.filter(r => r.id !== mpId);
+    ccFilterTitleRefPosts();
+    document.getElementById('ccTitleRefSelected').innerHTML = ccRenderTitleRefSelected();
+}
+
 async function ccGenerateTitles() {
     const btn = document.getElementById('ccGenTitlesBtn');
     btn.disabled = true; btn.textContent = 'Generating...';
     try {
         const selected = _ccDraft.secondaryKeywords.filter(k => k.selected);
-        const r = await fetch(SERVER + '/api/generate-titles', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ primaryKeyword: _ccDraft.primaryKeyword, secondaryKeywords: selected, subreddit: _ccDraft.subredditName, postType: _ccDraft.type, apiKey: getClaudeKey() }) });
+        const refTitles = _ccTitleRefPosts.map(r => r.title);
+        const r = await fetch(SERVER + '/api/generate-titles', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ primaryKeyword: _ccDraft.primaryKeyword, secondaryKeywords: selected, subreddit: _ccDraft.subredditName, postType: _ccDraft.type, apiKey: getClaudeKey(), referenceTitles: refTitles }) });
         const d = await r.json();
         if (d.error) throw new Error(d.error);
         _ccDraft.titleOptions = d.titles || [];
