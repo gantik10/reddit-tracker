@@ -169,8 +169,9 @@ const S = {
 
     // Merge subreddits: union by ID, local version wins if both exist
     _mergeSubs(local, server) {
+        const deleted = JSON.parse(localStorage.getItem('lk_deleted_subs') || '[]');
         const byId = new Map();
-        server.forEach(s => byId.set(s.id, s));
+        server.forEach(s => { if (!deleted.includes(s.id)) byId.set(s.id, s); });
         local.forEach(s => byId.set(s.id, s));
         // Deep merge money posts and their keyword histories
         for (const [id, localSub] of byId) {
@@ -1283,6 +1284,10 @@ function deleteCurrentSubreddit() {
     const sub = getSub();
     if (!sub) return;
     confirmDelete(`Delete r/${sub.name} and all its data?`, () => {
+        // Track deleted IDs so server sync doesn't re-add them
+        const deleted = JSON.parse(localStorage.getItem('lk_deleted_subs') || '[]');
+        if (!deleted.includes(sub.id)) deleted.push(sub.id);
+        localStorage.setItem('lk_deleted_subs', JSON.stringify(deleted));
         S.set('subreddits', S.get('subreddits').filter(s => s.id !== sub.id));
         goHome();
     });
