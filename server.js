@@ -32,10 +32,16 @@ function getRandomProxyPort() {
 
 // --- HTTPS request via curl (reliable) ---
 function httpsRequest(targetUrl, headers = {}) {
-    const headerArgs = Object.entries({ 'User-Agent': 'LKMediaTracker/1.0', 'Accept': 'application/json', ...headers })
+    const headerArgs = Object.entries({ 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36', 'Accept': 'application/json', ...headers })
         .map(([k, v]) => `-H "${k}: ${v}"`).join(' ');
+    // Route Reddit requests through SOCKS5 proxy (VPS IP is banned by Reddit)
+    let proxyArg = '';
+    if (targetUrl.includes('reddit.com')) {
+        const port = PROXY_BASE.basePort + Math.floor(Math.random() * PROXY_BASE.maxPortOffset);
+        proxyArg = `--socks5-hostname ${PROXY_BASE.host}:${port} -U ${PROXY_BASE.login}:${PROXY_BASE.password}`;
+    }
     try {
-        const data = execSync(`curl -sL ${headerArgs} --max-time 15 "${targetUrl}"`, {
+        const data = execSync(`curl -sL ${proxyArg} ${headerArgs} --max-time 15 "${targetUrl}"`, {
             encoding: 'utf8', maxBuffer: 10 * 1024 * 1024, timeout: 20000
         });
         return { status: 200, data };

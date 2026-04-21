@@ -1,0 +1,15 @@
+[Unit]
+Description=JAP Service Sync
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/root/jap-sync
+# Credentials are in config.py, no env overrides needed
+ExecStart=/root/jap-sync/venv/bin/python3 main.py
+Restart=always
+RestartSec=30
+
+[Install]
+WantedBy=multi-user.target
