@@ -74,18 +74,13 @@ def run_scan(pg_scraper, jap_scraper):
     # 3. Process: match orders, detect changes
     changes = process_cycle(pg_orders, jap_orders)
 
-    # 4. Send notifications
-    for change in changes:
-        if change["type"] == "confirmed":
-            alert_confirmed_change(change)
-            logger.warning(f"ALERT SENT: {change['pg_service_name']} changed to JAP#{change['new_jap_id']}")
-        elif change["type"] == "pending" and change["order_count"] == 1:
-            alert_pending_change(change)
+    # 4. Send notifications — only confirmed changes, only once
+    confirmed = [c for c in changes if c["type"] == "confirmed"]
+    for change in confirmed:
+        alert_confirmed_change(change)
+        logger.warning(f"ALERT SENT: {change['pg_service_name']} changed to JAP#{change['new_jap_id']}")
 
-    if not changes:
-        logger.info("No changes detected this cycle")
-
-    logger.info(f"Scan cycle complete. {len(changes)} changes detected.")
+    logger.info(f"Scan cycle complete. {len(confirmed)} confirmed, {len(changes) - len(confirmed)} pending.")
 
 
 def main():
@@ -120,6 +115,12 @@ def main():
         except Exception as e:
             consecutive_errors += 1
             logger.error(f"Scan cycle error: {e}", exc_info=True)
+            # Reset JAP scraper on error to prevent stale browser
+            try:
+                jap_scraper.close()
+            except Exception:
+                pass
+            jap_scraper = JAPScraper()
             if consecutive_errors >= 3:
                 alert_error(f"3 consecutive scan failures. Last error: {str(e)[:200]}")
                 consecutive_errors = 0

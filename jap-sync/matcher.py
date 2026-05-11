@@ -6,8 +6,8 @@ then detects when JAP service IDs change for a panelgraming service.
 import logging
 from urllib.parse import urlparse, urlunparse
 from database import (
-    upsert_pg_order, upsert_jap_order, get_current_mapping,
-    track_pending_change, confirm_change, get_db
+    get_current_mapping, track_pending_change, confirm_change,
+    update_mapping, bulk_insert_orders, update_matched
 )
 from config import CONFIRMATION_THRESHOLD
 from telegram_bot import HYPESY_SERVICES
@@ -91,55 +91,62 @@ def detect_changes(matched_pairs):
     for pg_sid, pairs in by_pg_service.items():
         if pg_sid not in HYPESY_SERVICES:
             continue
+
+        # Count which JAP ID appears most for this service in this batch
+        jap_id_counts = {}
         for pg, jap in pairs:
-            jap_sid = jap["jap_service_id"]
-            jap_name = jap.get("jap_service_name", "")
-            pg_name = pg.get("service_name", "")
-            current_jap_id = get_current_mapping(pg_sid)
+            jid = jap["jap_service_id"]
+            jap_id_counts[jid] = jap_id_counts.get(jid, 0) + 1
 
-            if current_jap_id is None:
-                # First time seeing this service - record the mapping
-                from database import update_mapping
-                update_mapping(pg_sid, pg_name, jap_sid)
-                logger.info(f"Initial mapping: PG#{pg_sid} ({pg_name}) -> JAP#{jap_sid} ({jap_name})")
-                continue
+        # Get the dominant JAP ID (most orders)
+        dominant_jap_id = max(jap_id_counts, key=jap_id_counts.get)
+        dominant_count = jap_id_counts[dominant_jap_id]
+        dominant_name = ""
+        for pg, jap in pairs:
+            if jap["jap_service_id"] == dominant_jap_id:
+                dominant_name = jap.get("jap_service_name", "")
+                break
 
-            if jap_sid != current_jap_id:
-                # Different JAP service ID detected!
-                count = track_pending_change(
-                    pg_sid, pg_name, current_jap_id, jap_sid, jap_name
-                )
-                logger.warning(
-                    f"Change detected: PG#{pg_sid} ({pg_name}) "
-                    f"JAP#{current_jap_id} -> JAP#{jap_sid} ({jap_name}) "
-                    f"[{count}/{CONFIRMATION_THRESHOLD} orders]"
-                )
+        pg_name = pairs[0][0].get("service_name", "")
+        current_jap_id = get_current_mapping(pg_sid)
 
-                if count >= CONFIRMATION_THRESHOLD:
-                    confirm_change(pg_sid, jap_sid, jap_name)
-                    changes.append({
-                        "type": "confirmed",
-                        "pg_service_id": pg_sid,
-                        "pg_service_name": pg_name,
-                        "old_jap_id": current_jap_id,
-                        "new_jap_id": jap_sid,
-                        "new_jap_name": jap_name,
-                        "order_count": count
-                    })
-                    logger.warning(
-                        f"CONFIRMED CHANGE: PG#{pg_sid} ({pg_name}) "
-                        f"JAP#{current_jap_id} -> JAP#{jap_sid} ({jap_name})"
-                    )
-                else:
-                    changes.append({
-                        "type": "pending",
-                        "pg_service_id": pg_sid,
-                        "pg_service_name": pg_name,
-                        "old_jap_id": current_jap_id,
-                        "new_jap_id": jap_sid,
-                        "new_jap_name": jap_name,
-                        "order_count": count
-                    })
+        if current_jap_id is None:
+            # First time seeing this service
+            update_mapping(pg_sid, pg_name, dominant_jap_id)
+            logger.info(f"Initial mapping: PG#{pg_sid} ({pg_name}) -> JAP#{dominant_jap_id} ({dominant_name})")
+            continue
+
+        if dominant_jap_id != current_jap_id and dominant_count >= CONFIRMATION_THRESHOLD:
+            # Confirmed change — dominant ID differs and has enough orders
+            confirm_change(pg_sid, dominant_jap_id, dominant_name)
+            changes.append({
+                "type": "confirmed",
+                "pg_service_id": pg_sid,
+                "pg_service_name": pg_name,
+                "old_jap_id": current_jap_id,
+                "new_jap_id": dominant_jap_id,
+                "new_jap_name": dominant_name,
+                "order_count": dominant_count
+            })
+            logger.warning(
+                f"CONFIRMED: PG#{pg_sid} ({pg_name}) "
+                f"JAP#{current_jap_id} -> JAP#{dominant_jap_id} [{dominant_count} orders]"
+            )
+        elif dominant_jap_id != current_jap_id:
+            # Pending — not enough orders yet
+            changes.append({
+                "type": "pending",
+                "pg_service_id": pg_sid,
+                "pg_service_name": pg_name,
+                "old_jap_id": current_jap_id,
+                "new_jap_id": dominant_jap_id,
+                "new_jap_name": dominant_name,
+                "order_count": dominant_count
+            })
+            logger.info(
+                f"Pending: PG#{pg_sid} ({pg_name}) "
+                f"JAP#{current_jap_id} -> JAP#{dominant_jap_id} [{dominant_count}/{CONFIRMATION_THRESHOLD}]"
+            )
 
     return changes
 
@@ -152,52 +159,18 @@ def process_cycle(pg_orders, jap_orders):
     3. Detect changes
     Returns list of changes (confirmed and pending)
     """
-    from database import _lock
-
     # Filter to Hypesy services only
     pg_orders = [o for o in pg_orders if o.get("pg_service_id") in HYPESY_SERVICES]
     logger.info(f"Filtered to {len(pg_orders)} Hypesy orders from PanelGram")
 
-    # Store Hypesy orders only
-    with _lock:
-        conn = get_db()
-        for o in pg_orders:
-            conn.execute("""
-                INSERT OR IGNORE INTO pg_orders
-                    (order_id, date, link, service_name, pg_service_id, quantity, charge, status)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            """, (
-                o["order_id"], o["date"], o["link"],
-                o["service_name"], o.get("pg_service_id"),
-                o.get("quantity"), o.get("charge"), o.get("status")
-            ))
-        for o in jap_orders:
-            conn.execute("""
-                INSERT OR IGNORE INTO jap_orders
-                    (order_id, date, link, jap_service_id, jap_service_name, quantity, charge, status, matched_pg_order_id)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (
-                o["order_id"], o["date"], o["link"],
-                o["jap_service_id"], o.get("jap_service_name"),
-                o.get("quantity"), o.get("charge"), o.get("status"),
-                o.get("matched_pg_order_id")
-            ))
-        conn.commit()
-        conn.close()
+    # Store orders
+    bulk_insert_orders(pg_orders, jap_orders)
 
     # Match only Hypesy PG orders against JAP orders
     matched = match_orders(pg_orders, jap_orders)
 
-    # Store matches in single transaction
-    with _lock:
-        conn = get_db()
-        for pg, jap in matched:
-            conn.execute(
-                "UPDATE jap_orders SET matched_pg_order_id = ? WHERE order_id = ?",
-                (pg["order_id"], jap["order_id"])
-            )
-        conn.commit()
-        conn.close()
+    # Store matches
+    update_matched(matched)
 
     # Detect changes
     changes = detect_changes(matched)

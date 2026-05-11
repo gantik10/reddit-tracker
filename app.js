@@ -3716,14 +3716,13 @@ async function ssFetch(keyword) {
         data.subreddits.forEach(s => {
             _ssTotalChecked++;
             if (existingNames.has(s.name.toLowerCase())) return;
-            if (!s.communityReviewed) {
-                _ssSkippedUnreviewed++;
-                ssLog(`r/${s.name} — unreviewed, skipped`, 'ss-log-skip');
-                return;
-            }
             if (s.over18) {
                 ssLog(`r/${s.name} — NSFW, skipped`, 'ss-log-skip');
                 return;
+            }
+            if (!s.communityReviewed) {
+                s._unreviewed = true;
+                _ssSkippedUnreviewed++;
             }
             newSubs.push(s);
         });
