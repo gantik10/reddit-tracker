@@ -11,6 +11,22 @@ const proxyChain = require('proxy-chain');
 
 const PORT = process.env.PORT || 3002;
 
+// Load .env (simple parser — no dotenv dep)
+try {
+    const envPath = path.join(__dirname, '.env');
+    if (fs.existsSync(envPath)) {
+        for (const line of fs.readFileSync(envPath, 'utf8').split('\n')) {
+            const trimmed = line.trim();
+            if (!trimmed || trimmed.startsWith('#')) continue;
+            const eq = trimmed.indexOf('=');
+            if (eq === -1) continue;
+            const k = trimmed.slice(0, eq).trim();
+            const v = trimmed.slice(eq + 1).trim().replace(/^["']|["']$/g, '');
+            if (!process.env[k]) process.env[k] = v;
+        }
+    }
+} catch (e) { console.log(`[env] load failed: ${e.message}`); }
+
 const MIME = {
     '.html': 'text/html', '.css': 'text/css', '.js': 'application/javascript',
     '.json': 'application/json', '.png': 'image/png', '.jpg': 'image/jpeg',
@@ -913,26 +929,62 @@ Return ONLY the JSON array, no other text.`;
             return;
         }
 
-        // Generate keywords using Claude
+        // Generate keywords using OpenAI (server-side key from .env)
         console.log(`[SubSearch] Generating keywords for: "${request.slice(0, 60)}..."`);
         let keywords = [];
-        if (apiKey) {
+        let aiError = null;
+        const openaiKey = process.env.OPENAI_API_KEY;
+        if (!openaiKey) {
+            aiError = 'OPENAI_API_KEY missing in server .env';
+            console.log(`[SubSearch] ${aiError}`);
+        } else {
             try {
                 const prompt = `Generate a comprehensive list of Reddit search keywords to find subreddits related to this request:\n\n"${request}"\n\nGenerate 30-50 keywords covering:\n- Direct topic keywords in English\n- Related topics and niches\n- Synonyms and variations\n- Broader category terms\n- Specific subtopics\n\nReturn ONLY a JSON array of strings, nothing else. Example: ["keyword1","keyword2"]`;
-                const claudeBody = JSON.stringify({ model: 'claude-sonnet-4-20250514', max_tokens: 1024, messages: [{ role: 'user', content: prompt }] });
+                const openaiBody = JSON.stringify({
+                    model: 'gpt-4o-mini',
+                    messages: [{ role: 'user', content: prompt }],
+                    max_tokens: 1024,
+                    temperature: 0.7,
+                });
                 const tmpFile = `/tmp/kw_${Date.now()}.json`;
-                fs.writeFileSync(tmpFile, claudeBody);
-                const raw = execSync(`curl -sL -X POST "https://api.anthropic.com/v1/messages" -H "x-api-key: ${apiKey}" -H "anthropic-version: 2023-06-01" -H "Content-Type: application/json" -d @${tmpFile}`, { encoding: 'utf8', maxBuffer: 5*1024*1024, timeout: 30000 });
+                fs.writeFileSync(tmpFile, openaiBody);
+                const raw = execSync(`curl -sL -X POST "https://api.openai.com/v1/chat/completions" -H "Authorization: Bearer ${openaiKey}" -H "Content-Type: application/json" -d @${tmpFile}`, { encoding: 'utf8', maxBuffer: 5*1024*1024, timeout: 30000 });
                 fs.unlinkSync(tmpFile);
                 const result = JSON.parse(raw);
-                const content = result.content?.[0]?.text || '';
-                const match = content.match(/\[[\s\S]*\]/);
-                if (match) keywords = JSON.parse(match[0]);
+                if (result.error) {
+                    aiError = `OpenAI ${result.error.type || 'error'}: ${result.error.message || JSON.stringify(result.error)}`;
+                    console.log(`[SubSearch] AI keyword gen failed — ${aiError}`);
+                } else {
+                    const content = result.choices?.[0]?.message?.content || '';
+                    const match = content.match(/\[[\s\S]*\]/);
+                    if (match) {
+                        try { keywords = JSON.parse(match[0]); }
+                        catch (e) { aiError = `Failed to parse OpenAI JSON array: ${e.message}. Raw: ${content.slice(0, 200)}`; }
+                    } else {
+                        aiError = `OpenAI returned no JSON array. Raw text: ${content.slice(0, 200)}`;
+                        console.log(`[SubSearch] AI keyword gen failed — ${aiError}`);
+                    }
+                }
             } catch (e) {
-                console.log(`[SubSearch] AI keyword gen failed: ${e.message}`);
+                aiError = `OpenAI call threw: ${e.message}`;
+                console.log(`[SubSearch] ${aiError}`);
             }
         }
-        if (!keywords.length) keywords = request.split(',').map(k => k.trim()).filter(Boolean);
+
+        // If AI failed AND user gave no comma-separated fallback, bail loudly instead of searching for a giant phrase that returns 0
+        if (!keywords.length) {
+            const fallback = request.split(',').map(k => k.trim()).filter(Boolean);
+            const looksLikeNaturalLanguage = fallback.length === 1 && fallback[0].split(/\s+/).length > 4;
+            if (looksLikeNaturalLanguage) {
+                res.writeHead(502, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({
+                    error: aiError || 'AI keyword generation returned nothing',
+                    hint: 'Either fix your Claude API key (check credit balance at console.anthropic.com) or enter comma-separated short keywords like: payment processors, high risk merchant, chargebacks'
+                }));
+                return;
+            }
+            keywords = fallback;
+        }
 
         console.log(`[SubSearch] ${keywords.length} keywords: ${keywords.slice(0, 5).join(', ')}...`);
 
