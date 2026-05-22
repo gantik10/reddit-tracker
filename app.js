@@ -170,6 +170,7 @@ const S = {
     // Merge subreddits: union by ID, local version wins if both exist
     _mergeSubs(local, server) {
         const deleted = JSON.parse(localStorage.getItem('lk_deleted_subs') || '[]');
+        const deletedMps = JSON.parse(localStorage.getItem('lk_deleted_money_posts') || '{}');
         const byId = new Map();
         server.forEach(s => { if (!deleted.includes(s.id)) byId.set(s.id, s); });
         local.forEach(s => byId.set(s.id, s));
@@ -177,11 +178,15 @@ const S = {
         for (const [id, localSub] of byId) {
             const serverSub = server.find(s => s.id === id);
             if (serverSub && localSub !== serverSub) {
-                // Merge money posts by ID
+                // Merge money posts by ID — skip any tombstoned (deleted locally)
                 const localMps = localSub.moneyPosts || [];
                 const serverMps = serverSub.moneyPosts || [];
+                const tombstones = deletedMps[String(id)] || [];
                 const mpMap = new Map();
-                serverMps.forEach(mp => mpMap.set(mp.id, JSON.parse(JSON.stringify(mp))));
+                serverMps.forEach(mp => {
+                    if (tombstones.includes(mp.id)) return;
+                    mpMap.set(mp.id, JSON.parse(JSON.stringify(mp)));
+                });
                 localMps.forEach(mp => {
                     const serverMp = mpMap.get(mp.id);
                     if (serverMp) {
@@ -869,6 +874,12 @@ async function refreshMoneyPost(mpId) {
 
 function deleteMoneyPost(mpId) {
     confirmDelete('Delete this money post and its tasks?', () => {
+        // Tombstone so the next server sync doesn't re-add it (same fix pattern as deleted subs)
+        const deletedMps = JSON.parse(localStorage.getItem('lk_deleted_money_posts') || '{}');
+        const key = String(currentSubId);
+        if (!deletedMps[key]) deletedMps[key] = [];
+        if (!deletedMps[key].includes(mpId)) deletedMps[key].push(mpId);
+        localStorage.setItem('lk_deleted_money_posts', JSON.stringify(deletedMps));
         updateSub(sub => { sub.moneyPosts = (sub.moneyPosts || []).filter(p => p.id !== mpId); });
         renderDetail();
     });
