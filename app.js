@@ -250,7 +250,11 @@ const S = {
             return true;
         }
         try {
-            const res = await fetch(`${window.location.origin}/api/data`);
+            // 8s timeout so slow/flaky mobile networks don't hang the UI
+            const ctrl = new AbortController();
+            const tid = setTimeout(() => ctrl.abort(), 8000);
+            const res = await fetch(`${window.location.origin}/api/data`, { signal: ctrl.signal });
+            clearTimeout(tid);
             const data = await res.json();
             if (data.subreddits?.length) {
                 const local = S.get('subreddits');
@@ -5455,21 +5459,26 @@ async function autoCheckAllMoneyComments() {
 // ==========================================
 //  INIT
 // ==========================================
-// Pull shared data from server, then render
+// Render IMMEDIATELY from cached localStorage so phones / slow networks see content right away.
+// Then pull from server in the background and re-render once the merge lands.
+checkMonthlyReset();
+renderHome();
+startAutoRefresh();
+if (getUpvoteShopKey()) {
+    document.getElementById('upvoteNavBtn').style.display = '';
+    document.getElementById('ordersNavBtn').style.display = '';
+}
+
+// Background initial sync — re-render after merge so any teammate changes appear
 S.pullFromServer().then(() => {
-    checkMonthlyReset();
-    renderHome();
-    startAutoRefresh();
-    // Show Buy Votes button if key is set
-    if (getUpvoteShopKey()) {
-        document.getElementById('upvoteNavBtn').style.display = '';
-        document.getElementById('ordersNavBtn').style.display = '';
-    }
-    // Re-pull from server every 30 seconds to pick up teammate changes
-    setInterval(async () => {
-        await S.pullFromServer();
-        if (currentSubId) renderDetail();
-        else if (!document.getElementById('taskBoardView').classList.contains('hidden')) renderTaskBoard();
-        else renderHome();
-    }, 30000);
+    if (currentSubId) renderDetail();
+    else renderHome();
 });
+
+// Re-pull every 30s to pick up teammate changes
+setInterval(async () => {
+    await S.pullFromServer();
+    if (currentSubId) renderDetail();
+    else if (!document.getElementById('taskBoardView').classList.contains('hidden')) renderTaskBoard();
+    else renderHome();
+}, 30000);
