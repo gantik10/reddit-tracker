@@ -148,7 +148,7 @@ const S = {
 
                 // 4. Collect API keys (shared across team)
                 const keys = {};
-                ['lk_ahrefs_key', 'lk_serp_key', 'lk_df_login', 'lk_df_password', 'lk_claude_key', 'lk_telegram_bot', 'lk_telegram_chat', 'lk_upvote_key', 'lk_dolphin_token', 'lk_dolphin_profiles'].forEach(k => {
+                ['lk_ahrefs_key', 'lk_serp_key', 'lk_df_login', 'lk_df_password', 'lk_claude_key', 'lk_telegram_bot', 'lk_telegram_chat', 'lk_upvote_key', 'lk_dolphin_token', 'lk_dolphin_profiles', 'lk_reddit_cookie'].forEach(k => {
                     const v = localStorage.getItem(k);
                     if (v) keys[k] = v;
                     else if (serverData.keys?.[k]) keys[k] = serverData.keys[k]; // keep server key if local is empty
@@ -289,7 +289,7 @@ const S = {
                 ));
             }
             // Sync API keys: pull from server OR push local keys if server has none
-            const keyNames = ['lk_ahrefs_key', 'lk_serp_key', 'lk_df_login', 'lk_df_password', 'lk_claude_key', 'lk_telegram_bot', 'lk_telegram_chat', 'lk_upvote_key', 'lk_dolphin_token', 'lk_dolphin_profiles'];
+            const keyNames = ['lk_ahrefs_key', 'lk_serp_key', 'lk_df_login', 'lk_df_password', 'lk_claude_key', 'lk_telegram_bot', 'lk_telegram_chat', 'lk_upvote_key', 'lk_dolphin_token', 'lk_dolphin_profiles', 'lk_reddit_cookie'];
             if (data.keys && Object.keys(data.keys).length) {
                 // Server has keys — restore to local
                 Object.entries(data.keys).forEach(([k, v]) => {
@@ -369,10 +369,17 @@ function parseSubredditInput(input) {
 // --- Extract post ID from Reddit post URL ---
 function parsePostUrl(input) {
     input = input.trim();
-    // https://reddit.com/r/sub/comments/POST_ID/...
+    // https://reddit.com/r/sub/comments/POST_ID/some_title_slug/...
     // https://www.reddit.com/r/sub/comments/POST_ID/...
-    const match = input.match(/reddit\.com\/r\/[^/]+\/comments\/([A-Za-z0-9]+)/i);
-    if (match) return { postId: match[1], url: input };
+    const match = input.match(/reddit\.com\/r\/([^/]+)\/comments\/([A-Za-z0-9]+)(?:\/([^/?#]+))?/i);
+    if (match) {
+        const subreddit = match[1];
+        const postId = match[2];
+        // Turn the URL slug ("my_great_post") into a readable title ("My great post")
+        const slug = match[3] ? decodeURIComponent(match[3]).replace(/_/g, ' ').trim() : '';
+        const title = slug ? slug.charAt(0).toUpperCase() + slug.slice(1) : '';
+        return { postId, subreddit, title, url: input };
+    }
     return null;
 }
 
@@ -467,6 +474,9 @@ async function proxyFetch(targetUrl, extraHeaders = {}) {
     } catch (e) {
         // If it's an Ahrefs-specific error, don't try fallback proxies
         if (e.message.includes('Ahrefs:') || e.message.includes('API key')) throw e;
+        // The local proxy already reached Reddit and got the auth/bot wall — public CORS
+        // proxies will hit the same wall, so surface the actionable message instead.
+        if (e.message.includes('reddit_session') || e.message.includes('anti-bot') || e.message.includes('requires authentication')) throw e;
         // If local proxy is not running, try public CORS proxies (Reddit only)
         if (targetUrl.includes('reddit.com')) {
             const proxies = [
@@ -646,8 +656,21 @@ async function refreshSubredditData() {
 //  FETCH MONEY POST
 // ==========================================
 function openAddMoneyPost() {
+    if (!currentSubId) return toast('warning', 'Open a subreddit first', 'Open a subreddit, then add a post to it.');
     document.getElementById('moneyPostModalTitle').textContent = 'Add Money Post';
     fetchedPostData = null;
+    // Reset the form so stale values from a previous add/edit don't leak in.
+    document.getElementById('mpEditId').value = '';
+    document.getElementById('mpInput').value = '';
+    document.getElementById('mpTitle').value = '';
+    document.getElementById('mpRank').value = '';
+    document.getElementById('mpRevenue').selectedIndex = 0;
+    document.getElementById('mpFetchStatus').textContent = '';
+    document.getElementById('mpFetchStatus').className = 'fetch-status';
+    document.getElementById('mpPreview').classList.add('hidden');
+    document.getElementById('mpManualFields').classList.add('hidden');
+    document.getElementById('mpSaveBtn').classList.add('hidden');
+    setMpTab('link');
     openModal('moneyPostModal');
 }
 
@@ -686,6 +709,7 @@ async function fetchMoneyPost() {
             flair: post.link_flair_text || '',
         };
 
+        document.getElementById('mpTitle').value = fetchedPostData.title || '';
         document.getElementById('mpPreviewTitle').textContent = fetchedPostData.title;
         document.getElementById('mpPreviewStats').innerHTML = `
             <span>${fmtNumAlways(fetchedPostData.upvotes)} upvotes</span>
@@ -700,23 +724,38 @@ async function fetchMoneyPost() {
         manual.classList.remove('hidden');
         saveBtn.classList.remove('hidden');
     } catch (err) {
-        status.className = 'fetch-status error';
-        status.textContent = err.message;
+        // Fetch failed (usually: no/expired Reddit cookie). Don't dead-end — let the user
+        // add the post with just the link. Stats backfill on the next auto-refresh.
+        fetchedPostData = {
+            title: parsed.title || `reddit.com post ${parsed.postId}`,
+            url: parsed.url,
+            upvotes: 0, comments: 0, author: '',
+            created: '', subreddit: parsed.subreddit || '', flair: '',
+            needsRefresh: true,
+        };
+        document.getElementById('mpTitle').value = fetchedPostData.title;
+        status.className = 'fetch-status warning';
+        status.innerHTML = `Couldn't load live stats (${esc(err.message)})<br>You can still add it by link — edit the title below and click <strong>Add &amp; Track</strong>. Stats will fill in once your Reddit cookie is set.`;
+        manual.classList.remove('hidden');
+        saveBtn.classList.remove('hidden');
     }
 }
 
 function saveMoneyPost() {
     const editId = document.getElementById('mpEditId').value;
+    const manualTitle = document.getElementById('mpTitle').value.trim();
 
+    let saved;
     if (editId) {
         // Editing existing post — re-fetch might have happened
-        updateSub(sub => {
+        saved = updateSub(sub => {
             const mp = (sub.moneyPosts || []).find(p => p.id === Number(editId));
             if (mp) {
                 mp.rank = Number(document.getElementById('mpRank').value) || mp.rank;
                 mp.revenueTag = document.getElementById('mpRevenue').value;
+                if (manualTitle) mp.title = manualTitle;
                 if (fetchedPostData) {
-                    mp.title = fetchedPostData.title;
+                    if (!manualTitle) mp.title = fetchedPostData.title;
                     mp.url = fetchedPostData.url;
                     mp.upvotes = fetchedPostData.upvotes;
                     mp.comments = fetchedPostData.comments;
@@ -729,12 +768,12 @@ function saveMoneyPost() {
         });
     } else {
         if (!fetchedPostData) return toast('warning', 'Fetch first', 'Paste a Reddit post link and click Fetch.');
-        updateSub(sub => {
+        saved = updateSub(sub => {
             if (!sub.moneyPosts) sub.moneyPosts = [];
             const id = sub.moneyPosts.length ? Math.max(...sub.moneyPosts.map(p => p.id)) + 1 : 1;
             sub.moneyPosts.push({
                 id,
-                title: fetchedPostData.title,
+                title: manualTitle || fetchedPostData.title,
                 url: fetchedPostData.url,
                 upvotes: fetchedPostData.upvotes,
                 comments: fetchedPostData.comments,
@@ -742,14 +781,17 @@ function saveMoneyPost() {
                 rank: Number(document.getElementById('mpRank').value) || null,
                 seoRank: 0,
                 revenueTag: document.getElementById('mpRevenue').value,
+                needsRefresh: !!fetchedPostData.needsRefresh,
                 history: [{ upvotes: fetchedPostData.upvotes, comments: fetchedPostData.comments, date: new Date().toISOString() }],
                 tasks: []
             });
         });
     }
 
+    if (!saved) return; // updateSub already toasted why; keep modal open so input isn't lost
     closeModal('moneyPostModal');
     renderDetail();
+    toast('success', editId ? 'Post updated' : 'Post added', '');
 }
 
 document.getElementById('mpInput').addEventListener('keydown', e => {
@@ -829,6 +871,7 @@ async function selectSearchResult(postId) {
             flair: post.link_flair_text || '',
         };
 
+        document.getElementById('mpTitle').value = fetchedPostData.title || '';
         document.getElementById('mpPreviewTitle').textContent = fetchedPostData.title;
         document.getElementById('mpPreviewStats').innerHTML = `
             <span>${fmtNumAlways(fetchedPostData.upvotes)} upvotes</span>
@@ -1215,9 +1258,14 @@ function getSub() { return S.get('subreddits').find(s => s.id === currentSubId);
 function updateSub(fn) {
     let subs = S.get('subreddits');
     const idx = subs.findIndex(s => s.id === currentSubId);
-    if (idx === -1) return;
+    if (idx === -1) {
+        // No open subreddit — don't fail silently (this swallowed "add post" before).
+        toast('error', 'No subreddit open', 'Open a subreddit before saving. Your change was not saved.');
+        return false;
+    }
     fn(subs[idx]);
     S.set('subreddits', subs);
+    return true;
 }
 
 function renderDetail() {
@@ -1327,6 +1375,7 @@ function openSettings() {
     document.getElementById('serpApiKeyInput').value = getSerpApiKey();
     document.getElementById('dfLoginInput').value = getDfLogin();
     document.getElementById('dfPasswordInput').value = getDfPassword();
+    document.getElementById('redditCookieInput').value = localStorage.getItem('lk_reddit_cookie') || '';
     document.getElementById('claudeKeyInput').value = getClaudeKey();
     document.getElementById('telegramBotInput').value = localStorage.getItem('lk_telegram_bot') || '';
     document.getElementById('telegramChatInput').value = localStorage.getItem('lk_telegram_chat') || '';
@@ -1374,6 +1423,8 @@ function saveSettings() {
     serpKey ? localStorage.setItem('lk_serp_key', serpKey) : localStorage.removeItem('lk_serp_key');
     dfLogin ? localStorage.setItem('lk_df_login', dfLogin) : localStorage.removeItem('lk_df_login');
     dfPassword ? localStorage.setItem('lk_df_password', dfPassword) : localStorage.removeItem('lk_df_password');
+    const redditCookie = document.getElementById('redditCookieInput').value.trim();
+    redditCookie ? localStorage.setItem('lk_reddit_cookie', redditCookie) : localStorage.removeItem('lk_reddit_cookie');
     const claudeKey = document.getElementById('claudeKeyInput').value.trim();
     claudeKey ? localStorage.setItem('lk_claude_key', claudeKey) : localStorage.removeItem('lk_claude_key');
     const tgBot = document.getElementById('telegramBotInput').value.trim();

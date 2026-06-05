@@ -2308,6 +2308,7 @@ select.input {
 .fetch-status.loading { color: var(--accent-blue); }
 .fetch-status.error { color: var(--accent-red); }
 .fetch-status.success { color: var(--accent-green); }
+.fetch-status.warning { color: var(--accent-orange, #e08a00); }
 
 @keyframes spin {
     to { transform: rotate(360deg); }

@@ -46,13 +46,32 @@ function getRandomProxyPort() {
     return PROXY_BASE.basePort + Math.floor(Math.random() * PROXY_BASE.maxPortOffset);
 }
 
+// --- Load authenticated Reddit session cookie (required: Reddit now blocks
+//     unauthenticated .json with an anti-bot HTML interstitial). Set via
+//     data.json keys.lk_reddit_cookie or a reddit_cookie.txt file. ---
+function getRedditCookie() {
+    try {
+        const d = JSON.parse(fs.readFileSync(path.join(__dirname, 'data.json'), 'utf8'));
+        if (d.keys?.lk_reddit_cookie) return d.keys.lk_reddit_cookie.trim();
+    } catch {}
+    try { return fs.readFileSync(path.join(__dirname, 'reddit_cookie.txt'), 'utf8').trim(); } catch {}
+    return '';
+}
+
 // --- HTTPS request via curl (reliable) ---
 function httpsRequest(targetUrl, headers = {}) {
-    const headerArgs = Object.entries({ 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36', 'Accept': 'application/json', ...headers })
+    const isReddit = targetUrl.includes('reddit.com');
+    // Attach authenticated session cookie for Reddit so .json returns JSON, not the bot wall.
+    const baseHeaders = { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36', 'Accept': 'application/json' };
+    if (isReddit) {
+        const cookie = getRedditCookie();
+        if (cookie) baseHeaders['Cookie'] = `reddit_session=${cookie}`;
+    }
+    const headerArgs = Object.entries({ ...baseHeaders, ...headers })
         .map(([k, v]) => `-H "${k}: ${v}"`).join(' ');
     // Route Reddit requests through SOCKS5 proxy (VPS IP is banned by Reddit)
     let proxyArg = '';
-    if (targetUrl.includes('reddit.com')) {
+    if (isReddit) {
         const port = PROXY_BASE.basePort + Math.floor(Math.random() * PROXY_BASE.maxPortOffset);
         proxyArg = `--socks5-hostname ${PROXY_BASE.host}:${port} -U ${PROXY_BASE.login}:${PROXY_BASE.password}`;
     }
@@ -1183,6 +1202,19 @@ Return ONLY the JSON array, no other text.`;
         try {
             const result = httpsRequest(targetUrl, proxyHeaders);
             if (targetUrl.includes('ahrefs.com')) console.log(`[Ahrefs] → ${result.data.slice(0, 200)}`);
+            // Reddit serves an HTML anti-bot wall (not JSON) when the request isn't authenticated.
+            // Surface a clear, actionable error instead of letting JSON.parse fail on the client.
+            const looksReddit = targetUrl.includes('reddit.com');
+            const looksHtml = typeof result.data === 'string' && result.data.trimStart().startsWith('<');
+            if (looksReddit && looksHtml) {
+                const hasCookie = !!getRedditCookie();
+                console.log(`[Proxy] Reddit returned HTML (bot wall). cookie set: ${hasCookie}`);
+                res.writeHead(502, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ error: hasCookie
+                    ? 'Reddit blocked the request (anti-bot). Your reddit_session cookie looks expired — update it in Settings.'
+                    : 'Reddit requires authentication. Add your reddit_session cookie in Settings to fetch posts.' }));
+                return;
+            }
             res.writeHead(result.status, { 'Content-Type': 'application/json' }); res.end(result.data);
         } catch (err) { res.writeHead(502, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: err.message })); }
         return;
@@ -1798,14 +1830,19 @@ server.listen(PORT, '0.0.0.0', () => {
   ╔══════════════════════════════════════════════╗
   ║   LK Media Group — Reddit Tracker           ║
   ║   → http://localhost:${PORT}                    ║
-  ║   Auto rank check: every hour (DataForSEO)  ║
+  ║   Auto rank check: every 4h (DataForSEO)    ║
   ║   Press Ctrl+C to stop                       ║
   ╚══════════════════════════════════════════════╝
 `);
-    // Start hourly auto-check after 2 minutes, then every hour
+    // DataForSEO auto rank check interval (cost control).
+    // Each run = 2 DataForSEO calls per tracked keyword, so cost scales linearly with frequency.
+    // Hourly (1h) ≈ $2/day. Every 4h ≈ $0.50/day. Override with RANK_CHECK_HOURS env var.
+    const RANK_CHECK_HOURS = Number(process.env.RANK_CHECK_HOURS) || 4;
+    const rankCheckMs = RANK_CHECK_HOURS * 60 * 60 * 1000;
+    console.log(`[AutoRank] Interval: every ${RANK_CHECK_HOURS}h`);
     setTimeout(autoRankCheck, 2 * 60 * 1000);
-    setInterval(autoRankCheck, 60 * 60 * 1000);
-    // Money comment check: every hour, starts 3 min after boot
+    setInterval(autoRankCheck, rankCheckMs);
+    // Money comment check uses Reddit (no DataForSEO cost) — keep on its own hourly cadence.
     setTimeout(serverCheckMoneyComments, 3 * 60 * 1000);
     setInterval(serverCheckMoneyComments, 60 * 60 * 1000);
 });
