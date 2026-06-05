@@ -69,20 +69,42 @@ function httpsRequest(targetUrl, headers = {}) {
     }
     const headerArgs = Object.entries({ ...baseHeaders, ...headers })
         .map(([k, v]) => `-H "${k}: ${v}"`).join(' ');
-    // Route Reddit requests through SOCKS5 proxy (VPS IP is banned by Reddit)
-    let proxyArg = '';
-    if (isReddit) {
+
+    // Non-Reddit (e.g. Ahrefs): single direct request.
+    if (!isReddit) {
+        try {
+            const data = execSync(`curl -sL ${headerArgs} --max-time 15 "${targetUrl}"`, {
+                encoding: 'utf8', maxBuffer: 10 * 1024 * 1024, timeout: 20000
+            });
+            return { status: 200, data };
+        } catch (e) {
+            return { status: 502, data: JSON.stringify({ error: e.message }) };
+        }
+    }
+
+    // Reddit goes through rotating SOCKS5 ports (VPS IP is banned by Reddit). Many ports
+    // in the pool are dead at any moment, so retry on a fresh random port until one works.
+    const MAX_TRIES = 5;
+    let lastErr = '';
+    for (let attempt = 0; attempt < MAX_TRIES; attempt++) {
         const port = PROXY_BASE.basePort + Math.floor(Math.random() * PROXY_BASE.maxPortOffset);
-        proxyArg = `--socks5-hostname ${PROXY_BASE.host}:${port} -U ${PROXY_BASE.login}:${PROXY_BASE.password}`;
+        const proxyArg = `--socks5-hostname ${PROXY_BASE.host}:${port} -U ${PROXY_BASE.login}:${PROXY_BASE.password}`;
+        try {
+            const data = execSync(`curl -sL ${proxyArg} ${headerArgs} --max-time 15 "${targetUrl}"`, {
+                encoding: 'utf8', maxBuffer: 10 * 1024 * 1024, timeout: 20000
+            });
+            // Empty body or HTML bot-wall → bad port / blocked; try another port.
+            const trimmed = (data || '').trimStart();
+            if (!trimmed) { lastErr = 'empty response'; continue; }
+            if (trimmed.startsWith('<')) { lastErr = 'reddit bot wall (HTML)'; continue; }
+            return { status: 200, data };
+        } catch (e) {
+            // curl failed (commonly a dead proxy port) — retry on a new port.
+            lastErr = e.message;
+        }
     }
-    try {
-        const data = execSync(`curl -sL ${proxyArg} ${headerArgs} --max-time 15 "${targetUrl}"`, {
-            encoding: 'utf8', maxBuffer: 10 * 1024 * 1024, timeout: 20000
-        });
-        return { status: 200, data };
-    } catch (e) {
-        return { status: 502, data: JSON.stringify({ error: e.message }) };
-    }
+    console.log(`[Reddit] All ${MAX_TRIES} proxy attempts failed: ${lastErr}`);
+    return { status: 502, data: JSON.stringify({ error: `Reddit fetch failed after ${MAX_TRIES} proxy attempts (${lastErr}).` }) };
 }
 
 // --- HTTP GET (local APIs) ---
@@ -1202,13 +1224,12 @@ Return ONLY the JSON array, no other text.`;
         try {
             const result = httpsRequest(targetUrl, proxyHeaders);
             if (targetUrl.includes('ahrefs.com')) console.log(`[Ahrefs] → ${result.data.slice(0, 200)}`);
-            // Reddit serves an HTML anti-bot wall (not JSON) when the request isn't authenticated.
-            // Surface a clear, actionable error instead of letting JSON.parse fail on the client.
+            // httpsRequest already retries dead proxy ports & the HTML bot wall for Reddit.
+            // If it still failed on a bot wall, it's an auth (cookie) problem — give a clear hint.
             const looksReddit = targetUrl.includes('reddit.com');
-            const looksHtml = typeof result.data === 'string' && result.data.trimStart().startsWith('<');
-            if (looksReddit && looksHtml) {
+            if (looksReddit && result.status !== 200 && /bot wall|HTML/i.test(result.data)) {
                 const hasCookie = !!getRedditCookie();
-                console.log(`[Proxy] Reddit returned HTML (bot wall). cookie set: ${hasCookie}`);
+                console.log(`[Proxy] Reddit bot wall after retries. cookie set: ${hasCookie}`);
                 res.writeHead(502, { 'Content-Type': 'application/json' });
                 res.end(JSON.stringify({ error: hasCookie
                     ? 'Reddit blocked the request (anti-bot). Your reddit_session cookie looks expired — update it in Settings.'
