@@ -569,6 +569,35 @@ const server = http.createServer(async (req, res) => {
     if (parsed.pathname === '/api/data' && req.method === 'POST') {
         const body = await readBody(req);
         try {
+            // --- Deletion tombstones (authoritative) ---
+            // A delete is only an *absence* in one device's data; without this, any other
+            // device/tab that still has the item re-adds it via union-merge. So we keep a
+            // synced, ever-growing tombstone list on the server and strip tombstoned items
+            // from every write — no client can resurrect a deleted sub/post.
+            let existing = {};
+            try { existing = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8')); } catch {}
+
+            const delSubs = Array.from(new Set([...(existing.deletedSubs || []), ...(body.deletedSubs || [])]));
+            const delMps = {}; // { subIdStr: [mpId, ...] }
+            for (const src of [existing.deletedMoneyPosts || {}, body.deletedMoneyPosts || {}]) {
+                for (const k of Object.keys(src)) {
+                    delMps[k] = Array.from(new Set([...(delMps[k] || []), ...(src[k] || [])]));
+                }
+            }
+            body.deletedSubs = delSubs;
+            body.deletedMoneyPosts = delMps;
+
+            // Enforce tombstones: drop deleted subs and deleted money posts.
+            body.subreddits = (body.subreddits || [])
+                .filter(s => !delSubs.includes(s.id))
+                .map(s => {
+                    const tomb = delMps[String(s.id)] || [];
+                    if (tomb.length && Array.isArray(s.moneyPosts)) {
+                        s.moneyPosts = s.moneyPosts.filter(mp => !tomb.includes(mp.id));
+                    }
+                    return s;
+                });
+
             fs.writeFileSync(DATA_FILE, JSON.stringify(body, null, 2), 'utf8');
             res.writeHead(200, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify({ success: true }));

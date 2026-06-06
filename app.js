@@ -124,7 +124,11 @@ const S = {
                 const res = await fetch(`${window.location.origin}/api/data`);
                 const serverData = await res.json();
 
-                // 2. Merge: local wins for items we have, but keep server items we don't
+                // 2a. Absorb server-side deletion tombstones into local so deletes made on
+                //     other devices are respected here (and we never re-add those items).
+                const delTomb = S._absorbTombstones(serverData);
+
+                // 2b. Merge: local wins for items we have, but keep server items we don't
                 const localSubs = S.get('subreddits');
                 const serverSubs = serverData.subreddits || [];
                 const merged = S._mergeSubs(localSubs, serverSubs);
@@ -158,7 +162,7 @@ const S = {
                 await fetch(`${window.location.origin}/api/data`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ subreddits: merged, team: mergedTeam, keys, uv_orders: mergedOrders, general_tasks: S.get('general_tasks'), cg_batches: S.get('cg_batches') })
+                    body: JSON.stringify({ subreddits: merged, team: mergedTeam, keys, uv_orders: mergedOrders, general_tasks: S.get('general_tasks'), cg_batches: S.get('cg_batches'), deletedSubs: delTomb.deletedSubs, deletedMoneyPosts: delTomb.deletedMoneyPosts })
                 });
             } catch (err) {
                 console.log('[Sync] Failed:', err.message);
@@ -172,8 +176,10 @@ const S = {
         const deleted = JSON.parse(localStorage.getItem('lk_deleted_subs') || '[]');
         const deletedMps = JSON.parse(localStorage.getItem('lk_deleted_money_posts') || '{}');
         const byId = new Map();
+        // Drop tombstoned subreddits from BOTH sides — a delete on another device must not
+        // be undone just because this device still has the sub locally.
         server.forEach(s => { if (!deleted.includes(s.id)) byId.set(s.id, s); });
-        local.forEach(s => byId.set(s.id, s));
+        local.forEach(s => { if (!deleted.includes(s.id)) byId.set(s.id, s); });
         // Deep merge money posts and their keyword histories
         for (const [id, localSub] of byId) {
             const serverSub = server.find(s => s.id === id);
@@ -188,6 +194,7 @@ const S = {
                     mpMap.set(mp.id, JSON.parse(JSON.stringify(mp)));
                 });
                 localMps.forEach(mp => {
+                    if (tombstones.includes(mp.id)) return; // deleted (here or on another device)
                     const serverMp = mpMap.get(mp.id);
                     if (serverMp) {
                         const localKws = mp.googleKeywords || [];
@@ -242,6 +249,24 @@ const S = {
         return Array.from(byId.values());
     },
 
+    // Union server-side deletion tombstones into local storage so deletions sync across
+    // devices. Returns the merged tombstones { deletedSubs, deletedMoneyPosts } for upload.
+    // _mergeSubs reads these from localStorage, so persisting here makes it honor them.
+    _absorbTombstones(serverData) {
+        const localSubs = JSON.parse(localStorage.getItem('lk_deleted_subs') || '[]');
+        const localMps = JSON.parse(localStorage.getItem('lk_deleted_money_posts') || '{}');
+        const deletedSubs = Array.from(new Set([...(localSubs || []), ...((serverData && serverData.deletedSubs) || [])]));
+        const deletedMoneyPosts = {};
+        for (const src of [localMps || {}, (serverData && serverData.deletedMoneyPosts) || {}]) {
+            for (const k of Object.keys(src)) {
+                deletedMoneyPosts[k] = Array.from(new Set([...(deletedMoneyPosts[k] || []), ...(src[k] || [])]));
+            }
+        }
+        localStorage.setItem('lk_deleted_subs', JSON.stringify(deletedSubs));
+        localStorage.setItem('lk_deleted_money_posts', JSON.stringify(deletedMoneyPosts));
+        return { deletedSubs, deletedMoneyPosts };
+    },
+
     // Pull from server on load — merge, don't overwrite
     async pullFromServer() {
         // Skip if a sync push is pending — local data is fresher
@@ -256,10 +281,12 @@ const S = {
             const res = await fetch(`${window.location.origin}/api/data`, { signal: ctrl.signal });
             clearTimeout(tid);
             const data = await res.json();
+            // Absorb server deletion tombstones so deletes from other devices stick here too.
+            S._absorbTombstones(data);
             if (data.subreddits?.length) {
                 const local = S.get('subreddits');
                 if (local.length) {
-                    // Merge: local wins (has freshest rank checks)
+                    // Merge: local wins (has freshest rank checks), tombstones drop deletes
                     const merged = S._mergeSubs(local, data.subreddits);
                     localStorage.setItem('lk_subreddits', JSON.stringify(merged));
                 } else {
