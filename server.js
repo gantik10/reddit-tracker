@@ -842,6 +842,29 @@ const server = http.createServer(async (req, res) => {
                 const msg = body.message || 'No message';
                 const DATA_FILE2 = path.join(__dirname, 'data.json');
                 const d = JSON.parse(fs.readFileSync(DATA_FILE2, 'utf8'));
+
+                // Guard: never relay a money-comment alert that is muted (per-comment) or
+                // disabled globally — defends against stale browser tabs still sending these.
+                if (/MONEY COMMENT/i.test(msg)) {
+                    const globalOn = d.keys?.lk_notify_money_comments !== 'false';
+                    const pid = (msg.match(/comments\/([A-Za-z0-9]+)/i) || [])[1];
+                    let muted = false;
+                    if (pid) {
+                        for (const s of d.subreddits || []) {
+                            for (const mp of s.moneyPosts || []) {
+                                const mpid = (mp.url || '').match(/comments\/([A-Za-z0-9]+)/i)?.[1];
+                                if (mpid === pid && mp.moneyComment) muted = mp.moneyComment.notify === false;
+                            }
+                        }
+                    }
+                    if (!globalOn || muted) {
+                        console.log(`[Telegram] Suppressed muted money-comment alert (post ${pid || '?'})`);
+                        res.writeHead(200, { 'Content-Type': 'application/json' });
+                        res.end(JSON.stringify({ success: true, suppressed: true }));
+                        return;
+                    }
+                }
+
                 await sendTelegramAlert(d, msg);
                 res.writeHead(200, { 'Content-Type': 'application/json' });
                 res.end(JSON.stringify({ success: true }));

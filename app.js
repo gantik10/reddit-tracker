@@ -5531,30 +5531,17 @@ async function autoCheckAllMoneyComments() {
                 mc.checkedAt = new Date().toISOString();
                 S.set('subreddits', allSubs);
 
-                // CRITICAL ALERT if lost #1 — persistent toast + Telegram.
-                // Respect the global toggle AND this comment's own mute (default on), and
-                // only alert when the position actually changes (avoid re-sending every cycle).
+                // In-app toast only if lost #1. Telegram is sent ONLY by the server
+                // (serverCheckMoneyComments) so there's a single, always-up-to-date notifier
+                // that honors the mute and dedup — a stale browser tab can no longer spam.
+                // Respect the global toggle AND this comment's own mute, and only toast on a
+                // position change (not every cycle).
                 const notifyOn = localStorage.getItem('lk_notify_money_comments') !== 'false' && mc.notify !== false;
                 if (notifyOn && mcData.position && mcData.position > 1 && mc._lastAlertPos !== mcData.position) {
                     mc._lastAlertPos = mcData.position;
                     S.set('subreddits', allSubs);
                     const alertMsg = `"${p.title?.slice(0, 50)}" in r/${sub.name} dropped to #${mcData.position}`;
                     toast('error', 'CRITICAL: Money comment lost #1!', alertMsg + '. Immediate action needed.', 0);
-                    // Build comment permalink
-                    const commentLink = p.url ? p.url.replace(/\/$/, '') + '/' + p.moneyComment.commentId + '/' : '';
-                    fetch(`${SERVER}/api/telegram`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ message:
-                            `🔴 *MONEY COMMENT LOST #1*\n\n` +
-                            `Position: #${oldPos || '?'} ➜ *#${mcData.position}*\n` +
-                            `Post: ${p.title?.slice(0, 60)}\n` +
-                            `Subreddit: r/${sub.name}\n` +
-                            `Author: u/${mcData.commentData?.author || '?'}\n` +
-                            `Upvotes: ${mcData.commentData?.upvotes || 0}\n` +
-                            (commentLink ? `🔗 ${commentLink}` : '')
-                        })
-                    }).catch(() => {});
                 } else if (mcData.position === 1 && mc._lastAlertPos) {
                     delete mc._lastAlertPos;
                     S.set('subreddits', allSubs);
