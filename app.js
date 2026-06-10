@@ -224,11 +224,17 @@ const S = {
                         // Merge money comment: take server if more recent, but respect local deletion
                         if (mp.moneyComment === undefined || mp.moneyComment === null) {
                             // Local explicitly deleted — don't restore from server
-                        } else if (serverMp.moneyComment?.checkedAt && (!mp.moneyComment?.checkedAt || new Date(serverMp.moneyComment.checkedAt) > new Date(mp.moneyComment.checkedAt))) {
-                            // notify is a local user preference — keep it across the server overwrite
+                        } else {
                             const localNotify = mp.moneyComment.notify;
-                            mp.moneyComment = serverMp.moneyComment;
-                            if (localNotify !== undefined) mp.moneyComment.notify = localNotify;
+                            const serverNotify = serverMp.moneyComment?.notify;
+                            if (serverMp.moneyComment?.checkedAt && (!mp.moneyComment?.checkedAt || new Date(serverMp.moneyComment.checkedAt) > new Date(mp.moneyComment.checkedAt))) {
+                                mp.moneyComment = serverMp.moneyComment;
+                            }
+                            // notify is a user preference — reconcile it independently of checkedAt so a
+                            // mute set on one device always reaches the others (the per-cycle checkedAt
+                            // update would otherwise block it). This device's explicit choice wins;
+                            // otherwise adopt the server's.
+                            mp.moneyComment.notify = (localNotify !== undefined) ? localNotify : serverNotify;
                         }
                     }
                     mpMap.set(mp.id, mp);
