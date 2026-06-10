@@ -152,7 +152,7 @@ const S = {
 
                 // 4. Collect API keys (shared across team)
                 const keys = {};
-                ['lk_ahrefs_key', 'lk_serp_key', 'lk_df_login', 'lk_df_password', 'lk_claude_key', 'lk_telegram_bot', 'lk_telegram_chat', 'lk_upvote_key', 'lk_dolphin_token', 'lk_dolphin_profiles', 'lk_reddit_cookie'].forEach(k => {
+                ['lk_ahrefs_key', 'lk_serp_key', 'lk_df_login', 'lk_df_password', 'lk_claude_key', 'lk_telegram_bot', 'lk_telegram_chat', 'lk_upvote_key', 'lk_dolphin_token', 'lk_dolphin_profiles', 'lk_reddit_cookie', 'lk_notify_money_comments'].forEach(k => {
                     const v = localStorage.getItem(k);
                     if (v) keys[k] = v;
                     else if (serverData.keys?.[k]) keys[k] = serverData.keys[k]; // keep server key if local is empty
@@ -316,7 +316,7 @@ const S = {
                 ));
             }
             // Sync API keys: pull from server OR push local keys if server has none
-            const keyNames = ['lk_ahrefs_key', 'lk_serp_key', 'lk_df_login', 'lk_df_password', 'lk_claude_key', 'lk_telegram_bot', 'lk_telegram_chat', 'lk_upvote_key', 'lk_dolphin_token', 'lk_dolphin_profiles', 'lk_reddit_cookie'];
+            const keyNames = ['lk_ahrefs_key', 'lk_serp_key', 'lk_df_login', 'lk_df_password', 'lk_claude_key', 'lk_telegram_bot', 'lk_telegram_chat', 'lk_upvote_key', 'lk_dolphin_token', 'lk_dolphin_profiles', 'lk_reddit_cookie', 'lk_notify_money_comments'];
             if (data.keys && Object.keys(data.keys).length) {
                 // Server has keys — restore to local
                 Object.entries(data.keys).forEach(([k, v]) => {
@@ -1403,6 +1403,7 @@ function openSettings() {
     document.getElementById('dfLoginInput').value = getDfLogin();
     document.getElementById('dfPasswordInput').value = getDfPassword();
     document.getElementById('redditCookieInput').value = localStorage.getItem('lk_reddit_cookie') || '';
+    document.getElementById('notifyMoneyCommentsInput').checked = localStorage.getItem('lk_notify_money_comments') !== 'false';
     document.getElementById('claudeKeyInput').value = getClaudeKey();
     document.getElementById('telegramBotInput').value = localStorage.getItem('lk_telegram_bot') || '';
     document.getElementById('telegramChatInput').value = localStorage.getItem('lk_telegram_chat') || '';
@@ -1452,6 +1453,8 @@ function saveSettings() {
     dfPassword ? localStorage.setItem('lk_df_password', dfPassword) : localStorage.removeItem('lk_df_password');
     const redditCookie = document.getElementById('redditCookieInput').value.trim();
     redditCookie ? localStorage.setItem('lk_reddit_cookie', redditCookie) : localStorage.removeItem('lk_reddit_cookie');
+    // Store as explicit 'true'/'false' so the server can read the preference (default on).
+    localStorage.setItem('lk_notify_money_comments', document.getElementById('notifyMoneyCommentsInput').checked ? 'true' : 'false');
     const claudeKey = document.getElementById('claudeKeyInput').value.trim();
     claudeKey ? localStorage.setItem('lk_claude_key', claudeKey) : localStorage.removeItem('lk_claude_key');
     const tgBot = document.getElementById('telegramBotInput').value.trim();
