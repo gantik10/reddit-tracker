@@ -2270,8 +2270,9 @@ async function serverCheckMoneyComments() {
                 console.log(`[MC-Server] r/${sub.name} "${mp.title?.slice(0, 30)}": #${position || '?'}/${totalTopLevel}`);
 
                 // Telegram alert if lost #1 — only after 2 consecutive checks not at #1.
-                // Respect the user's "money comment notifications" toggle (default on).
-                const notifyMoneyComments = data.keys?.lk_notify_money_comments !== 'false';
+                // Respect both the global master toggle and this comment's own notify flag
+                // (both default on; either set to off mutes this comment's alerts).
+                const notifyMoneyComments = data.keys?.lk_notify_money_comments !== 'false' && mc.notify !== false;
                 if (notifyMoneyComments && position && position > 1) {
                     mc._notFirstStreak = (mc._notFirstStreak || 0) + 1;
                     if (mc._lastAlertPos !== position) {
