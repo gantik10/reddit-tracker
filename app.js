@@ -5525,8 +5525,13 @@ async function autoCheckAllMoneyComments() {
                 mc.checkedAt = new Date().toISOString();
                 S.set('subreddits', allSubs);
 
-                // CRITICAL ALERT if lost #1 — persistent toast + Telegram
-                if (mcData.position && mcData.position > 1) {
+                // CRITICAL ALERT if lost #1 — persistent toast + Telegram.
+                // Respect the global toggle AND this comment's own mute (default on), and
+                // only alert when the position actually changes (avoid re-sending every cycle).
+                const notifyOn = localStorage.getItem('lk_notify_money_comments') !== 'false' && mc.notify !== false;
+                if (notifyOn && mcData.position && mcData.position > 1 && mc._lastAlertPos !== mcData.position) {
+                    mc._lastAlertPos = mcData.position;
+                    S.set('subreddits', allSubs);
                     const alertMsg = `"${p.title?.slice(0, 50)}" in r/${sub.name} dropped to #${mcData.position}`;
                     toast('error', 'CRITICAL: Money comment lost #1!', alertMsg + '. Immediate action needed.', 0);
                     // Build comment permalink
@@ -5544,6 +5549,9 @@ async function autoCheckAllMoneyComments() {
                             (commentLink ? `🔗 ${commentLink}` : '')
                         })
                     }).catch(() => {});
+                } else if (mcData.position === 1 && mc._lastAlertPos) {
+                    delete mc._lastAlertPos;
+                    S.set('subreddits', allSubs);
                 }
 
                 console.log(`[MC] r/${sub.name} "${p.title?.slice(0, 30)}": comment #${mcData.position || '?'}/${mcData.totalTopLevel}`);
