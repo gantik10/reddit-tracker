@@ -509,6 +509,20 @@ function rcBadge(s) {
     return `<span style="display:inline-block;padding:2px 8px;border-radius:10px;background:${c}22;color:${c};font-weight:600;font-size:12px;">${label}</span>`;
 }
 
+// Relative time, e.g. "4 months ago", "1 year ago", "3 days ago".
+function rcAgo(iso) {
+    if (!iso) return '—';
+    const then = new Date(iso).getTime();
+    if (isNaN(then)) return '—';
+    const secs = Math.max(0, (Date.now() - then) / 1000);
+    const units = [['year', 31536000], ['month', 2592000], ['week', 604800], ['day', 86400], ['hour', 3600], ['minute', 60]];
+    for (const [name, s] of units) {
+        const v = Math.floor(secs / s);
+        if (v >= 1) return `${v} ${name}${v > 1 ? 's' : ''} ago`;
+    }
+    return 'just now';
+}
+
 function rcRender() {
     const filter = document.getElementById('rcFilter').value;
     const q = (document.getElementById('rcSearch').value || '').toLowerCase();
@@ -534,11 +548,14 @@ function rcRender() {
             <td style="padding:7px 6px;font-weight:600;">${esc(a.username || '—')}</td>
             <td style="padding:7px 6px;">${rcBadge(a.status)}</td>
             <td style="padding:7px 6px;">${a.karmaTotal != null ? fmtNumAlways(a.karmaTotal) : '—'}</td>
-            <td style="padding:7px 6px;">${a.lastActivity ? fmtDate(a.lastActivity) : '—'}</td>
+            <td style="padding:7px 6px;" title="${a.lastActivity ? fmtDate(a.lastActivity) : ''}">${rcAgo(a.lastActivity)}</td>
             <td style="padding:7px 6px;">${a.accountCreated ? new Date(a.accountCreated).getFullYear() : (a.claimed?.year || '—')}</td>
             <td style="padding:7px 6px;color:var(--text-secondary);font-size:12px;">${esc(a.proxy || '—')}</td>
             <td style="padding:7px 6px;color:${expSoon ? '#d93025' : 'inherit'};">${cookieExp}</td>
             <td style="padding:7px 6px;color:var(--text-secondary);font-size:12px;">${a.lastChecked ? fmtDate(a.lastChecked) : '—'}</td>
+            <td style="padding:7px 6px;font-size:12px;">${a.resetDetectedAt
+                ? `${fmtDate(a.resetDetectedAt)}<br><span style="color:${a.firstStatus === 'active' ? '#d93025' : 'var(--text-secondary)'};">${a.firstStatus === 'reset_password' ? 'was locked on 1st check' : 'locked after ' + ((RC_BADGES[a.firstStatus] || [, a.firstStatus])[1])}</span>`
+                : '—'}</td>
             <td style="padding:7px 6px;white-space:nowrap;">
                 <button class="btn btn-xs btn-ghost" onclick="rcCopy(${a.id},'proxy')" title="Copy full proxy (host:port:user:pass)">Proxy</button>
                 <button class="btn btn-xs btn-ghost" onclick="rcCopy(${a.id},'cookie')" title="Copy full cookie string">Cookie</button>

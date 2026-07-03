@@ -185,8 +185,18 @@ function startCheck(ids) {
         const worker = async () => {
             while (i < targets.length) {
                 const acc = targets[i++];
-                try { Object.assign(acc, await checkAccount(acc, s)); }
-                catch (e) { Object.assign(acc, { status: 'proxy_error', lastChecked: nowISO(), error: (e.message || 'error').slice(0, 120) }); }
+                let res;
+                try { res = await checkAccount(acc, s); }
+                catch (e) { res = { status: 'proxy_error', lastChecked: nowISO(), error: (e.message || 'error').slice(0, 120) }; }
+                // Reset-password timeline: was it already locked when we first reached it, or
+                // did it lock only after our checks? (firstStatus === 'reset_password' means it
+                // was locked on first contact = pre-existing; anything else = appeared after.)
+                if (!acc.firstCheckedAt) { acc.firstCheckedAt = res.lastChecked; acc.firstStatus = res.status; }
+                if (res.status === 'reset_password' && !acc.resetDetectedAt) {
+                    acc.resetDetectedAt = res.lastChecked;
+                    acc.resetFirstStatus = acc.firstStatus; // status at first contact
+                }
+                Object.assign(acc, res);
                 job.done++;
                 if (job.done % 10 === 0) save(s);
             }
@@ -280,6 +290,8 @@ function listPublic() {
             cookieExpiry: a.cookieExpiry, claimed: a.claimed,
             proxy: p ? `${p.host}:${p.port}` : null,
             lastChecked: a.lastChecked, error: a.error,
+            resetDetectedAt: a.resetDetectedAt || null, resetFirstStatus: a.resetFirstStatus || null,
+            firstCheckedAt: a.firstCheckedAt || null, firstStatus: a.firstStatus || null,
         };
     });
     return {
