@@ -486,6 +486,7 @@
                     </select>
                     <input type="text" class="input" id="rcSearch" placeholder="Search username..." style="width:180px;padding:6px 10px;" oninput="rcRender()">
                     <button class="btn btn-ghost btn-sm" onclick="rcExport()">Export CSV</button>
+                    <button class="btn btn-ghost btn-sm" onclick="rcExportDolphin()" title="Export selected (or current filter) as a Dolphin Anty import file">Export to Dolphin</button>
                     <button class="btn btn-ghost btn-sm" onclick="rcDeleteSelected()" style="margin-left:auto;">Delete selected</button>
                 </div>
 
@@ -504,6 +505,7 @@
                                 <th style="padding:8px 6px;">Proxy</th>
                                 <th style="padding:8px 6px;">Cookie exp.</th>
                                 <th style="padding:8px 6px;">Checked</th>
+                                <th style="padding:8px 6px;">Copy</th>
                                 <th style="padding:8px 6px;">Note</th>
                             </tr>
                         </thead>

@@ -315,6 +315,52 @@ function exportCsv() {
     return rows.map(r => r.join(',')).join('\n');
 }
 
+// ---- Reveal secrets (own data) for one-click copy ----
+function revealValue(id, what) {
+    const s = load();
+    const a = s.accounts.find(x => x.id === id);
+    if (!a) return null;
+    if (what === 'cookie') return a.cookieHeader || '';
+    if (what === 'proxy') {
+        const p = s.proxies.find(x => x.id === a.proxyId);
+        return p ? `${p.host}:${p.port}:${p.user}:${p.pass}` : '';
+    }
+    return null;
+}
+
+// ---- Dolphin Anty export (XLSX matching their import template) ----
+// Cookie column = JSON array of cookie objects; Proxy = login:password@host:port.
+function dolphinCookies(cookieHeader) {
+    return (cookieHeader || '').split('; ').filter(Boolean).map(pair => {
+        const i = pair.indexOf('=');
+        return { name: pair.slice(0, i), value: pair.slice(i + 1), domain: '.reddit.com', path: '/', httpOnly: true, secure: true };
+    });
+}
+function exportDolphin({ ids, status } = {}) {
+    const XLSX = require('xlsx');
+    const s = load();
+    let accts = s.accounts;
+    if (ids && ids.length) accts = accts.filter(a => ids.includes(a.id));
+    if (status) accts = accts.filter(a => (a.status || 'unchecked') === status);
+    const pById = new Map(s.proxies.map(p => [p.id, p]));
+    const rows = [['Profile name', 'Cookie', 'Proxy type', 'Proxy', 'User Agent', 'Notes']];
+    for (const a of accts) {
+        const p = pById.get(a.proxyId);
+        rows.push([
+            a.username || a.filename || ('reddit_' + a.id),
+            JSON.stringify(dolphinCookies(a.cookieHeader)),
+            p ? 'socks5' : '',
+            p ? `${p.user}:${p.pass}@${p.host}:${p.port}` : '',
+            UA,
+            [a.status, a.karmaTotal != null ? `karma ${a.karmaTotal}` : '', a.lastActivity ? `last ${a.lastActivity.slice(0, 10)}` : ''].filter(Boolean).join(' | '),
+        ]);
+    }
+    const ws = XLSX.utils.aoa_to_sheet(rows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Accounts');
+    return XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+}
+
 // ---- HTTP router (mounted at /api/rc/*) ----
 function readJson(req) {
     return new Promise((r) => { let b = ''; req.on('data', c => b += c); req.on('end', () => { try { r(JSON.parse(b || '{}')); } catch { r({}); } }); });
@@ -337,6 +383,16 @@ async function handle(req, res, parsed) {
         if (p === '/api/rc/export' && req.method === 'GET') {
             res.writeHead(200, { 'Content-Type': 'text/csv', 'Content-Disposition': 'attachment; filename=reddit_accounts.csv' });
             return res.end(exportCsv());
+        }
+        if (p === '/api/rc/reveal' && req.method === 'GET') {
+            const v = revealValue(Number(parsed.searchParams.get('id')), parsed.searchParams.get('what'));
+            return v == null ? send(404, { error: 'not found' }) : send(200, { value: v });
+        }
+        if (p === '/api/rc/export-dolphin' && req.method === 'GET') {
+            const idsP = parsed.searchParams.get('ids');
+            const buf = exportDolphin({ ids: idsP ? idsP.split(',').map(Number) : null, status: parsed.searchParams.get('status') });
+            res.writeHead(200, { 'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'Content-Disposition': 'attachment; filename=dolphin_import.xlsx' });
+            return res.end(buf);
         }
         send(404, { error: 'unknown rc route' });
     } catch (e) { send(500, { error: e.message }); }

@@ -13,6 +13,7 @@
   "type": "commonjs",
   "dependencies": {
     "proxy-chain": "^2.5.9",
-    "puppeteer-core": "^24.40.0"
+    "puppeteer-core": "^24.40.0",
+    "xlsx": "^0.18.5"
   }
 }

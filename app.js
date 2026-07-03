@@ -538,6 +538,10 @@ function rcRender() {
             <td style="padding:7px 6px;color:var(--text-secondary);font-size:12px;">${esc(a.proxy || '—')}</td>
             <td style="padding:7px 6px;color:${expSoon ? '#d93025' : 'inherit'};">${cookieExp}</td>
             <td style="padding:7px 6px;color:var(--text-secondary);font-size:12px;">${a.lastChecked ? fmtDate(a.lastChecked) : '—'}</td>
+            <td style="padding:7px 6px;white-space:nowrap;">
+                <button class="btn btn-xs btn-ghost" onclick="rcCopy(${a.id},'proxy')" title="Copy full proxy (host:port:user:pass)">Proxy</button>
+                <button class="btn btn-xs btn-ghost" onclick="rcCopy(${a.id},'cookie')" title="Copy full cookie string">Cookie</button>
+            </td>
             <td style="padding:7px 6px;color:var(--text-secondary);font-size:12px;">${esc(a.error || '')}</td>
         </tr>`;
     }).join('');
@@ -601,6 +605,25 @@ function rcStartPolling() {
 }
 
 function rcExport() { window.location = `${SERVER}/api/rc/export`; }
+
+async function rcCopy(id, what) {
+    try {
+        const r = await (await fetch(`${SERVER}/api/rc/reveal?id=${id}&what=${what}`)).json();
+        if (!r.value) return toast('warning', 'Nothing to copy', `No ${what} available for this account.`);
+        await navigator.clipboard.writeText(r.value);
+        toast('success', 'Copied', what === 'proxy' ? 'Full proxy copied (host:port:user:pass).' : 'Full cookie string copied.');
+    } catch (e) { toast('error', 'Copy failed', e.message); }
+}
+
+// Export selected rows (or the current status filter) as a Dolphin Anty import file.
+function rcExportDolphin() {
+    const sel = rcSelectedIds();
+    const filter = document.getElementById('rcFilter').value;
+    const params = [];
+    if (sel.length) params.push('ids=' + sel.join(','));
+    else if (filter) params.push('status=' + filter);
+    window.location = `${SERVER}/api/rc/export-dolphin${params.length ? '?' + params.join('&') : ''}`;
+}
 
 async function rcDeleteSelected() {
     const ids = rcSelectedIds();
