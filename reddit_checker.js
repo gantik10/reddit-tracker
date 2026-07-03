@@ -51,15 +51,39 @@ function parseCookieFile(text) {
     };
 }
 
-// SOCKS5 proxy lines: host:port:user:pass  (user:pass optional)
+// Accepts both common SOCKS5 layouts:
+//   host:port:user:pass   and   user:pass@host:port   (proxy-seller style),
+// with an optional socks5:// scheme. The side whose first token looks like a
+// hostname/IP is treated as host:port; the other side is the credentials.
+function looksLikeServer(s) {
+    const h = (s.split(':')[0] || '');
+    return (/[a-zA-Z]/.test(h) && h.includes('.')) || /^\d{1,3}(\.\d{1,3}){3}$/.test(h);
+}
+function parseProxyLine(raw) {
+    let line = (raw || '').trim().replace(/^\w+:\/\//, '');
+    if (!line) return null;
+    let host, port, user = '', pass = '';
+    if (line.includes('@')) {
+        const at = line.split('@');
+        const left = at[0], right = at.slice(1).join('@');
+        let server, cred;
+        if (looksLikeServer(right)) { server = right; cred = left; }
+        else if (looksLikeServer(left)) { server = left; cred = right; }
+        else { server = right; cred = left; } // default: user:pass@host:port
+        [host, port] = server.split(':');
+        const cp = cred.split(':'); user = cp[0] || ''; pass = cp[1] || '';
+    } else {
+        const parts = line.split(':');
+        host = parts[0]; port = parts[1]; user = parts[2] || ''; pass = parts[3] || '';
+    }
+    if (!host || !port) return null;
+    return { host, port, user, pass };
+}
 function parseProxies(text) {
     const out = [];
     for (const raw of text.split(/\r?\n/)) {
-        const line = raw.trim();
-        if (!line) continue;
-        const parts = line.split(':');
-        if (parts.length < 2) continue;
-        out.push({ host: parts[0], port: parts[1], user: parts[2] || '', pass: parts[3] || '' });
+        const p = parseProxyLine(raw);
+        if (p) out.push(p);
     }
     return out;
 }
