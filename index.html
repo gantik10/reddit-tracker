@@ -37,6 +37,7 @@
                 <button class="btn btn-ghost" id="tasksNavBtn" onclick="openTaskBoard()">Tasks</button>
                 <button class="btn btn-ghost" onclick="openCommentGen()">Comments</button>
                 <button class="btn btn-ghost" onclick="openSubSearch()">Search</button>
+                <button class="btn btn-ghost" onclick="openRedditChecker()">Reddit Checker</button>
                 <button class="btn btn-ghost" onclick="openUpvoteShop()" id="upvoteNavBtn" style="display:none">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
                     Buy Votes
@@ -450,6 +451,89 @@
                 <div class="ss-results" id="ssSavedList"></div>
             </div>
         </main>
+
+        <!-- Reddit Checker -->
+        <main class="main-content hidden" id="redditCheckerView">
+            <div class="tb-header">
+                <div class="tb-header-left">
+                    <button class="btn-back" onclick="goHome()">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>
+                        Home
+                    </button>
+                    <h1 class="tb-title">Reddit Checker</h1>
+                </div>
+            </div>
+
+            <div style="padding:16px 24px;">
+                <div id="rcStats" style="display:flex;gap:18px;flex-wrap:wrap;margin-bottom:14px;font-size:13px;color:var(--text-secondary);"></div>
+
+                <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:14px;">
+                    <button class="btn btn-primary btn-sm" onclick="document.getElementById('rcZipInput').click()">Import Accounts (ZIP)</button>
+                    <input type="file" id="rcZipInput" accept=".zip" style="display:none" onchange="rcImportAccounts(this)">
+                    <button class="btn btn-ghost btn-sm" onclick="openModal('rcProxyModal')">Import Proxies</button>
+                    <span style="width:1px;height:22px;background:var(--border);"></span>
+                    <button class="btn btn-primary btn-sm" onclick="rcCheck('all')" id="rcCheckAllBtn">Check All</button>
+                    <button class="btn btn-ghost btn-sm" onclick="rcCheck('selected')">Check Selected</button>
+                    <span style="width:1px;height:22px;background:var(--border);"></span>
+                    <select class="input" id="rcFilter" style="width:auto;padding:6px 10px;" onchange="rcRender()">
+                        <option value="">All statuses</option>
+                        <option value="active">Active</option>
+                        <option value="suspended">Suspended / banned</option>
+                        <option value="cookie_expired">Cookie expired</option>
+                        <option value="proxy_error">Proxy error</option>
+                        <option value="no_proxy">No proxy</option>
+                        <option value="unchecked">Unchecked</option>
+                    </select>
+                    <input type="text" class="input" id="rcSearch" placeholder="Search username..." style="width:180px;padding:6px 10px;" oninput="rcRender()">
+                    <button class="btn btn-ghost btn-sm" onclick="rcExport()">Export CSV</button>
+                    <button class="btn btn-ghost btn-sm" onclick="rcDeleteSelected()" style="margin-left:auto;">Delete selected</button>
+                </div>
+
+                <div id="rcProgress" class="hidden" style="margin-bottom:12px;font-size:13px;color:var(--primary);"></div>
+
+                <div style="overflow-x:auto;">
+                    <table class="rc-table" style="width:100%;border-collapse:collapse;font-size:13px;">
+                        <thead>
+                            <tr style="text-align:left;color:var(--text-secondary);border-bottom:1px solid var(--border);">
+                                <th style="padding:8px 6px;"><input type="checkbox" id="rcSelAll" onchange="rcToggleAll(this)"></th>
+                                <th style="padding:8px 6px;">Username</th>
+                                <th style="padding:8px 6px;">Status</th>
+                                <th style="padding:8px 6px;">Karma</th>
+                                <th style="padding:8px 6px;">Last activity</th>
+                                <th style="padding:8px 6px;">Created</th>
+                                <th style="padding:8px 6px;">Proxy</th>
+                                <th style="padding:8px 6px;">Cookie exp.</th>
+                                <th style="padding:8px 6px;">Checked</th>
+                                <th style="padding:8px 6px;">Note</th>
+                            </tr>
+                        </thead>
+                        <tbody id="rcTableBody"></tbody>
+                    </table>
+                </div>
+                <div id="rcEmpty" class="empty-keywords" style="margin-top:16px;">No accounts yet. Import a ZIP of cookie files and a proxy list to begin.</div>
+            </div>
+        </main>
+
+        <!-- Reddit Checker: import proxies -->
+        <div class="modal-overlay" id="rcProxyModal">
+            <div class="modal modal-sm">
+                <div class="modal-header">
+                    <h3>Import Proxies</h3>
+                    <button class="modal-close" onclick="closeModal('rcProxyModal')">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <div class="form-group">
+                        <label>SOCKS5 proxies — one per line: <code>host:port:user:pass</code></label>
+                        <textarea class="input" id="rcProxyText" rows="10" placeholder="res.proxy-seller.com:10001:user:pass&#10;res.proxy-seller.com:10002:user:pass"></textarea>
+                        <p class="settings-hint">Each account is bound 1:1 to the next free proxy (sticky forever). Add at least as many proxies as accounts.</p>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-ghost" onclick="closeModal('rcProxyModal')">Cancel</button>
+                    <button class="btn btn-primary" onclick="rcSaveProxies()">Import</button>
+                </div>
+            </div>
+        </div>
 
     <!-- ===== MODALS ===== -->
 

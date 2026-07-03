@@ -8,6 +8,7 @@ const path = require('path');
 const { execSync, spawn } = require('child_process');
 const puppeteer = require('puppeteer-core');
 const proxyChain = require('proxy-chain');
+const redditChecker = require('./reddit_checker');
 
 const PORT = process.env.PORT || 3002;
 
@@ -545,6 +546,9 @@ const server = http.createServer(async (req, res) => {
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
 
     if (req.method === 'OPTIONS') { res.writeHead(204); res.end(); return; }
+
+    // --- Reddit Checker feature (accounts + proxies live server-side) ---
+    if (parsed.pathname.startsWith('/api/rc/')) return redditChecker.handle(req, res, parsed);
 
     // --- Shared data storage ---
     const DATA_FILE = path.join(__dirname, 'data.json');

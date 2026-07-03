@@ -469,10 +469,146 @@ themeToggle.addEventListener('click', () => applyTheme(!document.documentElement
 // ==========================================
 function goHome() {
     currentSubId = null;
+    document.querySelectorAll('.main-content').forEach(v => v.classList.add('hidden'));
     document.getElementById('homeView').classList.remove('hidden');
-    document.getElementById('detailView').classList.add('hidden');
     document.getElementById('addSubredditBtn').classList.remove('hidden');
     renderHome();
+}
+
+// ==========================================
+//  REDDIT CHECKER
+// ==========================================
+let rcData = { accounts: [], counts: {}, job: {} };
+let rcPollTimer = null;
+
+function openRedditChecker() {
+    currentSubId = null;
+    document.querySelectorAll('.main-content').forEach(v => v.classList.add('hidden'));
+    document.getElementById('redditCheckerView').classList.remove('hidden');
+    document.getElementById('addSubredditBtn').classList.add('hidden');
+    rcLoad();
+}
+
+async function rcLoad() {
+    try {
+        const res = await fetch(`${SERVER}/api/rc/list`);
+        rcData = await res.json();
+        rcRender();
+        if (rcData.job && rcData.job.running) rcStartPolling();
+    } catch (e) { toast('error', 'Load failed', e.message); }
+}
+
+const RC_BADGES = {
+    active: ['#0f9d58', 'Active'], suspended: ['#d93025', 'Suspended'],
+    cookie_expired: ['#b06000', 'Cookie expired'], proxy_error: ['#8a6d00', 'Proxy error'],
+    no_proxy: ['#666', 'No proxy'], unchecked: ['#888', 'Unchecked'],
+};
+function rcBadge(s) {
+    const [c, label] = RC_BADGES[s] || ['#888', s || 'unchecked'];
+    return `<span style="display:inline-block;padding:2px 8px;border-radius:10px;background:${c}22;color:${c};font-weight:600;font-size:12px;">${label}</span>`;
+}
+
+function rcRender() {
+    const filter = document.getElementById('rcFilter').value;
+    const q = (document.getElementById('rcSearch').value || '').toLowerCase();
+    const c = rcData.counts || {};
+    document.getElementById('rcStats').innerHTML = [
+        `<b>${c.accounts || 0}</b> accounts`,
+        `<b>${c.proxies || 0}</b> proxies`,
+        `<b>${c.boundProxies || 0}</b> bound`,
+        `<b>${c.freeProxies || 0}</b> free`,
+        (c.withoutProxy ? `<span style="color:#d93025;"><b>${c.withoutProxy}</b> without proxy</span>` : ''),
+    ].filter(Boolean).map(s => `<span>${s}</span>`).join('');
+
+    let rows = rcData.accounts || [];
+    if (filter) rows = rows.filter(a => (a.status || 'unchecked') === filter);
+    if (q) rows = rows.filter(a => (a.username || a.filename || '').toLowerCase().includes(q));
+
+    document.getElementById('rcEmpty').style.display = (rcData.accounts || []).length ? 'none' : '';
+    document.getElementById('rcTableBody').innerHTML = rows.map(a => {
+        const cookieExp = a.cookieExpiry ? fmtDate(new Date(a.cookieExpiry * 1000).toISOString()) : '—';
+        const expSoon = a.cookieExpiry && a.cookieExpiry * 1000 < Date.now();
+        return `<tr style="border-bottom:1px solid var(--border);">
+            <td style="padding:7px 6px;"><input type="checkbox" class="rc-row" value="${a.id}"></td>
+            <td style="padding:7px 6px;font-weight:600;">${esc(a.username || '—')}</td>
+            <td style="padding:7px 6px;">${rcBadge(a.status)}</td>
+            <td style="padding:7px 6px;">${a.karmaTotal != null ? fmtNumAlways(a.karmaTotal) : '—'}</td>
+            <td style="padding:7px 6px;">${a.lastActivity ? fmtDate(a.lastActivity) : '—'}</td>
+            <td style="padding:7px 6px;">${a.accountCreated ? new Date(a.accountCreated).getFullYear() : (a.claimed?.year || '—')}</td>
+            <td style="padding:7px 6px;color:var(--text-secondary);font-size:12px;">${esc(a.proxy || '—')}</td>
+            <td style="padding:7px 6px;color:${expSoon ? '#d93025' : 'inherit'};">${cookieExp}</td>
+            <td style="padding:7px 6px;color:var(--text-secondary);font-size:12px;">${a.lastChecked ? fmtDate(a.lastChecked) : '—'}</td>
+            <td style="padding:7px 6px;color:var(--text-secondary);font-size:12px;">${esc(a.error || '')}</td>
+        </tr>`;
+    }).join('');
+}
+
+function rcToggleAll(cb) { document.querySelectorAll('.rc-row').forEach(x => x.checked = cb.checked); }
+function rcSelectedIds() { return [...document.querySelectorAll('.rc-row:checked')].map(x => Number(x.value)); }
+
+async function rcImportAccounts(input) {
+    const file = input.files[0];
+    if (!file) return;
+    toast('info', 'Uploading…', 'Parsing cookie files, this can take a moment.');
+    try {
+        const res = await fetch(`${SERVER}/api/rc/import-accounts`, { method: 'POST', headers: { 'Content-Type': 'application/zip' }, body: file });
+        const r = await res.json();
+        if (r.error) return toast('error', 'Import failed', r.error);
+        toast('success', 'Accounts imported', `Added ${r.added}, bound ${r.boundToProxy} to proxies, ${r.duplicatesSkipped} dupes${r.accountsWithoutProxy ? `, ${r.accountsWithoutProxy} still need a proxy` : ''}.`);
+        input.value = '';
+        rcLoad();
+    } catch (e) { toast('error', 'Import failed', e.message); }
+}
+
+async function rcSaveProxies() {
+    const text = document.getElementById('rcProxyText').value.trim();
+    if (!text) return;
+    try {
+        const res = await fetch(`${SERVER}/api/rc/import-proxies`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text }) });
+        const r = await res.json();
+        closeModal('rcProxyModal');
+        document.getElementById('rcProxyText').value = '';
+        toast('success', 'Proxies imported', `Added ${r.added}, bound ${r.boundToWaitingAccounts} waiting accounts. ${r.freeProxies} free.`);
+        rcLoad();
+    } catch (e) { toast('error', 'Import failed', e.message); }
+}
+
+async function rcCheck(which) {
+    const ids = which === 'selected' ? rcSelectedIds() : 'all';
+    if (which === 'selected' && !ids.length) return toast('warning', 'Nothing selected', 'Tick some rows first.');
+    try {
+        await fetch(`${SERVER}/api/rc/check`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ids }) });
+        rcStartPolling();
+    } catch (e) { toast('error', 'Check failed', e.message); }
+}
+
+function rcStartPolling() {
+    const prog = document.getElementById('rcProgress');
+    prog.classList.remove('hidden');
+    if (rcPollTimer) clearInterval(rcPollTimer);
+    rcPollTimer = setInterval(async () => {
+        try {
+            const j = await (await fetch(`${SERVER}/api/rc/check-status`)).json();
+            prog.textContent = `Checking… ${j.done}/${j.total}`;
+            if (!j.running) {
+                clearInterval(rcPollTimer); rcPollTimer = null;
+                prog.textContent = `Done — checked ${j.total}.`;
+                setTimeout(() => prog.classList.add('hidden'), 4000);
+                rcLoad();
+            }
+        } catch { clearInterval(rcPollTimer); rcPollTimer = null; }
+    }, 1500);
+}
+
+function rcExport() { window.location = `${SERVER}/api/rc/export`; }
+
+async function rcDeleteSelected() {
+    const ids = rcSelectedIds();
+    if (!ids.length) return toast('warning', 'Nothing selected', 'Tick some rows first.');
+    if (!confirm(`Delete ${ids.length} account(s)? Their proxies will be freed for reuse.`)) return;
+    await fetch(`${SERVER}/api/rc/delete`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ids }) });
+    toast('success', 'Deleted', `${ids.length} removed.`);
+    rcLoad();
 }
 
 function openSubreddit(id) {
@@ -3263,6 +3399,7 @@ function openTaskBoard() {
     document.getElementById('homeView').classList.add('hidden');
     document.getElementById('detailView').classList.add('hidden');
     document.getElementById('taskBoardView').classList.remove('hidden');
+    document.getElementById('redditCheckerView').classList.add('hidden');
     document.getElementById('addSubredditBtn').classList.add('hidden');
     populateTbFilters();
     renderTaskBoard();
@@ -3754,6 +3891,7 @@ function openSubSearch() {
     document.getElementById('detailView').classList.add('hidden');
     document.getElementById('taskBoardView').classList.add('hidden');
     document.getElementById('commentGenView').classList.add('hidden');
+    document.getElementById('redditCheckerView').classList.add('hidden');
     document.getElementById('subSearchView').classList.remove('hidden');
     document.getElementById('addSubredditBtn').classList.add('hidden');
     ssSetTab('results');
@@ -4074,6 +4212,7 @@ function openCommentGen() {
     document.getElementById('taskBoardView').classList.add('hidden');
     document.getElementById('commentGenView').classList.add('hidden');
     document.getElementById('commentGenView').classList.remove('hidden');
+    document.getElementById('redditCheckerView').classList.add('hidden');
     document.getElementById('addSubredditBtn').classList.add('hidden');
     const wizPanel = document.getElementById('ccWizardPanel');
     if (wizPanel) wizPanel.classList.add('hidden');
