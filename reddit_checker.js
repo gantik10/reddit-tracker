@@ -127,7 +127,12 @@ async function checkAccount(acc, s) {
         return { status: 'cookie_expired', lastChecked: nowISO(), error: 'reddit_session expired' };
     }
 
-    const me = await runCurl(proxy, acc.cookieHeader, 'https://www.reddit.com/api/me.json');
+    // Retry the (dedicated) proxy a few times — residential IPs blip; one timeout isn't a failure.
+    let me = { ok: false, error: 'proxy/network error' };
+    for (let attempt = 0; attempt < 3; attempt++) {
+        me = await runCurl(proxy, acc.cookieHeader, 'https://www.reddit.com/api/me.json');
+        if (me.ok) break;
+    }
     if (!me.ok) return { status: 'proxy_error', lastChecked: nowISO(), error: me.error || 'proxy/network error' };
     const body = (me.body || '').trim();
     if (!body || body[0] === '<') return { status: 'proxy_error', lastChecked: nowISO(), error: 'blocked/HTML (proxy IP flagged)' };
