@@ -140,17 +140,25 @@ async function checkAccount(acc, s) {
     let j;
     try { j = JSON.parse(body); } catch { return { status: 'proxy_error', lastChecked: nowISO(), error: 'non-JSON response' }; }
     const d = (j && j.data) ? j.data : j;
-    if (!d || !d.name) return { status: 'cookie_expired', lastChecked: nowISO(), error: 'logged out (cookie dead)' };
+    // Cookie present but Reddit won't authenticate it → can't log in via cookies.
+    if (!d || !d.name) return { status: 'login_failed', lastChecked: nowISO(), error: 'cookie rejected — cannot log in' };
 
     const username = d.name;
     const karmaLink = d.link_karma || 0;
     const karmaComment = d.comment_karma || 0;
     const karmaTotal = (d.total_karma != null) ? d.total_karma : (karmaLink + karmaComment);
     const accountCreated = d.created_utc ? new Date(d.created_utc * 1000).toISOString() : null;
-    const status = d.is_suspended ? 'suspended' : 'active';
+
+    // force_password_reset = Reddit locked the account for "unusual activity". It is NOT a
+    // ban — it's still reachable in a browser and recoverable via a password reset, so it
+    // gets its own status (checked before is_suspended, since a lock sets both true).
+    let status;
+    if (d.force_password_reset) status = 'reset_password';
+    else if (d.is_suspended) status = 'suspended';
+    else status = 'active';
 
     let lastActivity = null;
-    if (!d.is_suspended) {
+    if (status === 'active' || status === 'reset_password') {
         const ov = await runCurl(proxy, acc.cookieHeader,
             `https://www.reddit.com/user/${encodeURIComponent(username)}/overview.json?limit=1&sort=new&raw_json=1`);
         if (ov.ok) {

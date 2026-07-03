@@ -499,7 +499,8 @@ async function rcLoad() {
 }
 
 const RC_BADGES = {
-    active: ['#0f9d58', 'Active'], suspended: ['#d93025', 'Suspended'],
+    active: ['#0f9d58', 'Active'], reset_password: ['#c47f00', 'Reset Password'],
+    suspended: ['#d93025', 'Suspended'], login_failed: ['#8a1f8a', 'Login failed'],
     cookie_expired: ['#b06000', 'Cookie expired'], proxy_error: ['#8a6d00', 'Proxy error'],
     no_proxy: ['#666', 'No proxy'], unchecked: ['#888', 'Unchecked'],
 };
