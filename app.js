@@ -534,6 +534,7 @@ function rcBadge(s) {
 const RC_KARMA_MIN = 50;
 const RC_IDLE_DAYS = 60; // ~2 months
 function rcIsInteresting(a) {
+    if (a.status !== 'active') return false; // only active accounts can be interesting
     if ((a.karmaTotal ?? 0) < RC_KARMA_MIN) return false;
     if (!a.lastActivity) return false;
     return (Date.now() - new Date(a.lastActivity).getTime()) >= RC_IDLE_DAYS * 86400000;
