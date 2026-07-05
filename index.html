@@ -465,10 +465,7 @@
             </div>
 
             <div style="padding:16px 24px;">
-                <div class="mp-tabs" style="display:flex;gap:6px;margin-bottom:14px;">
-                    <button class="mp-tab active" id="rcTabPool" onclick="rcSetTab('pool')">Check Pool</button>
-                    <button class="mp-tab" id="rcTabSaved" onclick="rcSetTab('saved')">Saved (for purchase)</button>
-                </div>
+                <div id="rcFolders" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px;"></div>
 
                 <div id="rcStats" style="display:flex;gap:18px;flex-wrap:wrap;margin-bottom:6px;font-size:13px;color:var(--text-secondary);"></div>
                 <div id="rcProxyHint" style="margin-bottom:12px;font-size:12px;color:var(--text-secondary);"></div>
@@ -481,8 +478,9 @@
                     <button class="btn btn-primary btn-sm" onclick="rcCheck('all')" id="rcCheckAllBtn">Check All</button>
                     <button class="btn btn-ghost btn-sm" onclick="rcCheck('selected')">Check Selected</button>
                     <span style="width:1px;height:22px;background:var(--border);"></span>
-                    <button class="btn btn-primary btn-sm" id="rcSaveBtn" onclick="rcSaveSelected(true)" title="Move selected accounts to the Saved tab">★ Save selected</button>
-                    <button class="btn btn-ghost btn-sm" id="rcUnsaveBtn" onclick="rcSaveSelected(false)" style="display:none;">Move back to pool</button>
+                    <button class="btn btn-primary btn-sm" id="rcSaveBtn" onclick="rcSaveSelected(true)" title="Mark selected as Saved (keepers)">★ Save selected</button>
+                    <button class="btn btn-ghost btn-sm" id="rcUnsaveBtn" onclick="rcSaveSelected(false)" style="display:none;">Unsave</button>
+                    <button class="btn btn-ghost btn-sm" onclick="rcMoveToFolder()" title="Move selected accounts into a folder">Move to folder…</button>
                     <span style="width:1px;height:22px;background:var(--border);"></span>
                     <select class="input" id="rcFilter" style="width:auto;padding:6px 10px;" onchange="rcRender()">
                         <option value="">All statuses</option>
@@ -495,7 +493,6 @@
                         <option value="no_proxy">No proxy</option>
                         <option value="unchecked">Unchecked</option>
                     </select>
-                    <select class="input" id="rcBatch" style="width:auto;padding:6px 10px;" onchange="rcRender()"><option value="">All batches</option></select>
                     <select class="input" id="rcSort" style="width:auto;padding:6px 10px;" onchange="rcRender()">
                         <option value="status">Sort: Status</option>
                         <option value="karma">Karma (high→low)</option>
@@ -519,7 +516,7 @@
                             <tr style="text-align:left;color:var(--text-secondary);border-bottom:1px solid var(--border);">
                                 <th style="padding:8px 6px;"><input type="checkbox" id="rcSelAll" onchange="rcToggleAll(this)"></th>
                                 <th style="padding:8px 6px;">Username</th>
-                                <th style="padding:8px 6px;">Batch</th>
+                                <th style="padding:8px 6px;">Folder</th>
                                 <th style="padding:8px 6px;">Status</th>
                                 <th style="padding:8px 6px;">Karma</th>
                                 <th style="padding:8px 6px;">Last activity</th>

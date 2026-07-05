@@ -480,15 +480,26 @@ function goHome() {
 // ==========================================
 let rcData = { accounts: [], counts: {}, job: {} };
 let rcPollTimer = null;
-let rcTab = 'pool'; // 'pool' = accounts being reviewed, 'saved' = kept for purchase
+let rcView = 'all'; // 'all' | 'saved' | 'folder:<name>'
 
-function rcSetTab(tab) {
-    rcTab = tab;
-    document.getElementById('rcTabPool').classList.toggle('active', tab === 'pool');
-    document.getElementById('rcTabSaved').classList.toggle('active', tab === 'saved');
-    document.getElementById('rcSaveBtn').style.display = tab === 'pool' ? '' : 'none';
-    document.getElementById('rcUnsaveBtn').style.display = tab === 'saved' ? '' : 'none';
+function rcSetView(view) {
+    rcView = view;
+    document.getElementById('rcSaveBtn').style.display = view === 'saved' ? 'none' : '';
+    document.getElementById('rcUnsaveBtn').style.display = view === 'saved' ? '' : 'none';
     rcRender();
+}
+
+// Folder chips: All accounts + ★ Saved + one chip per folder (run) + Unsorted.
+function rcRenderFolders() {
+    const accts = rcData.accounts || [];
+    const savedN = accts.filter(a => a.saved).length;
+    const folders = {};
+    accts.forEach(a => { const f = a.batch || ''; folders[f] = (folders[f] || 0) + 1; });
+    const chip = (view, label, count) => `<button class="mp-tab ${rcView === view ? 'active' : ''}" data-view="${esc(view)}" onclick="rcSetView(this.dataset.view)">${esc(label)} <span style="opacity:.55;">${count}</span></button>`;
+    let html = chip('all', 'All accounts', accts.length) + chip('saved', '★ Saved', savedN);
+    Object.keys(folders).filter(f => f).sort().forEach(f => { html += chip('folder:' + f, f, folders[f]); });
+    if (folders['']) html += chip('folder:', 'Unsorted', folders['']);
+    document.getElementById('rcFolders').innerHTML = html;
 }
 
 function openRedditChecker() {
@@ -549,18 +560,14 @@ function rcSortRows(rows, sort) {
 
 function rcRender() {
     const filter = document.getElementById('rcFilter').value;
-    const batchF = document.getElementById('rcBatch').value;
     const sort = document.getElementById('rcSort').value;
     const q = (document.getElementById('rcSearch').value || '').toLowerCase();
     const c = rcData.counts || {};
 
-    // Batch dropdown options (keep current selection)
-    const batchSel = document.getElementById('rcBatch');
-    const opts = ['<option value="">All batches</option>'].concat((rcData.batches || []).map(b => `<option value="${esc(b)}">${esc(b)}</option>`)).join('');
-    if (batchSel.dataset.sig !== (rcData.batches || []).join('|')) { batchSel.innerHTML = opts; batchSel.value = batchF; batchSel.dataset.sig = (rcData.batches || []).join('|'); }
+    rcRenderFolders();
 
     document.getElementById('rcStats').innerHTML = [
-        `<b>${c.pool || 0}</b> in pool`,
+        `<b>${c.accounts || 0}</b> accounts`,
         `<b>${c.saved || 0}</b> saved`,
         `<b>${c.proxies || 0}</b> proxies`,
         `<b>${c.boundProxies || 0}</b> bound`,
@@ -568,18 +575,19 @@ function rcRender() {
         (c.withoutProxy ? `<span style="color:#d93025;"><b>${c.withoutProxy}</b> without proxy</span>` : ''),
     ].filter(Boolean).map(s => `<span>${s}</span>`).join('');
     document.getElementById('rcProxyHint').textContent = c.freeProxies
-        ? `${c.freeProxies} free proxies available for the next import. Deleting an account frees its proxy; saved accounts keep theirs.`
-        : 'No free proxies — import more before adding new accounts, or delete/free some (deleting an account releases its proxy).';
+        ? `${c.freeProxies} unused proxies available for the next import. Proxies are single-use: deleting an account also deletes its proxy (never reused).`
+        : 'No free proxies — import more before adding new accounts. (Proxies are single-use: deleting an account deletes its proxy too.)';
 
-    let rows = (rcData.accounts || []).filter(a => rcTab === 'saved' ? a.saved : !a.saved);
+    let rows = rcData.accounts || [];
+    if (rcView === 'saved') rows = rows.filter(a => a.saved);
+    else if (rcView.startsWith('folder:')) { const f = rcView.slice(7); rows = rows.filter(a => (a.batch || '') === f); }
     if (filter) rows = rows.filter(a => (a.status || 'unchecked') === filter);
-    if (batchF) rows = rows.filter(a => (a.batch || '') === batchF);
     if (q) rows = rows.filter(a => (a.username || a.filename || '').toLowerCase().includes(q));
     rows = rcSortRows(rows, sort);
 
     document.getElementById('rcEmpty').style.display = rows.length ? 'none' : '';
-    document.getElementById('rcEmpty').textContent = rcTab === 'saved'
-        ? 'No saved accounts yet. In the Check Pool, tick accounts and click "★ Save selected".'
+    document.getElementById('rcEmpty').textContent = rcView === 'saved'
+        ? 'No saved accounts yet. Tick accounts and click "★ Save selected".'
         : 'No accounts here. Import a ZIP of cookie files and a proxy list to begin.';
     document.getElementById('rcTableBody').innerHTML = rows.map(a => {
         const cookieExp = a.cookieExpiry ? fmtDate(new Date(a.cookieExpiry * 1000).toISOString()) : '—';
@@ -615,7 +623,7 @@ async function rcImportAccounts(input) {
     if (!file) return;
     const now = new Date();
     const dflt = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-    const batch = prompt('Name this batch (helps you tell new imports apart):', dflt);
+    const batch = prompt('Name this folder / run (keeps this import separate from others):', dflt);
     if (batch === null) { input.value = ''; return; }
     toast('info', 'Uploading…', 'Parsing cookie files, this can take a moment.');
     try {
@@ -632,7 +640,17 @@ async function rcSaveSelected(saved) {
     const ids = rcSelectedIds();
     if (!ids.length) return toast('warning', 'Nothing selected', 'Tick some rows first.');
     await fetch(`${SERVER}/api/rc/save`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ids, saved }) });
-    toast('success', saved ? 'Saved' : 'Moved to pool', `${ids.length} account(s) ${saved ? 'moved to Saved (for purchase)' : 'moved back to the pool'}.`);
+    toast('success', saved ? 'Saved' : 'Unsaved', `${ids.length} account(s) ${saved ? 'marked Saved' : 'moved back'}.`);
+    rcLoad();
+}
+
+async function rcMoveToFolder() {
+    const ids = rcSelectedIds();
+    if (!ids.length) return toast('warning', 'Nothing selected', 'Tick some rows first.');
+    const folder = prompt(`Move ${ids.length} account(s) to folder (name it — leave blank for Unsorted):`, '');
+    if (folder === null) return;
+    await fetch(`${SERVER}/api/rc/move-folder`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ids, folder }) });
+    toast('success', 'Moved', `${ids.length} account(s) moved to "${folder.trim() || 'Unsorted'}".`);
     rcLoad();
 }
 
@@ -700,9 +718,9 @@ function rcExportDolphin() {
 async function rcDeleteSelected() {
     const ids = rcSelectedIds();
     if (!ids.length) return toast('warning', 'Nothing selected', 'Tick some rows first.');
-    if (!confirm(`Delete ${ids.length} account(s)? Their proxies will be freed for reuse.`)) return;
-    await fetch(`${SERVER}/api/rc/delete`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ids }) });
-    toast('success', 'Deleted', `${ids.length} removed.`);
+    if (!confirm(`Delete ${ids.length} account(s)? Their single-use proxies will be DELETED too (never reused).`)) return;
+    const r = await (await fetch(`${SERVER}/api/rc/delete`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ids }) })).json();
+    toast('success', 'Deleted', `${ids.length} account(s) and ${r.proxiesDeleted || 0} proxies removed.`);
     rcLoad();
 }
 

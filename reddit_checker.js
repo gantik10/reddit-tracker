@@ -323,15 +323,29 @@ function saveAccounts(ids, saved) {
 function deleteAccounts(ids) {
     const s = load();
     const del = new Set(ids);
-    for (const p of s.proxies) if (del.has(p.boundAccountId)) p.boundAccountId = null; // free their proxies
+    // Proxies are SINGLE-USE — one IP per account, forever. When an account is deleted its
+    // proxy is burned, so delete the proxy too. Reusing an IP on another account gets it banned.
+    const before = s.proxies.length;
+    s.proxies = s.proxies.filter(p => !del.has(p.boundAccountId));
+    const proxiesDeleted = before - s.proxies.length;
     s.accounts = s.accounts.filter(a => !del.has(a.id));
     save(s);
-    return { deleted: ids.length, totalAccounts: s.accounts.length };
+    return { deleted: ids.length, proxiesDeleted, totalAccounts: s.accounts.length, totalProxies: s.proxies.length };
+}
+
+function moveFolder(ids, folder) {
+    const s = load();
+    const set = new Set(ids);
+    folder = (folder || '').trim();
+    for (const a of s.accounts) if (set.has(a.id)) a.batch = folder;
+    save(s);
+    return { updated: ids.length, folder };
 }
 
 function clearAll(what) {
     const s = load();
-    if (what === 'accounts' || what === 'all') { s.accounts = []; s.proxies.forEach(p => p.boundAccountId = null); }
+    // Removing accounts also burns their single-use proxies; only never-used (free) proxies remain.
+    if (what === 'accounts' || what === 'all') { s.proxies = s.proxies.filter(p => !p.boundAccountId); s.accounts = []; }
     if (what === 'proxies' || what === 'all') { s.proxies = []; s.accounts.forEach(a => a.proxyId = null); }
     save(s);
     return { ok: true };
@@ -414,6 +428,7 @@ async function handle(req, res, parsed) {
         if (p === '/api/rc/check' && req.method === 'POST') return send(200, startCheck((await readJson(req)).ids || 'all'));
         if (p === '/api/rc/delete' && req.method === 'POST') return send(200, deleteAccounts((await readJson(req)).ids || []));
         if (p === '/api/rc/save' && req.method === 'POST') { const b = await readJson(req); return send(200, saveAccounts(b.ids || [], b.saved)); }
+        if (p === '/api/rc/move-folder' && req.method === 'POST') { const b = await readJson(req); return send(200, moveFolder(b.ids || [], b.folder)); }
         if (p === '/api/rc/clear' && req.method === 'POST') return send(200, clearAll((await readJson(req)).what || 'all'));
         if (p === '/api/rc/export' && req.method === 'GET') {
             res.writeHead(200, { 'Content-Type': 'text/csv', 'Content-Disposition': 'attachment; filename=reddit_accounts.csv' });
