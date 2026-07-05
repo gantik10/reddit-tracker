@@ -129,9 +129,10 @@ async function checkAccount(acc, s) {
 
     // Retry the (dedicated) proxy a few times — residential IPs blip; one timeout isn't a failure.
     let me = { ok: false, error: 'proxy/network error' };
-    for (let attempt = 0; attempt < 3; attempt++) {
+    for (let attempt = 0; attempt < 4; attempt++) {
         me = await runCurl(proxy, acc.cookieHeader, 'https://www.reddit.com/api/me.json');
         if (me.ok) break;
+        await new Promise(r => setTimeout(r, 800)); // let a blipping proxy recover
     }
     if (!me.ok) return { status: 'proxy_error', lastChecked: nowISO(), error: me.error || 'proxy/network error' };
     const body = (me.body || '').trim();
@@ -181,28 +182,42 @@ function startCheck(ids) {
         : s.accounts.filter(a => ids.includes(a.id));
     job = { running: true, total: targets.length, done: 0, startedAt: Date.now() };
     (async () => {
-        let i = 0;
-        const worker = async () => {
-            while (i < targets.length) {
-                const acc = targets[i++];
-                let res;
-                try { res = await checkAccount(acc, s); }
-                catch (e) { res = { status: 'proxy_error', lastChecked: nowISO(), error: (e.message || 'error').slice(0, 120) }; }
-                // Reset-password timeline: was it already locked when we first reached it, or
-                // did it lock only after our checks? (firstStatus === 'reset_password' means it
-                // was locked on first contact = pre-existing; anything else = appeared after.)
-                if (!acc.firstCheckedAt) { acc.firstCheckedAt = res.lastChecked; acc.firstStatus = res.status; }
-                if (res.status === 'reset_password' && !acc.resetDetectedAt) {
-                    acc.resetDetectedAt = res.lastChecked;
-                    acc.resetFirstStatus = acc.firstStatus; // status at first contact
-                }
-                Object.assign(acc, res);
-                job.done++;
-                if (job.done % 10 === 0) save(s);
+        // Reset-password timeline: was it already locked when we first reached it, or did it
+        // lock only after our checks? (firstStatus === 'reset_password' = locked on first contact.)
+        const applyResult = (acc, res) => {
+            if (!acc.firstCheckedAt) { acc.firstCheckedAt = res.lastChecked; acc.firstStatus = res.status; }
+            if (res.status === 'reset_password' && !acc.resetDetectedAt) {
+                acc.resetDetectedAt = res.lastChecked;
+                acc.resetFirstStatus = acc.firstStatus;
             }
+            Object.assign(acc, res);
         };
-        await Promise.all(Array.from({ length: Math.min(CONCURRENCY, targets.length || 1) }, worker));
-        save(s);
+        const runPool = async (list, countsToJob) => {
+            let i = 0;
+            const worker = async () => {
+                while (i < list.length) {
+                    const acc = list[i++];
+                    let res;
+                    try { res = await checkAccount(acc, s); }
+                    catch (e) { res = { status: 'proxy_error', lastChecked: nowISO(), error: (e.message || 'error').slice(0, 120) }; }
+                    applyResult(acc, res);
+                    if (countsToJob) job.done++;
+                    if (job.done % 10 === 0) save(s);
+                }
+            };
+            await Promise.all(Array.from({ length: Math.min(CONCURRENCY, list.length || 1) }, worker));
+            save(s);
+        };
+
+        await runPool(targets, true);
+        // Proxy errors are transient (residential IP blips) — re-check the stuck ones a few
+        // more times to resolve them to a real status.
+        for (let round = 0; round < 3; round++) {
+            const stuck = targets.filter(a => a.status === 'proxy_error');
+            if (!stuck.length) break;
+            await new Promise(r => setTimeout(r, 3000));
+            await runPool(stuck, false);
+        }
         job.running = false;
     })();
     return job;
