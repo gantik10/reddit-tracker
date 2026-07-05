@@ -530,6 +530,24 @@ function rcBadge(s) {
     return `<span style="display:inline-block;padding:2px 8px;border-radius:10px;background:${c}22;color:${c};font-weight:600;font-size:12px;">${label}</span>`;
 }
 
+// "Interesting" = worth keeping: enough karma AND dormant for a while (aged accounts).
+const RC_KARMA_MIN = 50;
+const RC_IDLE_DAYS = 60; // ~2 months
+function rcIsInteresting(a) {
+    if ((a.karmaTotal ?? 0) < RC_KARMA_MIN) return false;
+    if (!a.lastActivity) return false;
+    return (Date.now() - new Date(a.lastActivity).getTime()) >= RC_IDLE_DAYS * 86400000;
+}
+function rcSelectInteresting() {
+    const byId = new Map((rcData.accounts || []).map(a => [a.id, a]));
+    let n = 0;
+    document.querySelectorAll('.rc-row').forEach(cb => {
+        const a = byId.get(Number(cb.value));
+        if (a && rcIsInteresting(a)) { cb.checked = true; n++; }
+    });
+    toast(n ? 'success' : 'info', 'Interesting selected', `${n} account(s) with ${RC_KARMA_MIN}+ karma & 2mo+ idle selected.`);
+}
+
 // Relative time, e.g. "4 months ago", "1 year ago", "3 days ago".
 function rcAgo(iso) {
     if (!iso) return '—';
@@ -581,7 +599,19 @@ function rcRender() {
     let rows = rcData.accounts || [];
     if (rcView === 'saved') rows = rows.filter(a => a.saved);
     else if (rcView.startsWith('folder:')) { const f = rcView.slice(7); rows = rows.filter(a => (a.batch || '') === f); }
-    if (filter) rows = rows.filter(a => (a.status || 'unchecked') === filter);
+
+    // Status breakdown + interesting count for the current view (before status/search filter)
+    const sc = {};
+    let interesting = 0;
+    rows.forEach(a => { const st = a.status || 'unchecked'; sc[st] = (sc[st] || 0) + 1; if (rcIsInteresting(a)) interesting++; });
+    const pills = Object.keys(sc).sort((x, y) => (RC_STATUS_ORDER[x] ?? 9) - (RC_STATUS_ORDER[y] ?? 9))
+        .map(st => `${rcBadge(st)} <b>${sc[st]}</b>`);
+    document.getElementById('rcStatusBar').innerHTML =
+        `<span style="display:inline-flex;align-items:center;gap:5px;padding:3px 10px;border-radius:12px;background:rgba(15,157,88,.14);color:#0f9d58;font-weight:700;">★ Interesting ${interesting}</span>`
+        + pills.map(p => `<span style="display:inline-flex;align-items:center;gap:5px;">${p}</span>`).join('');
+
+    if (filter === 'interesting') rows = rows.filter(rcIsInteresting);
+    else if (filter) rows = rows.filter(a => (a.status || 'unchecked') === filter);
     if (q) rows = rows.filter(a => (a.username || a.filename || '').toLowerCase().includes(q));
     rows = rcSortRows(rows, sort);
 
@@ -592,9 +622,10 @@ function rcRender() {
     document.getElementById('rcTableBody').innerHTML = rows.map(a => {
         const cookieExp = a.cookieExpiry ? fmtDate(new Date(a.cookieExpiry * 1000).toISOString()) : '—';
         const expSoon = a.cookieExpiry && a.cookieExpiry * 1000 < Date.now();
-        return `<tr style="border-bottom:1px solid var(--border);">
+        const hot = rcIsInteresting(a);
+        return `<tr style="border-bottom:1px solid var(--border);${hot ? 'background:rgba(15,157,88,.09);' : ''}">
             <td style="padding:7px 6px;"><input type="checkbox" class="rc-row" value="${a.id}"></td>
-            <td style="padding:7px 6px;font-weight:600;">${esc(a.username || '—')}</td>
+            <td style="padding:7px 6px;font-weight:600;">${hot ? '<span title="50+ karma, 2mo+ idle" style="color:#0f9d58;">★</span> ' : ''}${esc(a.username || '—')}</td>
             <td style="padding:7px 6px;color:var(--text-secondary);font-size:12px;">${esc(a.batch || '—')}</td>
             <td style="padding:7px 6px;">${rcBadge(a.status)}</td>
             <td style="padding:7px 6px;">${a.karmaTotal != null ? fmtNumAlways(a.karmaTotal) : '—'}</td>

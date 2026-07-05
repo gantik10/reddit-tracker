@@ -468,7 +468,8 @@
                 <div id="rcFolders" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px;"></div>
 
                 <div id="rcStats" style="display:flex;gap:18px;flex-wrap:wrap;margin-bottom:6px;font-size:13px;color:var(--text-secondary);"></div>
-                <div id="rcProxyHint" style="margin-bottom:12px;font-size:12px;color:var(--text-secondary);"></div>
+                <div id="rcProxyHint" style="margin-bottom:10px;font-size:12px;color:var(--text-secondary);"></div>
+                <div id="rcStatusBar" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px;"></div>
 
                 <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:14px;">
                     <button class="btn btn-primary btn-sm" onclick="document.getElementById('rcZipInput').click()">Import Accounts (ZIP)</button>
@@ -481,9 +482,11 @@
                     <button class="btn btn-primary btn-sm" id="rcSaveBtn" onclick="rcSaveSelected(true)" title="Mark selected as Saved (keepers)">★ Save selected</button>
                     <button class="btn btn-ghost btn-sm" id="rcUnsaveBtn" onclick="rcSaveSelected(false)" style="display:none;">Unsave</button>
                     <button class="btn btn-ghost btn-sm" onclick="rcMoveToFolder()" title="Move selected accounts into a folder">Move to folder…</button>
+                    <button class="btn btn-ghost btn-sm" onclick="rcSelectInteresting()" title="Tick all interesting accounts (50+ karma, 2mo+ idle)">★ Select interesting</button>
                     <span style="width:1px;height:22px;background:var(--border);"></span>
                     <select class="input" id="rcFilter" style="width:auto;padding:6px 10px;" onchange="rcRender()">
                         <option value="">All statuses</option>
+                        <option value="interesting">★ Interesting (50+ karma, 2mo idle)</option>
                         <option value="active">Active</option>
                         <option value="reset_password">Reset Password</option>
                         <option value="suspended">Suspended / banned</option>
