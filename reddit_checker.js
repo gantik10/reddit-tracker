@@ -102,6 +102,18 @@ function bindFreeProxies(s) {
     }
     return bound;
 }
+// Swap an account off a dead proxy onto a fresh unused one. The dead proxy is burned
+// (single-use — never handed to another account). Returns true if a free proxy was assigned.
+function swapToFreeProxy(s, acc) {
+    const free = s.proxies.find(p => !p.boundAccountId);
+    if (!free) return false;
+    const oldId = acc.proxyId;
+    if (oldId != null) s.proxies = s.proxies.filter(p => p.id !== oldId); // burn the dead one
+    free.boundAccountId = acc.id;
+    acc.proxyId = free.id;
+    acc.proxyFailCount = 0;
+    return true;
+}
 
 // ---- HTTP via curl through a specific SOCKS5 proxy + cookie jar ----
 function runCurl(proxy, cookieHeader, url) {
@@ -191,6 +203,7 @@ function startCheck(ids) {
                 acc.resetFirstStatus = acc.firstStatus;
             }
             Object.assign(acc, res);
+            acc.proxyFailCount = res.status === 'proxy_error' ? (acc.proxyFailCount || 0) + 1 : 0;
         };
         const runPool = async (list, countsToJob) => {
             let i = 0;
@@ -211,10 +224,16 @@ function startCheck(ids) {
 
         await runPool(targets, true);
         // Proxy errors are transient (residential IP blips) — re-check the stuck ones a few
-        // more times to resolve them to a real status.
-        for (let round = 0; round < 3; round++) {
+        // more times. If a proxy is still dead after 2 checks, swap the account onto a fresh
+        // free proxy (burning the dead one) and try that instead.
+        for (let round = 0; round < 4; round++) {
             const stuck = targets.filter(a => a.status === 'proxy_error');
             if (!stuck.length) break;
+            let swapped = 0;
+            for (const acc of stuck) {
+                if ((acc.proxyFailCount || 0) >= 2 && swapToFreeProxy(s, acc)) swapped++;
+            }
+            if (swapped) { save(s); job.swappedProxies = (job.swappedProxies || 0) + swapped; }
             await new Promise(r => setTimeout(r, 3000));
             await runPool(stuck, false);
         }
