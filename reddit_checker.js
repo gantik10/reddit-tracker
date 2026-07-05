@@ -236,8 +236,9 @@ function walkTxt(dir, acc = []) {
     return acc;
 }
 
-async function importAccountsZip(buf) {
+async function importAccountsZip(buf, batch) {
     const s = load();
+    batch = (batch || '').trim() || new Date().toISOString().slice(0, 16).replace('T', ' ');
     const tmp = path.join(os.tmpdir(), 'rc_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8));
     const zip = tmp + '.zip';
     fs.mkdirSync(tmp, { recursive: true });
@@ -266,6 +267,7 @@ async function importAccountsZip(buf) {
             karmaTotal: null, karmaLink: null, karmaComment: null,
             lastActivity: null, accountCreated: null,
             lastChecked: null, error: null,
+            batch, saved: false,
             addedAt: nowISO(),
         });
         added++;
@@ -292,18 +294,30 @@ function listPublic() {
             lastChecked: a.lastChecked, error: a.error,
             resetDetectedAt: a.resetDetectedAt || null, resetFirstStatus: a.resetFirstStatus || null,
             firstCheckedAt: a.firstCheckedAt || null, firstStatus: a.firstStatus || null,
+            batch: a.batch || '', saved: !!a.saved,
         };
     });
+    const batches = [...new Set(s.accounts.map(a => a.batch || '').filter(Boolean))].sort().reverse();
     return {
-        accounts, job,
+        accounts, job, batches,
         counts: {
             accounts: s.accounts.length,
+            saved: s.accounts.filter(a => a.saved).length,
+            pool: s.accounts.filter(a => !a.saved).length,
             proxies: s.proxies.length,
             boundProxies: s.proxies.filter(p => p.boundAccountId).length,
             freeProxies: s.proxies.filter(p => !p.boundAccountId).length,
             withoutProxy: s.accounts.filter(a => !a.proxyId).length,
         },
     };
+}
+
+function saveAccounts(ids, saved) {
+    const s = load();
+    const set = new Set(ids);
+    for (const a of s.accounts) if (set.has(a.id)) a.saved = !!saved;
+    save(s);
+    return { updated: ids.length, saved: !!saved };
 }
 
 function deleteAccounts(ids) {
@@ -396,9 +410,10 @@ async function handle(req, res, parsed) {
         if (p === '/api/rc/list' && req.method === 'GET') return send(200, listPublic());
         if (p === '/api/rc/check-status' && req.method === 'GET') return send(200, job);
         if (p === '/api/rc/import-proxies' && req.method === 'POST') return send(200, importProxies((await readJson(req)).text || ''));
-        if (p === '/api/rc/import-accounts' && req.method === 'POST') return send(200, await importAccountsZip(await readRaw(req)));
+        if (p === '/api/rc/import-accounts' && req.method === 'POST') return send(200, await importAccountsZip(await readRaw(req), parsed.searchParams.get('batch')));
         if (p === '/api/rc/check' && req.method === 'POST') return send(200, startCheck((await readJson(req)).ids || 'all'));
         if (p === '/api/rc/delete' && req.method === 'POST') return send(200, deleteAccounts((await readJson(req)).ids || []));
+        if (p === '/api/rc/save' && req.method === 'POST') { const b = await readJson(req); return send(200, saveAccounts(b.ids || [], b.saved)); }
         if (p === '/api/rc/clear' && req.method === 'POST') return send(200, clearAll((await readJson(req)).what || 'all'));
         if (p === '/api/rc/export' && req.method === 'GET') {
             res.writeHead(200, { 'Content-Type': 'text/csv', 'Content-Disposition': 'attachment; filename=reddit_accounts.csv' });

@@ -480,6 +480,16 @@ function goHome() {
 // ==========================================
 let rcData = { accounts: [], counts: {}, job: {} };
 let rcPollTimer = null;
+let rcTab = 'pool'; // 'pool' = accounts being reviewed, 'saved' = kept for purchase
+
+function rcSetTab(tab) {
+    rcTab = tab;
+    document.getElementById('rcTabPool').classList.toggle('active', tab === 'pool');
+    document.getElementById('rcTabSaved').classList.toggle('active', tab === 'saved');
+    document.getElementById('rcSaveBtn').style.display = tab === 'pool' ? '' : 'none';
+    document.getElementById('rcUnsaveBtn').style.display = tab === 'saved' ? '' : 'none';
+    rcRender();
+}
 
 function openRedditChecker() {
     currentSubId = null;
@@ -523,29 +533,61 @@ function rcAgo(iso) {
     return 'just now';
 }
 
+const RC_STATUS_ORDER = { active: 0, reset_password: 1, login_failed: 2, cookie_expired: 3, suspended: 4, proxy_error: 5, no_proxy: 6, unchecked: 7 };
+function rcSortRows(rows, sort) {
+    const by = {
+        status: (a, b) => (RC_STATUS_ORDER[a.status] ?? 9) - (RC_STATUS_ORDER[b.status] ?? 9),
+        karma: (a, b) => (b.karmaTotal ?? -1) - (a.karmaTotal ?? -1),
+        lastActivity: (a, b) => new Date(b.lastActivity || 0) - new Date(a.lastActivity || 0),
+        created: (a, b) => new Date(a.accountCreated || '2100') - new Date(b.accountCreated || '2100'),
+        reset: (a, b) => new Date(b.resetDetectedAt || 0) - new Date(a.resetDetectedAt || 0),
+        username: (a, b) => (a.username || '').localeCompare(b.username || ''),
+        batch: (a, b) => (b.batch || '').localeCompare(a.batch || ''),
+    };
+    return rows.slice().sort(by[sort] || by.status);
+}
+
 function rcRender() {
     const filter = document.getElementById('rcFilter').value;
+    const batchF = document.getElementById('rcBatch').value;
+    const sort = document.getElementById('rcSort').value;
     const q = (document.getElementById('rcSearch').value || '').toLowerCase();
     const c = rcData.counts || {};
+
+    // Batch dropdown options (keep current selection)
+    const batchSel = document.getElementById('rcBatch');
+    const opts = ['<option value="">All batches</option>'].concat((rcData.batches || []).map(b => `<option value="${esc(b)}">${esc(b)}</option>`)).join('');
+    if (batchSel.dataset.sig !== (rcData.batches || []).join('|')) { batchSel.innerHTML = opts; batchSel.value = batchF; batchSel.dataset.sig = (rcData.batches || []).join('|'); }
+
     document.getElementById('rcStats').innerHTML = [
-        `<b>${c.accounts || 0}</b> accounts`,
+        `<b>${c.pool || 0}</b> in pool`,
+        `<b>${c.saved || 0}</b> saved`,
         `<b>${c.proxies || 0}</b> proxies`,
         `<b>${c.boundProxies || 0}</b> bound`,
-        `<b>${c.freeProxies || 0}</b> free`,
+        `<b style="color:${c.freeProxies ? 'inherit' : '#d93025'};">${c.freeProxies || 0}</b> free`,
         (c.withoutProxy ? `<span style="color:#d93025;"><b>${c.withoutProxy}</b> without proxy</span>` : ''),
     ].filter(Boolean).map(s => `<span>${s}</span>`).join('');
+    document.getElementById('rcProxyHint').textContent = c.freeProxies
+        ? `${c.freeProxies} free proxies available for the next import. Deleting an account frees its proxy; saved accounts keep theirs.`
+        : 'No free proxies — import more before adding new accounts, or delete/free some (deleting an account releases its proxy).';
 
-    let rows = rcData.accounts || [];
+    let rows = (rcData.accounts || []).filter(a => rcTab === 'saved' ? a.saved : !a.saved);
     if (filter) rows = rows.filter(a => (a.status || 'unchecked') === filter);
+    if (batchF) rows = rows.filter(a => (a.batch || '') === batchF);
     if (q) rows = rows.filter(a => (a.username || a.filename || '').toLowerCase().includes(q));
+    rows = rcSortRows(rows, sort);
 
-    document.getElementById('rcEmpty').style.display = (rcData.accounts || []).length ? 'none' : '';
+    document.getElementById('rcEmpty').style.display = rows.length ? 'none' : '';
+    document.getElementById('rcEmpty').textContent = rcTab === 'saved'
+        ? 'No saved accounts yet. In the Check Pool, tick accounts and click "★ Save selected".'
+        : 'No accounts here. Import a ZIP of cookie files and a proxy list to begin.';
     document.getElementById('rcTableBody').innerHTML = rows.map(a => {
         const cookieExp = a.cookieExpiry ? fmtDate(new Date(a.cookieExpiry * 1000).toISOString()) : '—';
         const expSoon = a.cookieExpiry && a.cookieExpiry * 1000 < Date.now();
         return `<tr style="border-bottom:1px solid var(--border);">
             <td style="padding:7px 6px;"><input type="checkbox" class="rc-row" value="${a.id}"></td>
             <td style="padding:7px 6px;font-weight:600;">${esc(a.username || '—')}</td>
+            <td style="padding:7px 6px;color:var(--text-secondary);font-size:12px;">${esc(a.batch || '—')}</td>
             <td style="padding:7px 6px;">${rcBadge(a.status)}</td>
             <td style="padding:7px 6px;">${a.karmaTotal != null ? fmtNumAlways(a.karmaTotal) : '—'}</td>
             <td style="padding:7px 6px;" title="${a.lastActivity ? fmtDate(a.lastActivity) : ''}">${rcAgo(a.lastActivity)}</td>
@@ -571,15 +613,27 @@ function rcSelectedIds() { return [...document.querySelectorAll('.rc-row:checked
 async function rcImportAccounts(input) {
     const file = input.files[0];
     if (!file) return;
+    const now = new Date();
+    const dflt = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    const batch = prompt('Name this batch (helps you tell new imports apart):', dflt);
+    if (batch === null) { input.value = ''; return; }
     toast('info', 'Uploading…', 'Parsing cookie files, this can take a moment.');
     try {
-        const res = await fetch(`${SERVER}/api/rc/import-accounts`, { method: 'POST', headers: { 'Content-Type': 'application/zip' }, body: file });
+        const res = await fetch(`${SERVER}/api/rc/import-accounts?batch=${encodeURIComponent(batch)}`, { method: 'POST', headers: { 'Content-Type': 'application/zip' }, body: file });
         const r = await res.json();
         if (r.error) return toast('error', 'Import failed', r.error);
         toast('success', 'Accounts imported', `Added ${r.added}, bound ${r.boundToProxy} to proxies, ${r.duplicatesSkipped} dupes${r.accountsWithoutProxy ? `, ${r.accountsWithoutProxy} still need a proxy` : ''}.`);
         input.value = '';
         rcLoad();
     } catch (e) { toast('error', 'Import failed', e.message); }
+}
+
+async function rcSaveSelected(saved) {
+    const ids = rcSelectedIds();
+    if (!ids.length) return toast('warning', 'Nothing selected', 'Tick some rows first.');
+    await fetch(`${SERVER}/api/rc/save`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ids, saved }) });
+    toast('success', saved ? 'Saved' : 'Moved to pool', `${ids.length} account(s) ${saved ? 'moved to Saved (for purchase)' : 'moved back to the pool'}.`);
+    rcLoad();
 }
 
 async function rcSaveProxies() {
