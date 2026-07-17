@@ -1087,7 +1087,11 @@ function saveMoneyPost() {
         if (!fetchedPostData) return toast('warning', 'Fetch first', 'Paste a Reddit post link and click Fetch.');
         saved = updateSub(sub => {
             if (!sub.moneyPosts) sub.moneyPosts = [];
-            const id = sub.moneyPosts.length ? Math.max(...sub.moneyPosts.map(p => p.id)) + 1 : 1;
+            // New id must be above existing posts AND any tombstoned (deleted) ids for this
+            // subreddit — otherwise a reused id gets stripped by the sync/merge and the post
+            // silently disappears after refresh.
+            const tombstoned = (JSON.parse(localStorage.getItem('lk_deleted_money_posts') || '{}')[String(sub.id)]) || [];
+            const id = Math.max(0, ...sub.moneyPosts.map(p => p.id), ...tombstoned) + 1;
             sub.moneyPosts.push({
                 id,
                 title: manualTitle || fetchedPostData.title,
