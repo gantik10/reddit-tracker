@@ -7,3 +7,5 @@ reddit_cookie.txt
 .env
 search_job.json
 reddit_checker.json
+search_job_*_backup.json
+saved_communities.json

@@ -1030,8 +1030,12 @@ Return ONLY the JSON array, no other text.`;
         console.log(`[SubSearch] Generating keywords for: "${request.slice(0, 60)}..."`);
         let keywords = [];
         let aiError = null;
-        const openaiKey = process.env.OPENAI_API_KEY;
-        if (!openaiKey) {
+        const directKw = Array.isArray(body.keywords) && body.keywords.length ? body.keywords : null;
+        const openaiKey = directKw ? null : process.env.OPENAI_API_KEY;
+        if (directKw) {
+            keywords = directKw;
+            console.log(`[SubSearch] Using ${directKw.length} caller-provided keywords (AI bypassed)`);
+        } else if (!openaiKey) {
             aiError = 'OPENAI_API_KEY missing in server .env';
             console.log(`[SubSearch] ${aiError}`);
         } else {
@@ -1125,6 +1129,55 @@ Return ONLY the JSON array, no other text.`;
         } catch {}
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ success: true }));
+        return;
+    }
+
+    // --- Saved communities (persistent, server-side, organised into folders) ---
+    if (parsed.pathname === '/api/saved-communities' && req.method === 'GET') {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ communities: readSavedCommunities() }));
+        return;
+    }
+    if (parsed.pathname === '/api/saved-communities' && req.method === 'POST') {
+        const body = await readBody(req);
+        let list = readSavedCommunities();
+        const action = body.action || 'add';
+        if (action === 'add') {
+            const folder = (body.folder || 'Unsorted').trim() || 'Unsorted';
+            const items = Array.isArray(body.items) ? body.items : [];
+            const byName = new Map(list.map(c => [c.name.toLowerCase(), c]));
+            let added = 0;
+            for (const it of items) {
+                if (!it || !it.name) continue;
+                const key = it.name.toLowerCase();
+                if (byName.has(key)) { byName.get(key).folder = folder; continue; } // move dupes into folder
+                const rec = { ...it, folder, savedAt: new Date().toISOString() };
+                list.push(rec); byName.set(key, rec); added++;
+            }
+            writeSavedCommunities(list);
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ success: true, added, total: list.length }));
+            return;
+        }
+        if (action === 'remove') {
+            const names = new Set((body.names || []).map(n => String(n).toLowerCase()));
+            list = list.filter(c => !names.has(c.name.toLowerCase()));
+            writeSavedCommunities(list);
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ success: true, total: list.length }));
+            return;
+        }
+        if (action === 'move') {
+            const names = new Set((body.names || []).map(n => String(n).toLowerCase()));
+            const folder = (body.folder || 'Unsorted').trim() || 'Unsorted';
+            list.forEach(c => { if (names.has(c.name.toLowerCase())) c.folder = folder; });
+            writeSavedCommunities(list);
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ success: true, total: list.length }));
+            return;
+        }
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Unknown action' }));
         return;
     }
 
@@ -2337,6 +2390,16 @@ async function serverCheckMoneyComments() {
 // ==========================================
 //  BACKGROUND SUBREDDIT SEARCH
 // ==========================================
+// Persistent, foldered store of saved/claimable communities (survives new searches).
+const SAVED_COMM_FILE = path.join(__dirname, 'saved_communities.json');
+function readSavedCommunities() {
+    try { const d = JSON.parse(fs.readFileSync(SAVED_COMM_FILE, 'utf8')); return Array.isArray(d) ? d : (d.communities || []); }
+    catch { return []; }
+}
+function writeSavedCommunities(list) {
+    try { fs.writeFileSync(SAVED_COMM_FILE, JSON.stringify(list, null, 2)); } catch (e) { console.error('[SavedComm] write failed:', e.message); }
+}
+
 async function runBackgroundSearch(searchId, keywords) {
     const searchFile = path.join(__dirname, 'search_job.json');
     const COOKIE_FILE = path.join(__dirname, 'reddit_cookie.txt');
@@ -2347,185 +2410,204 @@ async function runBackgroundSearch(searchId, keywords) {
         if (d.keys?.lk_reddit_cookie) redditCookie = d.keys.lk_reddit_cookie;
     } catch {}
 
+    // Normalize keywords: accept plain strings OR { kw, niche } objects
+    const KW = (keywords || [])
+        .map(k => typeof k === 'string' ? { kw: k, niche: '', nsfw: false } : { kw: String(k.kw || ''), niche: k.niche || '', nsfw: !!k.nsfw })
+        .filter(k => k.kw);
+
+    // Niche vocabularies used for relevance scoring (so the mod-check budget goes to on-topic subs)
+    const NICHE_TOKENS = {
+        ecommerce: ['ecommerce','e-commerce','ecom','dropship','dropshipping','shopify','woocommerce','print on demand','pod','digital product','digital products','online store','online business','side hustle','passive income','amazon fba','fba','etsy','reselling','flipping','private label','dtc','direct to consumer','affiliate','sell online','make money online','online income','gumroad','merch','entrepreneur','online arbitrage','sourcing','aliexpress','alibaba','clickfunnels','sales funnel','ecommerce marketing'],
+        ai: ['ai','a.i.','artificial intelligence','machine learning','deep learning','chatgpt','gpt','openai','llm','prompt','prompt engineering','midjourney','stable diffusion','generative','generative ai','neural','automation','saas','chatbot','ai art','ai tools','ai agent','ai agents','no code','productivity','text to image','text to speech','copilot','ai video','ai writing','ai music','ai voice','ai marketing','ai startup'],
+        dating: ['dating','date','dates','dating app','dating apps','dating site','dating sites','online dating','relationship','relationships','single','singles','tinder','bumble','hinge','okcupid','match','matchmaking','dating advice','dating tips','meet','love','romance','swipe','dating profile','flirting','crush','breakup','long distance','ldr','marriage','couples'],
+        ai_dating: ['ai','ai girlfriend','ai boyfriend','ai companion','ai companions','ai roleplay','roleplay','rp','erp','nsfw','character ai','characterai','chatbot','ai chat','ai chatbot','waifu','ai dating','virtual girlfriend','virtual companion','companion','erotic','erotica','ai sex','ai lover','replika','janitor ai','ai fantasy','uncensored','ai romance','sexting','ai girl','anime girlfriend','spicy']
+    };
+
+    // Word-boundary aware contains: short terms (<=3 chars, e.g. "ai","pod","gpt") must match as whole words
+    function has(hay, term) {
+        term = String(term || '').trim().toLowerCase();
+        if (!term) return false;
+        if (term.length <= 3 || /^[a-z]{1,3}$/.test(term)) {
+            const esc = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            try { return new RegExp(`(^|[^a-z0-9])${esc}([^a-z0-9]|$)`).test(hay); } catch { return hay.includes(term); }
+        }
+        return hay.includes(term);
+    }
+    function relevanceOf(s, kw, niche) {
+        const hay = ((s.display_name || '') + ' ' + (s.title || '') + ' ' + (s.public_description || '')).toLowerCase();
+        let score = 0;
+        for (const w of String(kw).toLowerCase().split(/[^a-z0-9]+/).filter(x => x.length > 2)) if (has(hay, w)) score += 2;
+        if (has(hay, String(kw).toLowerCase())) score += 2;
+        for (const t of (NICHE_TOKENS[niche] || [])) if (has(hay, t)) score += 1;
+        return score;
+    }
+
     const seen = new Set();
     const results = [];
+    // If resuming an existing job after a server restart, preload prior finds + dedup set
+    // so a restart mid-search never wipes what was already found.
+    try {
+        const existing = JSON.parse(fs.readFileSync(searchFile, 'utf8'));
+        if (existing && existing.id === searchId && Array.isArray(existing.results)) {
+            existing.results.forEach(r => { results.push(r); if (r.name) seen.add(r.name.toLowerCase()); });
+        }
+    } catch {}
+    const sleep = ms => new Promise(r => setTimeout(r, ms));
 
     function updateJob(updates) {
         try {
             const job = JSON.parse(fs.readFileSync(searchFile, 'utf8'));
-            if (job.status === 'stopped') return false; // user stopped
+            if (job.status === 'stopped') return false;
             Object.assign(job, updates);
             job.results = results;
             fs.writeFileSync(searchFile, JSON.stringify(job, null, 2));
             return true;
         } catch { return false; }
     }
-
     function addLog(msg) {
         try {
             const job = JSON.parse(fs.readFileSync(searchFile, 'utf8'));
             job.log.unshift(msg);
-            if (job.log.length > 100) job.log.length = 100;
+            if (job.log.length > 120) job.log.length = 120;
             fs.writeFileSync(searchFile, JSON.stringify(job, null, 2));
         } catch {}
     }
-
-    let totalChecked = 0, totalUnreviewed = 0, totalWithMods = 0, totalFailed = 0;
-
-    for (let ki = 0; ki < keywords.length; ki++) {
-        const keyword = keywords[ki];
-        let after = null;
-
-        addLog(`Searching keyword ${ki + 1}/${keywords.length}: "${keyword}"`);
-        if (!updateJob({ currentKeyword: keyword, keywordIndex: ki })) break;
-
-        // Paginate through all results for this keyword
-        for (let page = 0; page < 40; page++) { // max 40 pages per keyword
-            try {
-                const job = JSON.parse(fs.readFileSync(searchFile, 'utf8'));
-                if (job.status === 'stopped') break;
-            } catch {}
-
-            const afterParam = after ? `&after=${after}` : '';
-            const url = `https://www.reddit.com/subreddits/search.json?q=${encodeURIComponent(keyword)}&limit=25${afterParam}&sort=relevance`;
-
-            let subs = [];
-            let gotData = false;
-            // Retry up to 3 times on rate limit / HTML response
-            for (let retry = 0; retry < 3; retry++) {
-                try {
-                    const raw = httpsRequest(url).data;
-                    if (!raw || raw.trim().startsWith('<')) {
-                        // Rate limited or HTML error — wait and retry
-                        const wait = (retry + 1) * 5000;
-                        addLog(`Rate limited on "${keyword}" page ${page + 1}, retrying in ${wait / 1000}s...`);
-                        await new Promise(r => setTimeout(r, wait));
-                        continue;
-                    }
-                    const data = JSON.parse(raw);
-                    subs = data?.data?.children?.map(c => c.data) || [];
-                    after = data?.data?.after;
-                    gotData = true;
-                    break;
-                } catch (e) {
-                    addLog(`Error fetching "${keyword}" page ${page + 1}: ${e.message}`);
-                    await new Promise(r => setTimeout(r, 3000));
-                }
-            }
-            if (!gotData) { addLog(`Skipping "${keyword}" — failed after retries`); break; }
-
-            if (!subs.length) break;
-
-            // Filter: reviewed, SFW, not seen
-            const newSubs = [];
-            for (const s of subs) {
-                totalChecked++;
-                if (seen.has(s.display_name?.toLowerCase())) continue;
-                seen.add(s.display_name?.toLowerCase());
-                if (!s.community_reviewed) { totalUnreviewed++; continue; }
-                if (s.over18) continue;
-                newSubs.push(s);
-            }
-
-            // Batch check mods for new subs
-            if (newSubs.length && !redditCookie) {
-                addLog(`No Reddit cookie — skipping mod check for ${newSubs.length} subs (add cookie in settings)`);
-                newSubs.forEach(s => {
-                    results.push({
-                        name: s.display_name, subscribers: s.subscribers || 0,
-                        description: s.public_description || s.title || '',
-                        subredditType: s.subreddit_type || 'public',
-                        created: s.created_utc, over18: false,
-                        iconImg: (s.community_icon || s.icon_img || '').split('?')[0],
-                        bannerImg: (s.banner_background_image || '').split('?')[0],
-                        bannerColor: s.banner_background_color || '#1A1A2E',
-                        primaryColor: s.primary_color || '#FF4500',
-                        url: `https://www.reddit.com/r/${s.display_name}/`,
-                        moderators: -1, foundAt: new Date().toISOString()
-                    });
-                });
-            }
-            if (newSubs.length && redditCookie) {
-                // Helper: check mod count via rotating proxy (each call = different IP = no rate limit)
-                function checkModCount(subName) {
-                    return new Promise(resolve => {
-                        const proxyPort = 10000 + Math.floor(Math.random() * 1000);
-                        const proxyUrl = `socks5://${PROXY_BASE.login}:${PROXY_BASE.password}@${PROXY_BASE.host}:${proxyPort}`;
-                        let resolved = false;
-                        try {
-                            const child = spawn('curl', ['-sL','--proxy',proxyUrl,'--max-time','20','-H','User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36','-H',`Cookie: reddit_session=${redditCookie}`,`https://www.reddit.com/r/${subName}/about/moderators.json`]);
-                            let data = '';
-                            child.stdout.on('data', c => data += c);
-                            child.on('close', () => {
-                                if (resolved) return; resolved = true;
-                                try {
-                                    if (!data.trim() || data.startsWith('<')) { resolve(-1); return; }
-                                    const d = JSON.parse(data);
-                                    if (d.error || d.reason === 'private' || d.message === 'Forbidden') { resolve(-2); return; }
-                                    resolve(d?.data?.children?.length ?? -1);
-                                } catch { resolve(-1); }
-                            });
-                            child.on('error', () => { if (!resolved) { resolved = true; resolve(-1); } });
-                            setTimeout(() => { try { child.kill(); } catch {} if (!resolved) { resolved = true; resolve(-1); } }, 25000);
-                        } catch { if (!resolved) { resolved = true; resolve(-1); } }
-                    });
-                }
-
-                // Check one at a time, ~6s apart to stay under Reddit's 100req/10min session rate limit
-                for (let si = 0; si < newSubs.length; si++) {
-                    const s = newSubs[si];
-                    let modCount = await checkModCount(s.display_name);
-
-                    // Retry up to 2 more times on failure with increasing delay
-                    for (let retry = 0; retry < 2 && modCount === -1; retry++) {
-                        await new Promise(r => setTimeout(r, 8000 * (retry + 1)));
-                        modCount = await checkModCount(s.display_name);
-                    }
-
-                    // Throttle: wait 6s between checks to respect Reddit session rate limit
-                    if (si < newSubs.length - 1) await new Promise(r => setTimeout(r, 6000));
-
-                    if (modCount === 0) {
-                        addLog(`✅ r/${s.display_name} — 0 MODS, ${s.subscribers || 0} members — FOUND`);
-                        results.push({
-                            name: s.display_name, subscribers: s.subscribers || 0,
-                            description: s.public_description || s.title || '',
-                            subredditType: s.subreddit_type || 'public',
-                            created: s.created_utc, over18: false,
-                            iconImg: (s.community_icon || s.icon_img || '').split('?')[0],
-                            bannerImg: (s.banner_background_image || '').split('?')[0],
-                            bannerColor: s.banner_background_color || '#1A1A2E',
-                            primaryColor: s.primary_color || '#FF4500',
-                            url: `https://www.reddit.com/r/${s.display_name}/`,
-                            moderators: 0, foundAt: new Date().toISOString()
-                        });
-                    } else if (modCount > 0) {
-                        totalWithMods++;
-                        addLog(`r/${s.display_name} — ${modCount} mods`);
-                    } else if (modCount === -1) {
-                        totalFailed++;
-                        addLog(`⚠ r/${s.display_name} — mod check failed after retries`);
-                    }
-                    // -2 = private/banned, skip silently
-                }
-            }
-
-            updateJob({ totalChecked, totalUnreviewed, totalWithMods, totalFailed });
-            if (!after) break;
-            await new Promise(r => setTimeout(r, 2000)); // rate limit delay
-        }
-
-        // Delay between keywords to avoid rate limits
-        if (ki < keywords.length - 1) {
-            await new Promise(r => setTimeout(r, 3000));
-        }
+    function isStopped() {
+        try { return JSON.parse(fs.readFileSync(searchFile, 'utf8')).status === 'stopped'; } catch { return false; }
     }
 
-    const noModCount = results.filter(r => r.moderators === 0).length;
-    const unknownCount = results.filter(r => r.moderators === -1).length;
-    addLog(`DONE: ${noModCount} without mods, ${unknownCount} unknown from ${totalChecked} total (${totalUnreviewed} unreviewed, ${totalWithMods} had mods, ${totalFailed} check failed)`);
-    updateJob({ status: 'complete', totalChecked, totalUnreviewed, totalWithMods, totalFailed, completedAt: new Date().toISOString() });
-    console.log(`[SubSearch] Complete: ${results.length} found from ${totalChecked} checked`);
+    let totalChecked = 0, totalUnreviewed = 0, totalOffTopic = 0, totalWithMods = 0, totalFailed = 0, modChecks = 0;
+
+    // GET through a fresh rotating proxy port (each call = different exit IP) with the session cookie
+    function proxyGet(url) {
+        return new Promise(resolve => {
+            const proxyPort = 10000 + Math.floor(Math.random() * 1000);
+            const proxyUrl = `socks5://${PROXY_BASE.login}:${PROXY_BASE.password}@${PROXY_BASE.host}:${proxyPort}`;
+            let done = false;
+            try {
+                const child = spawn('curl', ['-sL','--proxy',proxyUrl,'--max-time','20','-H','User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36','-H',`Cookie: reddit_session=${redditCookie}`, url]);
+                let data = '';
+                child.stdout.on('data', c => data += c);
+                child.on('close', () => {
+                    if (done) return; done = true;
+                    const t = data.trim();
+                    if (!t || t.startsWith('<')) { resolve(null); return; }
+                    try { resolve(JSON.parse(t)); } catch { resolve(null); }
+                });
+                child.on('error', () => { if (!done) { done = true; resolve(null); } });
+                setTimeout(() => { try { child.kill(); } catch {} if (!done) { done = true; resolve(null); } }, 25000);
+            } catch { if (!done) { done = true; resolve(null); } }
+        });
+    }
+    async function checkModCount(subName) {
+        const d = await proxyGet(`https://www.reddit.com/r/${subName}/about/moderators.json`);
+        if (!d) return -1;
+        if (d.error || d.reason === 'private' || d.message === 'Forbidden') return -2;
+        return d?.data?.children?.length ?? -1;
+    }
+    async function aboutSub(subName) {
+        const d = await proxyGet(`https://www.reddit.com/r/${subName}/about.json`);
+        return d?.data || null;
+    }
+    function mkResult(s, niche, rel, mods) {
+        return {
+            name: s.display_name, subscribers: s.subscribers || 0,
+            description: s.public_description || s.title || '',
+            subredditType: s.subreddit_type || 'public',
+            created: s.created_utc, over18: !!s.over18,
+            communityReviewed: !!s.community_reviewed,
+            niche: niche || '', relevance: rel,
+            iconImg: (s.community_icon || s.icon_img || '').split('?')[0],
+            bannerImg: (s.banner_background_image || '').split('?')[0],
+            bannerColor: s.banner_background_color || '#1A1A2E',
+            primaryColor: s.primary_color || '#FF4500',
+            url: `https://www.reddit.com/r/${s.display_name}/`,
+            moderators: mods, foundAt: new Date().toISOString()
+        };
+    }
+
+    // Evaluate one candidate. Returns true if an actual mod-check network call happened (so caller throttles).
+    async function evaluate(s, kw, niche, nsfw) {
+        const nameLc = (s.display_name || '').toLowerCase();
+        if (!nameLc || seen.has(nameLc)) return false;
+        seen.add(nameLc);
+        totalChecked++;
+        if (s.over18 && !nsfw) return false; // NSFW niches (e.g. ai_dating) keep over18 subs
+        if (s.subreddit_type === 'private' || s.subreddit_type === 'employees_only') return false;
+        const rel = relevanceOf(s, kw, niche);
+        const gate = niche ? 2 : 1; // stricter for curated niche runs, lenient for ad-hoc UI searches
+        if (rel < gate) { totalOffTopic++; return false; }
+        if (!s.community_reviewed) { totalUnreviewed++; return false; } // RULE 1: must be community-reviewed
+        if (!redditCookie) { results.push(mkResult(s, niche, rel, -1)); return false; }
+        // RULE 2: must have zero moderators (checked below)
+
+        let modCount = await checkModCount(s.display_name);
+        for (let r = 0; r < 2 && modCount === -1; r++) { await sleep(8000 * (r + 1)); modCount = await checkModCount(s.display_name); }
+        modChecks++;
+        if (modCount === 0) {
+            addLog(`✅ r/${s.display_name} — 0 MODS · ${s.subscribers || 0} members${niche ? ' · ' + niche : ''} — FOUND`);
+            results.push(mkResult(s, niche, rel, 0));
+        } else if (modCount > 0) {
+            totalWithMods++;
+        } else if (modCount === -1) {
+            totalFailed++;
+        }
+        return true;
+    }
+
+    for (let ki = 0; ki < KW.length; ki++) {
+        if (isStopped()) break;
+        const { kw, niche, nsfw } = KW[ki];
+        addLog(`Searching ${ki + 1}/${KW.length}: "${kw}"${niche ? ' [' + niche + ']' : ''}${nsfw ? ' 🔞' : ''}`);
+        if (!updateJob({ currentKeyword: kw, currentNiche: niche, keywordIndex: ki })) break;
+
+        // --- Source 1: subreddits/search (paginated) ---
+        let after = null;
+        for (let page = 0; page < 10; page++) {
+            if (isStopped()) break;
+            const afterParam = after ? `&after=${after}` : '';
+            let listing = null;
+            for (let retry = 0; retry < 3; retry++) {
+                listing = await proxyGet(`https://www.reddit.com/subreddits/search.json?q=${encodeURIComponent(kw)}&limit=100${afterParam}&sort=relevance${nsfw ? '&include_over_18=on' : ''}`);
+                if (listing && listing.data) break;
+                addLog(`Rate/HTML on "${kw}" p${page + 1}, retry in ${(retry + 1) * 5}s...`);
+                await sleep((retry + 1) * 5000);
+            }
+            if (!listing || !listing.data) { addLog(`Skip "${kw}" p${page + 1} — failed after retries`); break; }
+            const subs = (listing.data.children || []).map(c => c.data);
+            after = listing.data.after;
+            if (!subs.length) break;
+            for (const s of subs) {
+                if (isStopped()) break;
+                const checked = await evaluate(s, kw, niche, nsfw);
+                updateJob({ totalChecked, totalUnreviewed, totalOffTopic, totalWithMods, totalFailed });
+                if (checked) await sleep(6000);
+            }
+            if (!after) break;
+            await sleep(1500);
+        }
+
+        // --- Source 2: name autocomplete → about.json → evaluate (finds subs source 1 misses) ---
+        if (!isStopped()) {
+            const nd = await proxyGet(`https://www.reddit.com/api/search_reddit_names.json?query=${encodeURIComponent(kw)}&include_over_18=${nsfw ? 'true' : 'false'}`);
+            const names = (nd?.names || []).filter(n => !seen.has(String(n).toLowerCase())).slice(0, 20);
+            for (const nm of names) {
+                if (isStopped()) break;
+                const about = await aboutSub(nm);
+                if (!about) { seen.add(String(nm).toLowerCase()); await sleep(1500); continue; }
+                const checked = await evaluate(about, kw, niche, nsfw);
+                updateJob({ totalChecked, totalUnreviewed, totalOffTopic, totalWithMods, totalFailed });
+                if (checked) await sleep(6000);
+            }
+        }
+
+        if (ki < KW.length - 1) await sleep(2500);
+    }
+
+    const found = results.filter(r => r.moderators === 0).length;
+    addLog(`DONE: ${found} reviewed 0-mod communities found · ${totalChecked} checked · ${totalWithMods} had mods · ${totalUnreviewed} not reviewed · ${totalOffTopic} off-topic · ${totalFailed} failed`);
+    updateJob({ status: "complete", totalChecked, totalUnreviewed, totalOffTopic, totalWithMods, totalFailed, completedAt: new Date().toISOString() });
+    console.log(`[SubSearch] Complete: ${found} found from ${totalChecked} checked`);
 }
 
 // Resume background search if server restarts while search was running

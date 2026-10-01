@@ -482,8 +482,24 @@ let rcData = { accounts: [], counts: {}, job: {} };
 let rcPollTimer = null;
 let rcView = 'all'; // 'all' | 'saved' | 'folder:<name>'
 
+// --- Pagination + persistent (cross-page) selection state ---
+let _rcPage = 1;
+let _rcPageSize = 100;          // Infinity when "Show all" is chosen
+let _rcSelected = new Set();    // account ids selected across ALL pages
+let _rcFilteredRows = [];       // last filtered+sorted full row set (all pages)
+let _rcPageIds = [];            // ids on the currently rendered page
+
+function rcFilterChanged() { _rcPage = 1; rcRender(); }
+function rcSetPageSize(v) { _rcPageSize = (v === 'all') ? Infinity : (parseInt(v, 10) || 100); _rcPage = 1; rcRender(); }
+function rcGoPage(p) {
+    const tp = _rcPageSize === Infinity ? 1 : Math.max(1, Math.ceil(_rcFilteredRows.length / _rcPageSize));
+    _rcPage = Math.min(Math.max(1, p), tp);
+    rcRender();
+}
+
 function rcSetView(view) {
     rcView = view;
+    _rcPage = 1;
     document.getElementById('rcSaveBtn').style.display = view === 'saved' ? 'none' : '';
     document.getElementById('rcUnsaveBtn').style.display = view === 'saved' ? '' : 'none';
     rcRender();
@@ -514,6 +530,7 @@ async function rcLoad() {
     try {
         const res = await fetch(`${SERVER}/api/rc/list`);
         rcData = await res.json();
+        _rcSelected.clear();
         rcRender();
         if (rcData.job && rcData.job.running) rcStartPolling();
     } catch (e) { toast('error', 'Load failed', e.message); }
@@ -540,13 +557,11 @@ function rcIsInteresting(a) {
     return (Date.now() - new Date(a.lastActivity).getTime()) >= RC_IDLE_DAYS * 86400000;
 }
 function rcSelectInteresting() {
-    const byId = new Map((rcData.accounts || []).map(a => [a.id, a]));
+    // Select every interesting account in the current filtered view — across ALL pages.
     let n = 0;
-    document.querySelectorAll('.rc-row').forEach(cb => {
-        const a = byId.get(Number(cb.value));
-        if (a && rcIsInteresting(a)) { cb.checked = true; n++; }
-    });
-    toast(n ? 'success' : 'info', 'Interesting selected', `${n} account(s) with ${RC_KARMA_MIN}+ karma & 2mo+ idle selected.`);
+    _rcFilteredRows.forEach(a => { if (rcIsInteresting(a)) { _rcSelected.add(a.id); n++; } });
+    rcRender();
+    toast(n ? 'success' : 'info', 'Interesting selected', `${n} account(s) with ${RC_KARMA_MIN}+ karma & 2mo+ idle selected across all pages.`);
 }
 
 // Relative time, e.g. "4 months ago", "1 year ago", "3 days ago".
@@ -615,17 +630,28 @@ function rcRender() {
     else if (filter) rows = rows.filter(a => (a.status || 'unchecked') === filter);
     if (q) rows = rows.filter(a => (a.username || a.filename || '').toLowerCase().includes(q));
     rows = rcSortRows(rows, sort);
+    _rcFilteredRows = rows;
 
-    document.getElementById('rcEmpty').style.display = rows.length ? 'none' : '';
+    // Paginate (keeps the DOM small so slower machines don't lag on big lists)
+    const total = rows.length;
+    const pageSize = _rcPageSize;
+    const totalPages = pageSize === Infinity ? 1 : Math.max(1, Math.ceil(total / pageSize));
+    if (_rcPage > totalPages) _rcPage = totalPages;
+    if (_rcPage < 1) _rcPage = 1;
+    const start = pageSize === Infinity ? 0 : (_rcPage - 1) * pageSize;
+    const pageRows = pageSize === Infinity ? rows : rows.slice(start, start + pageSize);
+    _rcPageIds = pageRows.map(a => a.id);
+
+    document.getElementById('rcEmpty').style.display = total ? 'none' : '';
     document.getElementById('rcEmpty').textContent = rcView === 'saved'
         ? 'No saved accounts yet. Tick accounts and click "★ Save selected".'
         : 'No accounts here. Import a ZIP of cookie files and a proxy list to begin.';
-    document.getElementById('rcTableBody').innerHTML = rows.map(a => {
+    document.getElementById('rcTableBody').innerHTML = pageRows.map(a => {
         const cookieExp = a.cookieExpiry ? fmtDate(new Date(a.cookieExpiry * 1000).toISOString()) : '—';
         const expSoon = a.cookieExpiry && a.cookieExpiry * 1000 < Date.now();
         const hot = rcIsInteresting(a);
         return `<tr style="border-bottom:1px solid var(--border);${hot ? 'background:rgba(15,157,88,.09);' : ''}">
-            <td style="padding:7px 6px;"><input type="checkbox" class="rc-row" value="${a.id}"></td>
+            <td style="padding:7px 6px;"><input type="checkbox" class="rc-row" value="${a.id}"${_rcSelected.has(a.id) ? ' checked' : ''} onchange="rcToggleRow(${a.id}, this.checked)"></td>
             <td style="padding:7px 6px;font-weight:600;">${hot ? '<span title="50+ karma, 2mo+ idle" style="color:#0f9d58;">★</span> ' : ''}${esc(a.username || '—')}</td>
             <td style="padding:7px 6px;color:var(--text-secondary);font-size:12px;">${esc(a.batch || '—')}</td>
             <td style="padding:7px 6px;">${rcBadge(a.status)}</td>
@@ -645,10 +671,64 @@ function rcRender() {
             <td style="padding:7px 6px;color:var(--text-secondary);font-size:12px;">${esc(a.error || '')}</td>
         </tr>`;
     }).join('');
+
+    rcRenderPager(total, totalPages, start, pageRows.length);
+    rcSyncSelAll();
 }
 
-function rcToggleAll(cb) { document.querySelectorAll('.rc-row').forEach(x => x.checked = cb.checked); }
-function rcSelectedIds() { return [...document.querySelectorAll('.rc-row:checked')].map(x => Number(x.value)); }
+// Build the pager: "showing X–Y of N", selected count, and page controls.
+function rcRenderPager(total, totalPages, start, shown) {
+    const pager = document.getElementById('rcPager');
+    if (!pager) return;
+    if (!total) { pager.innerHTML = ''; return; }
+    const from = total ? start + 1 : 0;
+    const to = start + shown;
+    const selN = _rcSelected.size;
+    const allPages = _rcPageSize === Infinity;
+    const btn = (label, page, disabled, title) =>
+        `<button class="btn btn-xs btn-ghost" ${disabled ? 'disabled style="opacity:.4;cursor:default;"' : `onclick="rcGoPage(${page})"`}${title ? ` title="${title}"` : ''}>${label}</button>`;
+    let controls = '';
+    if (!allPages && totalPages > 1) {
+        controls =
+            btn('« First', 1, _rcPage <= 1) +
+            btn('‹ Prev', _rcPage - 1, _rcPage <= 1) +
+            `<span style="padding:0 4px;">Page <b>${_rcPage}</b> / ${totalPages}</span>` +
+            btn('Next ›', _rcPage + 1, _rcPage >= totalPages) +
+            btn('Last »', totalPages, _rcPage >= totalPages);
+    }
+    pager.innerHTML =
+        `<span>Showing <b>${from}–${to}</b> of <b>${total}</b></span>` +
+        (selN ? `<span style="color:var(--primary);font-weight:600;">${selN} selected</span>` : '') +
+        `<span style="flex:1;"></span>` +
+        controls;
+}
+
+// Keep the header "select all" checkbox in sync with the current page.
+function rcSyncSelAll() {
+    const sel = document.getElementById('rcSelAll');
+    if (!sel) return;
+    const ids = _rcPageIds;
+    const on = ids.filter(id => _rcSelected.has(id)).length;
+    sel.checked = ids.length > 0 && on === ids.length;
+    sel.indeterminate = on > 0 && on < ids.length;
+}
+
+// Persistent selection: toggling a row updates the id Set (survives page changes).
+function rcToggleRow(id, on) {
+    if (on) _rcSelected.add(id); else _rcSelected.delete(id);
+    rcSyncSelAll();
+    rcRenderPager(_rcFilteredRows.length, _rcPageSize === Infinity ? 1 : Math.max(1, Math.ceil(_rcFilteredRows.length / _rcPageSize)), (_rcPage - 1) * (_rcPageSize === Infinity ? 0 : _rcPageSize), _rcPageIds.length);
+}
+
+// Header checkbox: select/deselect every row on the CURRENT page.
+function rcToggleAll(cb) {
+    _rcPageIds.forEach(id => { if (cb.checked) _rcSelected.add(id); else _rcSelected.delete(id); });
+    document.querySelectorAll('.rc-row').forEach(x => x.checked = cb.checked);
+    rcSyncSelAll();
+    rcRenderPager(_rcFilteredRows.length, _rcPageSize === Infinity ? 1 : Math.max(1, Math.ceil(_rcFilteredRows.length / _rcPageSize)), (_rcPage - 1) * (_rcPageSize === Infinity ? 0 : _rcPageSize), _rcPageIds.length);
+}
+
+function rcSelectedIds() { return [..._rcSelected]; }
 
 async function rcImportAccounts(input) {
     const file = input.files[0];
@@ -745,6 +825,16 @@ function rcExportDolphin() {
     if (sel.length) params.push('ids=' + sel.join(','));
     else if (filter) params.push('status=' + filter);
     window.location = `${SERVER}/api/rc/export-dolphin${params.length ? '?' + params.join('&') : ''}`;
+}
+
+// Export selected rows (or the current status filter) as an AdsPower import file.
+function rcExportAdsPower() {
+    const sel = rcSelectedIds();
+    const filter = document.getElementById('rcFilter').value;
+    const params = [];
+    if (sel.length) params.push('ids=' + sel.join(','));
+    else if (filter) params.push('status=' + filter);
+    window.location = `${SERVER}/api/rc/export-adspower${params.length ? '?' + params.join('&') : ''}`;
 }
 
 async function rcDeleteSelected() {
@@ -4044,7 +4134,7 @@ function openSubSearch() {
     document.getElementById('subSearchView').classList.remove('hidden');
     document.getElementById('addSubredditBtn').classList.add('hidden');
     ssSetTab('results');
-    ssRenderSaved();
+    ssLoadSaved();
     ssCheckRunningSearch();
 }
 
@@ -4214,10 +4304,10 @@ async function ssFetch(keyword) {
 }
 
 function ssRenderResults() {
-    const filtered = _ssResults.filter(s => s.moderators === 0);
+    const filtered = _ssResults.filter(s => s.moderators === 0)
+        .sort((a, b) => (b.subscribers || 0) - (a.subscribers || 0));
 
-    const saved = getSsSaved();
-    const savedNames = new Set(saved.map(s => s.name.toLowerCase()));
+    const savedNames = new Set(_ssSaved.map(s => s.name.toLowerCase()));
 
     document.getElementById('ssResultCount').textContent = `${filtered.length} subreddits found${_ssAutoLoad || _ssPollTimer ? ' · searching...' : ''}`;
 
@@ -4244,7 +4334,7 @@ function ssRenderResults() {
             <div class="ss-card-identity">
                 <div class="ss-card-avatar" style="${avatarStyle}">${s.iconImg ? '' : esc(s.name[0].toUpperCase())}</div>
                 <div class="ss-card-info">
-                    <a href="${esc(s.url)}" target="_blank" rel="noopener" class="ss-card-name">r/${esc(s.name)}</a>
+                    <a href="${esc(s.url)}" target="_blank" rel="noopener" class="ss-card-name">r/${esc(s.name)}${s.niche ? `<span style="margin-left:8px;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:#fff;background:${s.niche === 'ai' ? '#7c3aed' : '#0ea5e9'};padding:2px 7px;border-radius:100px;vertical-align:middle;">${esc(s.niche)}</span>` : ''}${s.communityReviewed ? '<span style="margin-left:6px;font-size:11px;font-weight:600;color:#16a34a;vertical-align:middle;">✓ reviewed</span>' : ''}</a>
                     <div class="ss-card-desc">${esc(s.description?.slice(0, 100) || s.title || '')}</div>
                 </div>
             </div>
@@ -4280,58 +4370,97 @@ function ssSetTab(tab) {
     document.getElementById('ssTabSaved').classList.toggle('active', tab === 'saved');
     document.getElementById('ssResultsTab').classList.toggle('hidden', tab !== 'results');
     document.getElementById('ssSavedTab').classList.toggle('hidden', tab !== 'saved');
-    if (tab === 'saved') ssRenderSaved();
+    if (tab === 'saved') ssLoadSaved();
 }
 
-// Saved subreddits
-function getSsSaved() { return S.get('ss_saved'); }
+// --- Saved communities (server-side, organised into folders) ---
+let _ssSaved = [];
+let _ssSavedFolder = 'all';
+const SS_FOLDER_LABEL = { ai: 'AI', ecommerce: 'Ecommerce', dating: 'Dating', ai_dating: 'AI Dating' };
+function ssFolderFor(sub) { return SS_FOLDER_LABEL[sub.niche] || sub.folder || 'Unsorted'; }
 
-function ssSave(name) {
+async function ssLoadSaved() {
+    try { const r = await (await fetch(`${SERVER}/api/saved-communities`)).json(); _ssSaved = r.communities || []; }
+    catch { _ssSaved = []; }
+    // One-time migration: pull any legacy browser-saved (localStorage) subreddits into the server store
+    // so previously saved communities aren't lost now that the Saved tab is server-backed.
+    try {
+        const legacy = S.get('ss_saved');
+        if (Array.isArray(legacy) && legacy.length && !localStorage.getItem('ss_saved_migrated')) {
+            const have = new Set(_ssSaved.map(s => s.name.toLowerCase()));
+            const groups = {};
+            legacy.filter(s => s && s.name && !have.has(s.name.toLowerCase()))
+                  .forEach(s => { const f = ssFolderFor(s); (groups[f] = groups[f] || []).push(s); });
+            let migrated = 0;
+            for (const f of Object.keys(groups)) {
+                await fetch(`${SERVER}/api/saved-communities`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'add', folder: f, items: groups[f] }) });
+                migrated += groups[f].length;
+            }
+            localStorage.setItem('ss_saved_migrated', '1');
+            if (migrated) {
+                try { const r2 = await (await fetch(`${SERVER}/api/saved-communities`)).json(); _ssSaved = r2.communities || []; } catch {}
+                toast('info', 'Restored saves', `${migrated} previously saved subreddit(s) moved into the server folders.`);
+            }
+        }
+    } catch {}
+    ssRenderSaved();
+}
+
+async function ssSave(name) {
     const sub = _ssResults.find(s => s.name === name);
     if (!sub) return;
-    const saved = getSsSaved();
-    if (saved.find(s => s.name.toLowerCase() === name.toLowerCase())) return toast('info', 'Already saved', '');
-    saved.push({ ...sub, savedAt: new Date().toISOString(), status: 'pending' });
-    S.set('ss_saved', saved);
+    if (_ssSaved.find(s => s.name.toLowerCase() === name.toLowerCase())) return toast('info', 'Already saved', '');
+    const folder = ssFolderFor(sub);
+    try {
+        await fetch(`${SERVER}/api/saved-communities`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'add', folder, items: [{ ...sub, status: 'pending' }] }) });
+        toast('success', 'Saved', `r/${name} → ${folder} folder`);
+    } catch (e) { return toast('error', 'Save failed', e.message); }
+    await ssLoadSaved();
     ssRenderResults();
-    ssRenderSaved();
-    toast('success', 'Saved', `r/${name} added to Take Over list`);
 }
 
-function ssRemoveSaved(name) {
-    S.set('ss_saved', getSsSaved().filter(s => s.name !== name));
-    ssRenderSaved();
+async function ssRemoveSaved(name) {
+    try { await fetch(`${SERVER}/api/saved-communities`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'remove', names: [name] }) }); } catch {}
+    await ssLoadSaved();
     ssRenderResults();
 }
+
+function ssSetSavedFolder(f) { _ssSavedFolder = f; ssRenderSaved(); }
 
 function ssRenderSaved() {
-    const saved = getSsSaved();
+    const saved = _ssSaved;
     document.getElementById('ssSavedCount').textContent = saved.length ? `(${saved.length})` : '';
     const el = document.getElementById('ssSavedList');
     if (!saved.length) {
-        el.innerHTML = '<div class="tl-empty">No subreddits saved yet. Search and save the ones you want to take over.</div>';
+        el.innerHTML = '<div class="tl-empty">No communities saved yet. Run a search and click "Save to Take Over".</div>';
         return;
     }
-    el.innerHTML = saved.map(s => {
-        const bannerStyle = s.bannerImg
-            ? `background-image:url('${esc(s.bannerImg)}');background-color:${s.bannerColor};`
-            : `background:${s.bannerColor || '#1A1A2E'};`;
-        const avatarStyle = s.iconImg
-            ? `background-image:url('${esc(s.iconImg)}');background-color:${s.primaryColor};`
-            : `background:${s.primaryColor || '#FF4500'};`;
+    const folders = {};
+    saved.forEach(s => { const f = s.folder || 'Unsorted'; folders[f] = (folders[f] || 0) + 1; });
+    const chip = (f, label, count) => `<button class="cg-tab ${_ssSavedFolder === f ? 'active' : ''}" style="margin:0 6px 8px 0;" onclick="ssSetSavedFolder('${esc(f)}')">${esc(label)} <span style="opacity:.6;">${count}</span></button>`;
+    let chips = chip('all', 'All', saved.length);
+    Object.keys(folders).sort().forEach(f => chips += chip(f, f, folders[f]));
+
+    const rows = (_ssSavedFolder === 'all' ? saved : saved.filter(s => (s.folder || 'Unsorted') === _ssSavedFolder))
+        .slice().sort((a, b) => (b.subscribers || 0) - (a.subscribers || 0));
+
+    el.innerHTML = `<div style="display:flex;flex-wrap:wrap;margin-bottom:12px;">${chips}</div>` + rows.map(s => {
+        const bannerStyle = s.bannerImg ? `background-image:url('${esc(s.bannerImg)}');background-color:${s.bannerColor};` : `background:${s.bannerColor || '#1A1A2E'};`;
+        const avatarStyle = s.iconImg ? `background-image:url('${esc(s.iconImg)}');background-color:${s.primaryColor};` : `background:${s.primaryColor || '#FF4500'};`;
+        const badges = `${s.folder ? `<span style="font-size:11px;font-weight:600;color:#fff;background:#555;padding:2px 7px;border-radius:100px;margin-left:8px;vertical-align:middle;">${esc(s.folder)}</span>` : ''}${s.communityReviewed ? '<span style="font-size:11px;font-weight:600;color:#16a34a;margin-left:6px;vertical-align:middle;">✓ reviewed</span>' : ''}${s.over18 ? '<span style="font-size:11px;font-weight:600;color:#e11114;margin-left:6px;vertical-align:middle;">🔞 NSFW</span>' : ''}`;
         return `<div class="ss-card">
             <div class="ss-card-banner" style="${bannerStyle}"></div>
             <div class="ss-card-identity">
                 <div class="ss-card-avatar" style="${avatarStyle}">${s.iconImg ? '' : esc(s.name[0].toUpperCase())}</div>
                 <div class="ss-card-info">
-                    <a href="${esc(s.url)}" target="_blank" rel="noopener" class="ss-card-name">r/${esc(s.name)}</a>
+                    <a href="${esc(s.url)}" target="_blank" rel="noopener" class="ss-card-name">r/${esc(s.name)}${badges}</a>
                     <div class="ss-card-desc">${esc(s.description?.slice(0, 100) || '')}</div>
                 </div>
             </div>
             <div class="ss-card-stats">
                 <div class="ss-stat"><span class="ss-stat-val">${fmtNumAlways(s.subscribers)}</span><span class="ss-stat-lbl">Members</span></div>
                 <div class="ss-stat"><span class="ss-stat-val ss-no-mods">${s.moderators ?? '?'}</span><span class="ss-stat-lbl">Mods</span></div>
-                <div class="ss-stat"><span class="ss-stat-val">${fmtDate(s.savedAt)}</span><span class="ss-stat-lbl">Saved</span></div>
+                <div class="ss-stat"><span class="ss-stat-val">${s.savedAt ? fmtDate(s.savedAt) : '—'}</span><span class="ss-stat-lbl">Saved</span></div>
             </div>
             <div class="ss-card-actions">
                 <a href="https://www.reddit.com/r/redditrequest/" target="_blank" rel="noopener" class="btn btn-sm btn-primary">Request Takeover</a>

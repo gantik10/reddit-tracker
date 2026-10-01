@@ -443,6 +443,49 @@ function exportDolphin({ ids, status } = {}) {
     return XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
 }
 
+// ---- AdsPower export (XLSX matching their Account-import-template.xlsx) ----
+// Header row replicates the template exactly. Proxy is a single cell Host:Port:User:Pass.
+// Cookie column takes the JSON cookie array. We emit only the header + data rows
+// (no instructions row — AdsPower expects that row removed anyway).
+function exportAdsPower({ ids, status } = {}) {
+    const XLSX = require('xlsx');
+    const s = load();
+    let accts = s.accounts;
+    if (ids && ids.length) accts = accts.filter(a => ids.includes(a.id));
+    if (status) accts = accts.filter(a => (a.status || 'unchecked') === status);
+    const pById = new Map(s.proxies.map(p => [p.id, p]));
+    const header = ['name', 'remark', '3', 'platform', 'username', 'password', 'fakey', 'cookie', 'proxytype', 'ipchecker', 'proxy', 'proxyurl', 'proxyid', 'ip', 'countrycode', 'regioncode', 'citycode', 'ua', 'resolution'];
+    const rows = [header];
+    for (const a of accts) {
+        const p = pById.get(a.proxyId);
+        rows.push([
+            a.username || a.filename || ('reddit_' + a.id),               // name
+            [a.status, a.karmaTotal != null ? `karma ${a.karmaTotal}` : '', a.lastActivity ? `last ${a.lastActivity.slice(0, 10)}` : ''].filter(Boolean).join(' | '), // remark
+            'https://www.reddit.com',                                     // open urls
+            'reddit.com',                                                 // platform
+            '',                                                           // username (cookie auth, no login)
+            '',                                                           // password
+            '',                                                           // fakey (2FA)
+            JSON.stringify(dolphinCookies(a.cookieHeader)),               // cookie (JSON)
+            p ? 'socks5' : 'noproxy',                                     // proxytype
+            '',                                                           // ipchecker
+            p ? `${p.host}:${p.port}:${p.user}:${p.pass}` : '',           // proxy = Host:Port:User:Pass
+            '',                                                           // proxyurl
+            '',                                                           // proxyid
+            '',                                                           // ip
+            '',                                                           // countrycode
+            '',                                                           // regioncode
+            '',                                                           // citycode
+            UA,                                                           // ua
+            'default',                                                    // resolution
+        ]);
+    }
+    const ws = XLSX.utils.aoa_to_sheet(rows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Accounts');
+    return XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+}
+
 // ---- HTTP router (mounted at /api/rc/*) ----
 function readJson(req) {
     return new Promise((r) => { let b = ''; req.on('data', c => b += c); req.on('end', () => { try { r(JSON.parse(b || '{}')); } catch { r({}); } }); });
@@ -476,6 +519,12 @@ async function handle(req, res, parsed) {
             const idsP = parsed.searchParams.get('ids');
             const buf = exportDolphin({ ids: idsP ? idsP.split(',').map(Number) : null, status: parsed.searchParams.get('status') });
             res.writeHead(200, { 'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'Content-Disposition': 'attachment; filename=dolphin_import.xlsx' });
+            return res.end(buf);
+        }
+        if (p === '/api/rc/export-adspower' && req.method === 'GET') {
+            const idsP = parsed.searchParams.get('ids');
+            const buf = exportAdsPower({ ids: idsP ? idsP.split(',').map(Number) : null, status: parsed.searchParams.get('status') });
+            res.writeHead(200, { 'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'Content-Disposition': 'attachment; filename=adspower_import.xlsx' });
             return res.end(buf);
         }
         send(404, { error: 'unknown rc route' });

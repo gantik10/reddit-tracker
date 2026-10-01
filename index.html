@@ -484,7 +484,7 @@
                     <button class="btn btn-ghost btn-sm" onclick="rcMoveToFolder()" title="Move selected accounts into a folder">Move to folder…</button>
                     <button class="btn btn-ghost btn-sm" onclick="rcSelectInteresting()" title="Tick all interesting accounts (50+ karma, 2mo+ idle)">★ Select interesting</button>
                     <span style="width:1px;height:22px;background:var(--border);"></span>
-                    <select class="input" id="rcFilter" style="width:auto;padding:6px 10px;" onchange="rcRender()">
+                    <select class="input" id="rcFilter" style="width:auto;padding:6px 10px;" onchange="rcFilterChanged()">
                         <option value="">All statuses</option>
                         <option value="interesting">★ Interesting (50+ karma, 2mo idle)</option>
                         <option value="active">Active</option>
@@ -496,7 +496,7 @@
                         <option value="no_proxy">No proxy</option>
                         <option value="unchecked">Unchecked</option>
                     </select>
-                    <select class="input" id="rcSort" style="width:auto;padding:6px 10px;" onchange="rcRender()">
+                    <select class="input" id="rcSort" style="width:auto;padding:6px 10px;" onchange="rcFilterChanged()">
                         <option value="status">Sort: Status</option>
                         <option value="karma">Karma (high→low)</option>
                         <option value="lastActivity">Last activity (recent)</option>
@@ -505,9 +505,17 @@
                         <option value="username">Username (A→Z)</option>
                         <option value="batch">Batch (newest)</option>
                     </select>
-                    <input type="text" class="input" id="rcSearch" placeholder="Search username..." style="width:160px;padding:6px 10px;" oninput="rcRender()">
+                    <input type="text" class="input" id="rcSearch" placeholder="Search username..." style="width:160px;padding:6px 10px;" oninput="rcFilterChanged()">
+                    <select class="input" id="rcPageSize" style="width:auto;padding:6px 10px;" onchange="rcSetPageSize(this.value)" title="Rows shown per page (fewer = faster on slower PCs)">
+                        <option value="50">50 / page</option>
+                        <option value="100" selected>100 / page</option>
+                        <option value="250">250 / page</option>
+                        <option value="500">500 / page</option>
+                        <option value="all">Show all</option>
+                    </select>
                     <button class="btn btn-ghost btn-sm" onclick="rcExport()">Export CSV</button>
                     <button class="btn btn-ghost btn-sm" onclick="rcExportDolphin()" title="Export selected (or current filter) as a Dolphin Anty import file">Export to Dolphin</button>
+                    <button class="btn btn-ghost btn-sm" onclick="rcExportAdsPower()" title="Export selected (or current filter) as an AdsPower import file">Export to AdsPower</button>
                     <button class="btn btn-ghost btn-sm" onclick="rcDeleteSelected()" style="margin-left:auto;">Delete selected</button>
                 </div>
 
@@ -535,6 +543,7 @@
                         <tbody id="rcTableBody"></tbody>
                     </table>
                 </div>
+                <div id="rcPager" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:12px;font-size:13px;color:var(--text-secondary);"></div>
                 <div id="rcEmpty" class="empty-keywords" style="margin-top:16px;">No accounts yet. Import a ZIP of cookie files and a proxy list to begin.</div>
             </div>
         </main>
