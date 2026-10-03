@@ -116,14 +116,18 @@ function swapToFreeProxy(s, acc) {
 }
 
 // ---- HTTP via curl through a specific SOCKS5 proxy + cookie jar ----
-function runCurl(proxy, cookieHeader, url, accept = 'application/json') {
+function runCurl(proxy, cookieHeader, url, accept = 'application/json', withCode = false) {
     return new Promise((resolve) => {
         const args = ['-sL', '--socks5-hostname', `${proxy.host}:${proxy.port}`];
         if (proxy.user) args.push('-U', `${proxy.user}:${proxy.pass}`);
         args.push('-H', `Cookie: ${cookieHeader}`, '-H', `User-Agent: ${UA}`,
-            '-H', `Accept: ${accept}`, '--max-time', '15', url);
+            '-H', `Accept: ${accept}`, '--max-time', '15');
+        if (withCode) args.push('-w', '\n__HTTP__%{http_code}');
+        args.push(url);
         execFile('curl', args, { maxBuffer: 8 * 1024 * 1024 }, (err, stdout) => {
             if (err && !stdout) return resolve({ ok: false, error: (err.message || 'curl error').slice(0, 140) });
+            const m = withCode ? (stdout || '').match(/\n__HTTP__(\d+)$/) : null;
+            if (m) return resolve({ ok: true, body: stdout.slice(0, m.index), code: m[1] });
             resolve({ ok: true, body: stdout || '' });
         });
     });
@@ -177,13 +181,19 @@ async function checkAccount(acc, s) {
     // partial (same cookie, same proxy) and look for that alert.
     let drawerCheck = null, error = null;
     if (status === 'active') {
-        const dr = await runCurl(proxy, acc.cookieHeader, 'https://www.reddit.com/svc/shreddit/user-drawer-menu', 'text/vnd.reddit.partial+html, text/html;q=0.9');
+        const dr = await runCurl(proxy, acc.cookieHeader, 'https://www.reddit.com/svc/shreddit/user-drawer-menu', 'text/vnd.reddit.partial+html, text/html;q=0.9', true);
         drawerCheck = 'unknown'; // proxy blip / block page — don't change the status on that
         if (dr.ok) {
             if (/cause="query-bad-response"|<faceplate-alert[^>]*level="error"/.test(dr.body)) drawerCheck = 'error';
             else if (/noun="logout"/.test(dr.body)) drawerCheck = 'ok';
         }
         if (drawerCheck === 'error') { status = 'hidden_suspended'; error = 'account menu returns server error (me.json says active)'; }
+        // Unrecognised answer: keep what Reddit actually sent so the probe can be fixed.
+        else if (drawerCheck === 'unknown') {
+            error = 'menu check: ' + (dr.ok
+                ? `http ${dr.code || '?'}, ${dr.body.length}b: ${dr.body.replace(/\s+/g, ' ').trim().slice(0, 160)}`
+                : (dr.error || 'no answer'));
+        }
     }
 
     let lastActivity = null;
