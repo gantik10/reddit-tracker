@@ -122,7 +122,7 @@ function runCurl(proxy, cookieHeader, url, accept = 'application/json', withCode
         if (proxy.user) args.push('-U', `${proxy.user}:${proxy.pass}`);
         args.push('-H', `Cookie: ${cookieHeader}`, '-H', `User-Agent: ${UA}`,
             '-H', `Accept: ${accept}`, '--max-time', '15');
-        if (withCode) args.push('-w', '\n__HTTP__%{http_code}');
+        if (withCode) args.push('--compressed', '-w', '\n__HTTP__%{http_code}');
         args.push(url);
         execFile('curl', args, { maxBuffer: 8 * 1024 * 1024 }, (err, stdout) => {
             if (err && !stdout) return resolve({ ok: false, error: (err.message || 'curl error').slice(0, 140) });
@@ -132,6 +132,9 @@ function runCurl(proxy, cookieHeader, url, accept = 'application/json', withCode
         });
     });
 }
+
+// Id segment of the account-menu partial URL; refreshed from the home page when it stops working.
+let drawerPartialId = 'SZvQJM';
 
 // ---- Check one account (through its proxy) ----
 async function checkAccount(acc, s) {
@@ -181,16 +184,31 @@ async function checkAccount(acc, s) {
     // partial (same cookie, same proxy) and look for that alert.
     let drawerCheck = null, error = null;
     if (status === 'active') {
-        const dr = await runCurl(proxy, acc.cookieHeader, 'https://www.reddit.com/svc/shreddit/user-drawer-menu', 'text/vnd.reddit.partial+html, text/html;q=0.9', true);
-        drawerCheck = 'unknown'; // proxy blip / block page — don't change the status on that
-        if (dr.ok) {
-            if (/cause="query-bad-response"|<faceplate-alert[^>]*level="error"/.test(dr.body)) drawerCheck = 'error';
-            else if (/noun="logout"/.test(dr.body)) drawerCheck = 'ok';
+        const PARTIAL = 'text/vnd.reddit.partial+html, text/html;q=0.9';
+        // Only an actual menu counts (it always has the Log Out row) — a block/404 page is "unknown".
+        const classify = (r) => !r.ok || !/noun="logout"/.test(r.body) ? 'unknown'
+            : /cause="query-bad-response"/.test(r.body) ? 'error' : 'ok';
+        // The partial URL carries an id (/partial/<id>/user-drawer-menu). Try the last one that
+        // worked; if Reddit no longer accepts it, read the current one off the home page.
+        let from = 'saved id';
+        let dr = await runCurl(proxy, acc.cookieHeader, `https://www.reddit.com/svc/shreddit/partial/${drawerPartialId}/user-drawer-menu`, PARTIAL, true);
+        drawerCheck = classify(dr);
+        if (drawerCheck === 'unknown') {
+            const home = await runCurl(proxy, acc.cookieHeader, 'https://www.reddit.com/', 'text/html', true);
+            const m = home.ok && home.body.match(/\/svc\/shreddit\/partial\/([\w-]+)\/user-drawer-menu/);
+            if (m) {
+                from = 'id from page';
+                dr = await runCurl(proxy, acc.cookieHeader, `https://www.reddit.com/svc/shreddit/partial/${m[1]}/user-drawer-menu`, PARTIAL, true);
+                drawerCheck = classify(dr);
+                if (drawerCheck !== 'unknown') drawerPartialId = m[1];
+            } else {
+                from = `no id on home page (http ${home.code || '?'}, ${(home.body || '').length}b)`;
+            }
         }
         if (drawerCheck === 'error') { status = 'hidden_suspended'; error = 'account menu returns server error (me.json says active)'; }
         // Unrecognised answer: keep what Reddit actually sent so the probe can be fixed.
         else if (drawerCheck === 'unknown') {
-            error = 'menu check: ' + (dr.ok
+            error = `menu check, ${from}: ` + (dr.ok
                 ? `http ${dr.code || '?'}, ${dr.body.length}b: ${dr.body.replace(/\s+/g, ' ').trim().slice(0, 160)}`
                 : (dr.error || 'no answer'));
         }
