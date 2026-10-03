@@ -170,8 +170,28 @@ async function checkAccount(acc, s) {
     else if (d.is_suspended) status = 'suspended';
     else status = 'active';
 
+    // Hidden suspension: me.json still says is_suspended=false (so it looked Active), but the
+    // account's profile — what the avatar hover card and everyone else sees — is suspended.
+    // Ask for the profile itself (same cookie, same proxy) and trust that over me.json.
+    let profileView = null, error = null;
+    if (status === 'active') {
+        const ab = await runCurl(proxy, acc.cookieHeader,
+            `https://www.reddit.com/user/${encodeURIComponent(username)}/about.json?raw_json=1`);
+        profileView = 'unknown'; // proxy blip / HTML block — don't change the status on that
+        if (ab.ok) {
+            try {
+                const a = JSON.parse(ab.body);
+                if (a?.data?.is_suspended) profileView = 'suspended';
+                else if (a?.error === 404) profileView = 'not_found';
+                else if (a?.data?.name) profileView = 'ok';
+            } catch { /* leave unknown */ }
+        }
+        if (profileView === 'suspended') { status = 'hidden_suspended'; error = 'profile shows suspended (me.json says active)'; }
+        else if (profileView === 'not_found') { status = 'hidden_suspended'; error = 'profile not found (me.json says active)'; }
+    }
+
     let lastActivity = null;
-    if (status === 'active' || status === 'reset_password') {
+    if (status === 'active' || status === 'reset_password' || status === 'hidden_suspended') {
         const ov = await runCurl(proxy, acc.cookieHeader,
             `https://www.reddit.com/user/${encodeURIComponent(username)}/overview.json?limit=1&sort=new&raw_json=1`);
         if (ov.ok) {
@@ -181,7 +201,7 @@ async function checkAccount(acc, s) {
             } catch { /* leave null */ }
         }
     }
-    return { status, username, karmaTotal, karmaLink, karmaComment, accountCreated, lastActivity, lastChecked: nowISO(), error: null };
+    return { status, username, karmaTotal, karmaLink, karmaComment, accountCreated, lastActivity, profileView, lastChecked: nowISO(), error };
 }
 
 // ---- Background check job ----
@@ -325,7 +345,7 @@ function listPublic() {
             lastActivity: a.lastActivity, accountCreated: a.accountCreated,
             cookieExpiry: a.cookieExpiry, claimed: a.claimed,
             proxy: p ? `${p.host}:${p.port}` : null,
-            lastChecked: a.lastChecked, error: a.error,
+            lastChecked: a.lastChecked, error: a.error, profileView: a.profileView || null,
             resetDetectedAt: a.resetDetectedAt || null, resetFirstStatus: a.resetFirstStatus || null,
             firstCheckedAt: a.firstCheckedAt || null, firstStatus: a.firstStatus || null,
             batch: a.batch || '', saved: !!a.saved,

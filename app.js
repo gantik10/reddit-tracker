@@ -538,7 +538,8 @@ async function rcLoad() {
 
 const RC_BADGES = {
     active: ['#0f9d58', 'Active'], reset_password: ['#c47f00', 'Reset Password'],
-    suspended: ['#d93025', 'Suspended'], login_failed: ['#8a1f8a', 'Login failed'],
+    suspended: ['#d93025', 'Suspended'], hidden_suspended: ['#e8590c', 'Hidden suspension'],
+    login_failed: ['#8a1f8a', 'Login failed'],
     cookie_expired: ['#b06000', 'Cookie expired'], proxy_error: ['#8a6d00', 'Proxy error'],
     no_proxy: ['#666', 'No proxy'], unchecked: ['#888', 'Unchecked'],
 };
@@ -578,7 +579,7 @@ function rcAgo(iso) {
     return 'just now';
 }
 
-const RC_STATUS_ORDER = { active: 0, reset_password: 1, login_failed: 2, cookie_expired: 3, suspended: 4, proxy_error: 5, no_proxy: 6, unchecked: 7 };
+const RC_STATUS_ORDER = { active: 0, reset_password: 1, login_failed: 2, cookie_expired: 3, hidden_suspended: 3.5, suspended: 4, proxy_error: 5, no_proxy: 6, unchecked: 7 };
 function rcSortRows(rows, sort) {
     const by = {
         status: (a, b) => (RC_STATUS_ORDER[a.status] ?? 9) - (RC_STATUS_ORDER[b.status] ?? 9),
@@ -654,7 +655,7 @@ function rcRender() {
             <td style="padding:7px 6px;"><input type="checkbox" class="rc-row" value="${a.id}"${_rcSelected.has(a.id) ? ' checked' : ''} onchange="rcToggleRow(${a.id}, this.checked)"></td>
             <td style="padding:7px 6px;font-weight:600;">${hot ? '<span title="50+ karma, 2mo+ idle" style="color:#0f9d58;">★</span> ' : ''}${esc(a.username || '—')}</td>
             <td style="padding:7px 6px;color:var(--text-secondary);font-size:12px;">${esc(a.batch || '—')}</td>
-            <td style="padding:7px 6px;">${rcBadge(a.status)}</td>
+            <td style="padding:7px 6px;"${a.status === 'active' && a.profileView === 'unknown' ? ' title="Profile check did not answer — hidden suspension not ruled out"' : ''}>${rcBadge(a.status)}${a.status === 'active' && a.profileView === 'unknown' ? ' <span style="color:#c47f00;">?</span>' : ''}</td>
             <td style="padding:7px 6px;">${a.karmaTotal != null ? fmtNumAlways(a.karmaTotal) : '—'}</td>
             <td style="padding:7px 6px;" title="${a.lastActivity ? fmtDate(a.lastActivity) : ''}">${rcAgo(a.lastActivity)}</td>
             <td style="padding:7px 6px;">${a.accountCreated ? new Date(a.accountCreated).getFullYear() : (a.claimed?.year || '—')}</td>
