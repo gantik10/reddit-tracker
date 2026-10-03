@@ -655,7 +655,7 @@ function rcRender() {
             <td style="padding:7px 6px;"><input type="checkbox" class="rc-row" value="${a.id}"${_rcSelected.has(a.id) ? ' checked' : ''} onchange="rcToggleRow(${a.id}, this.checked)"></td>
             <td style="padding:7px 6px;font-weight:600;">${hot ? '<span title="50+ karma, 2mo+ idle" style="color:#0f9d58;">★</span> ' : ''}${esc(a.username || '—')}</td>
             <td style="padding:7px 6px;color:var(--text-secondary);font-size:12px;">${esc(a.batch || '—')}</td>
-            <td style="padding:7px 6px;"${a.status === 'active' && a.profileView === 'unknown' ? ' title="Profile check did not answer — hidden suspension not ruled out"' : ''}>${rcBadge(a.status)}${a.status === 'active' && a.profileView === 'unknown' ? ' <span style="color:#c47f00;">?</span>' : ''}</td>
+            <td style="padding:7px 6px;"${a.status === 'active' && a.drawerCheck === 'unknown' ? ' title="Account-menu check did not answer — hidden suspension not ruled out"' : ''}>${rcBadge(a.status)}${a.status === 'active' && a.drawerCheck === 'unknown' ? ' <span style="color:#c47f00;">?</span>' : ''}</td>
             <td style="padding:7px 6px;">${a.karmaTotal != null ? fmtNumAlways(a.karmaTotal) : '—'}</td>
             <td style="padding:7px 6px;" title="${a.lastActivity ? fmtDate(a.lastActivity) : ''}">${rcAgo(a.lastActivity)}</td>
             <td style="padding:7px 6px;">${a.accountCreated ? new Date(a.accountCreated).getFullYear() : (a.claimed?.year || '—')}</td>

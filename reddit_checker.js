@@ -116,12 +116,12 @@ function swapToFreeProxy(s, acc) {
 }
 
 // ---- HTTP via curl through a specific SOCKS5 proxy + cookie jar ----
-function runCurl(proxy, cookieHeader, url) {
+function runCurl(proxy, cookieHeader, url, accept = 'application/json') {
     return new Promise((resolve) => {
         const args = ['-sL', '--socks5-hostname', `${proxy.host}:${proxy.port}`];
         if (proxy.user) args.push('-U', `${proxy.user}:${proxy.pass}`);
         args.push('-H', `Cookie: ${cookieHeader}`, '-H', `User-Agent: ${UA}`,
-            '-H', 'Accept: application/json', '--max-time', '15', url);
+            '-H', `Accept: ${accept}`, '--max-time', '15', url);
         execFile('curl', args, { maxBuffer: 8 * 1024 * 1024 }, (err, stdout) => {
             if (err && !stdout) return resolve({ ok: false, error: (err.message || 'curl error').slice(0, 140) });
             resolve({ ok: true, body: stdout || '' });
@@ -170,24 +170,20 @@ async function checkAccount(acc, s) {
     else if (d.is_suspended) status = 'suspended';
     else status = 'active';
 
-    // Hidden suspension: me.json still says is_suspended=false (so it looked Active), but the
-    // account's profile — what the avatar hover card and everyone else sees — is suspended.
-    // Ask for the profile itself (same cookie, same proxy) and trust that over me.json.
-    let profileView = null, error = null;
+    // Hidden suspension: me.json AND about.json both say is_suspended=false (so it looked
+    // Active), but in a browser the account menu (avatar hover) shows "We had a server error".
+    // That menu is an HTML partial; for these accounts Reddit answers 200 with an error alert
+    // (cause="query-bad-response") and a menu rendered with no user in it. Fetch the same
+    // partial (same cookie, same proxy) and look for that alert.
+    let drawerCheck = null, error = null;
     if (status === 'active') {
-        const ab = await runCurl(proxy, acc.cookieHeader,
-            `https://www.reddit.com/user/${encodeURIComponent(username)}/about.json?raw_json=1`);
-        profileView = 'unknown'; // proxy blip / HTML block — don't change the status on that
-        if (ab.ok) {
-            try {
-                const a = JSON.parse(ab.body);
-                if (a?.data?.is_suspended) profileView = 'suspended';
-                else if (a?.error === 404) profileView = 'not_found';
-                else if (a?.data?.name) profileView = 'ok';
-            } catch { /* leave unknown */ }
+        const dr = await runCurl(proxy, acc.cookieHeader, 'https://www.reddit.com/svc/shreddit/user-drawer-menu', 'text/vnd.reddit.partial+html, text/html;q=0.9');
+        drawerCheck = 'unknown'; // proxy blip / block page — don't change the status on that
+        if (dr.ok) {
+            if (/cause="query-bad-response"|<faceplate-alert[^>]*level="error"/.test(dr.body)) drawerCheck = 'error';
+            else if (/noun="logout"/.test(dr.body)) drawerCheck = 'ok';
         }
-        if (profileView === 'suspended') { status = 'hidden_suspended'; error = 'profile shows suspended (me.json says active)'; }
-        else if (profileView === 'not_found') { status = 'hidden_suspended'; error = 'profile not found (me.json says active)'; }
+        if (drawerCheck === 'error') { status = 'hidden_suspended'; error = 'account menu returns server error (me.json says active)'; }
     }
 
     let lastActivity = null;
@@ -201,7 +197,7 @@ async function checkAccount(acc, s) {
             } catch { /* leave null */ }
         }
     }
-    return { status, username, karmaTotal, karmaLink, karmaComment, accountCreated, lastActivity, profileView, lastChecked: nowISO(), error };
+    return { status, username, karmaTotal, karmaLink, karmaComment, accountCreated, lastActivity, drawerCheck, lastChecked: nowISO(), error };
 }
 
 // ---- Background check job ----
@@ -345,7 +341,7 @@ function listPublic() {
             lastActivity: a.lastActivity, accountCreated: a.accountCreated,
             cookieExpiry: a.cookieExpiry, claimed: a.claimed,
             proxy: p ? `${p.host}:${p.port}` : null,
-            lastChecked: a.lastChecked, error: a.error, profileView: a.profileView || null,
+            lastChecked: a.lastChecked, error: a.error, drawerCheck: a.drawerCheck || null,
             resetDetectedAt: a.resetDetectedAt || null, resetFirstStatus: a.resetFirstStatus || null,
             firstCheckedAt: a.firstCheckedAt || null, firstStatus: a.firstStatus || null,
             batch: a.batch || '', saved: !!a.saved,
