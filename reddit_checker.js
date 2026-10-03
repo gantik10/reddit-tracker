@@ -116,12 +116,12 @@ function swapToFreeProxy(s, acc) {
 }
 
 // ---- HTTP via curl through a specific SOCKS5 proxy + cookie jar ----
-function runCurl(proxy, cookieHeader, url) {
+function runCurl(proxy, cookieHeader, url, accept = 'application/json') {
     return new Promise((resolve) => {
         const args = ['-sL', '--socks5-hostname', `${proxy.host}:${proxy.port}`];
         if (proxy.user) args.push('-U', `${proxy.user}:${proxy.pass}`);
         args.push('-H', `Cookie: ${cookieHeader}`, '-H', `User-Agent: ${UA}`,
-            '-H', 'Accept: application/json', '--max-time', '15', url);
+            '-H', `Accept: ${accept}`, '--max-time', '15', url);
         execFile('curl', args, { maxBuffer: 8 * 1024 * 1024 }, (err, stdout) => {
             if (err && !stdout) return resolve({ ok: false, error: (err.message || 'curl error').slice(0, 140) });
             resolve({ ok: true, body: stdout || '' });
@@ -170,8 +170,24 @@ async function checkAccount(acc, s) {
     else if (d.is_suspended) status = 'suspended';
     else status = 'active';
 
+    // Hidden suspension: me.json AND about.json both say is_suspended=false (so it looked
+    // Active), but in a browser the account menu (avatar hover) shows "We had a server error".
+    // That menu is an HTML partial; for these accounts Reddit answers 200 with an error alert
+    // (cause="query-bad-response") and a menu rendered with no user in it. Fetch the same
+    // partial (same cookie, same proxy) and look for that alert.
+    let drawerCheck = null, error = null;
+    if (status === 'active') {
+        const dr = await runCurl(proxy, acc.cookieHeader, 'https://www.reddit.com/svc/shreddit/user-drawer-menu', 'text/vnd.reddit.partial+html, text/html;q=0.9');
+        drawerCheck = 'unknown'; // proxy blip / block page — don't change the status on that
+        if (dr.ok) {
+            if (/cause="query-bad-response"|<faceplate-alert[^>]*level="error"/.test(dr.body)) drawerCheck = 'error';
+            else if (/noun="logout"/.test(dr.body)) drawerCheck = 'ok';
+        }
+        if (drawerCheck === 'error') { status = 'hidden_suspended'; error = 'account menu returns server error (me.json says active)'; }
+    }
+
     let lastActivity = null;
-    if (status === 'active' || status === 'reset_password') {
+    if (status === 'active' || status === 'reset_password' || status === 'hidden_suspended') {
         const ov = await runCurl(proxy, acc.cookieHeader,
             `https://www.reddit.com/user/${encodeURIComponent(username)}/overview.json?limit=1&sort=new&raw_json=1`);
         if (ov.ok) {
@@ -181,7 +197,7 @@ async function checkAccount(acc, s) {
             } catch { /* leave null */ }
         }
     }
-    return { status, username, karmaTotal, karmaLink, karmaComment, accountCreated, lastActivity, lastChecked: nowISO(), error: null };
+    return { status, username, karmaTotal, karmaLink, karmaComment, accountCreated, lastActivity, drawerCheck, lastChecked: nowISO(), error };
 }
 
 // ---- Background check job ----
@@ -325,7 +341,7 @@ function listPublic() {
             lastActivity: a.lastActivity, accountCreated: a.accountCreated,
             cookieExpiry: a.cookieExpiry, claimed: a.claimed,
             proxy: p ? `${p.host}:${p.port}` : null,
-            lastChecked: a.lastChecked, error: a.error,
+            lastChecked: a.lastChecked, error: a.error, drawerCheck: a.drawerCheck || null,
             resetDetectedAt: a.resetDetectedAt || null, resetFirstStatus: a.resetFirstStatus || null,
             firstCheckedAt: a.firstCheckedAt || null, firstStatus: a.firstStatus || null,
             batch: a.batch || '', saved: !!a.saved,
