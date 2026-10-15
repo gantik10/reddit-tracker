@@ -69,13 +69,18 @@ function curlAsync(args, timeoutMs = 20000) {
         });
     });
 }
+// When Reddit answers with its HTML bot wall while a cookie is set, the cookie is dead
+// (expired/invalid) and retrying other proxy ports is pointless: pause Reddit fetches for a while.
+let redditBotWallUntil = 0;
+const REDDIT_BOT_WALL_COOLDOWN_MS = 90 * 1000;
 async function httpsRequest(targetUrl, headers = {}) {
     const isReddit = targetUrl.includes('reddit.com');
     // Attach authenticated session cookie for Reddit so .json returns JSON, not the bot wall.
     const baseHeaders = { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36', 'Accept': 'application/json' };
+    let hasCookie = false;
     if (isReddit) {
         const cookie = getRedditCookie();
-        if (cookie) baseHeaders['Cookie'] = `reddit_session=${cookie}`;
+        if (cookie) { baseHeaders['Cookie'] = `reddit_session=${cookie}`; hasCookie = true; }
     }
     const headerArgs = Object.entries({ ...baseHeaders, ...headers }).flatMap(([k, v]) => ['-H', `${k}: ${v}`]);
 
@@ -88,8 +93,12 @@ async function httpsRequest(targetUrl, headers = {}) {
 
     // Reddit goes through rotating SOCKS5 ports (VPS IP is banned by Reddit). Many ports
     // in the pool are dead at any moment, so retry on a fresh random port until one works.
+    if (Date.now() < redditBotWallUntil) {
+        return { status: 502, data: JSON.stringify({ error: 'Reddit fetch skipped: bot wall cooldown (reddit_session cookie looks expired — update it in Settings).' }) };
+    }
     const MAX_TRIES = 5;
     let lastErr = '';
+    let botWalls = 0;
     for (let attempt = 0; attempt < MAX_TRIES; attempt++) {
         const port = PROXY_BASE.basePort + Math.floor(Math.random() * PROXY_BASE.maxPortOffset);
         const proxyArgs = ['--socks5-hostname', `${PROXY_BASE.host}:${port}`, '-U', `${PROXY_BASE.login}:${PROXY_BASE.password}`];
@@ -98,7 +107,17 @@ async function httpsRequest(targetUrl, headers = {}) {
         // Empty body or HTML bot-wall → bad port / blocked; try another port.
         const trimmed = (r.data || '').trimStart();
         if (!trimmed) { lastErr = 'empty response'; continue; }
-        if (trimmed.startsWith('<')) { lastErr = 'reddit bot wall (HTML)'; continue; }
+        if (trimmed.startsWith('<')) {
+            lastErr = 'reddit bot wall (HTML)';
+            botWalls++;
+            // Two bot walls in a row with a cookie attached = dead cookie, not a dead port.
+            if (hasCookie && botWalls >= 2) {
+                redditBotWallUntil = Date.now() + REDDIT_BOT_WALL_COOLDOWN_MS;
+                console.log(`[Reddit] Bot wall with cookie set — cookie likely expired. Pausing Reddit fetches for ${REDDIT_BOT_WALL_COOLDOWN_MS / 1000}s.`);
+                break;
+            }
+            continue;
+        }
         return { status: 200, data: r.data };
     }
     console.log(`[Reddit] All ${MAX_TRIES} proxy attempts failed: ${lastErr}`);
