@@ -5,7 +5,7 @@ const http = require('http');
 const https = require('https');
 const fs = require('fs');
 const path = require('path');
-const { execSync, spawn } = require('child_process');
+const { execSync, spawn, execFile } = require('child_process');
 const puppeteer = require('puppeteer-core');
 const proxyChain = require('proxy-chain');
 const redditChecker = require('./reddit_checker');
@@ -60,7 +60,16 @@ function getRedditCookie() {
 }
 
 // --- HTTPS request via curl (reliable) ---
-function httpsRequest(targetUrl, headers = {}) {
+// Runs curl without blocking the event loop (the old execSync version froze every other request for up to 75 s per Reddit call).
+function curlAsync(args, timeoutMs = 20000) {
+    return new Promise((resolve) => {
+        execFile('curl', args, { encoding: 'utf8', maxBuffer: 10 * 1024 * 1024, timeout: timeoutMs }, (err, stdout) => {
+            if (err && !stdout) return resolve({ ok: false, error: err.message });
+            resolve({ ok: true, data: stdout || '' });
+        });
+    });
+}
+async function httpsRequest(targetUrl, headers = {}) {
     const isReddit = targetUrl.includes('reddit.com');
     // Attach authenticated session cookie for Reddit so .json returns JSON, not the bot wall.
     const baseHeaders = { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36', 'Accept': 'application/json' };
@@ -68,19 +77,13 @@ function httpsRequest(targetUrl, headers = {}) {
         const cookie = getRedditCookie();
         if (cookie) baseHeaders['Cookie'] = `reddit_session=${cookie}`;
     }
-    const headerArgs = Object.entries({ ...baseHeaders, ...headers })
-        .map(([k, v]) => `-H "${k}: ${v}"`).join(' ');
+    const headerArgs = Object.entries({ ...baseHeaders, ...headers }).flatMap(([k, v]) => ['-H', `${k}: ${v}`]);
 
     // Non-Reddit (e.g. Ahrefs): single direct request.
     if (!isReddit) {
-        try {
-            const data = execSync(`curl -sL ${headerArgs} --max-time 15 "${targetUrl}"`, {
-                encoding: 'utf8', maxBuffer: 10 * 1024 * 1024, timeout: 20000
-            });
-            return { status: 200, data };
-        } catch (e) {
-            return { status: 502, data: JSON.stringify({ error: e.message }) };
-        }
+        const r = await curlAsync(['-sL', ...headerArgs, '--max-time', '15', targetUrl]);
+        if (r.ok) return { status: 200, data: r.data };
+        return { status: 502, data: JSON.stringify({ error: r.error }) };
     }
 
     // Reddit goes through rotating SOCKS5 ports (VPS IP is banned by Reddit). Many ports
@@ -89,20 +92,14 @@ function httpsRequest(targetUrl, headers = {}) {
     let lastErr = '';
     for (let attempt = 0; attempt < MAX_TRIES; attempt++) {
         const port = PROXY_BASE.basePort + Math.floor(Math.random() * PROXY_BASE.maxPortOffset);
-        const proxyArg = `--socks5-hostname ${PROXY_BASE.host}:${port} -U ${PROXY_BASE.login}:${PROXY_BASE.password}`;
-        try {
-            const data = execSync(`curl -sL ${proxyArg} ${headerArgs} --max-time 15 "${targetUrl}"`, {
-                encoding: 'utf8', maxBuffer: 10 * 1024 * 1024, timeout: 20000
-            });
-            // Empty body or HTML bot-wall → bad port / blocked; try another port.
-            const trimmed = (data || '').trimStart();
-            if (!trimmed) { lastErr = 'empty response'; continue; }
-            if (trimmed.startsWith('<')) { lastErr = 'reddit bot wall (HTML)'; continue; }
-            return { status: 200, data };
-        } catch (e) {
-            // curl failed (commonly a dead proxy port) — retry on a new port.
-            lastErr = e.message;
-        }
+        const proxyArgs = ['--socks5-hostname', `${PROXY_BASE.host}:${port}`, '-U', `${PROXY_BASE.login}:${PROXY_BASE.password}`];
+        const r = await curlAsync(['-sL', ...proxyArgs, ...headerArgs, '--max-time', '15', targetUrl]);
+        if (!r.ok) { lastErr = r.error; continue; } // curl failed (commonly a dead proxy port) — retry on a new port.
+        // Empty body or HTML bot-wall → bad port / blocked; try another port.
+        const trimmed = (r.data || '').trimStart();
+        if (!trimmed) { lastErr = 'empty response'; continue; }
+        if (trimmed.startsWith('<')) { lastErr = 'reddit bot wall (HTML)'; continue; }
+        return { status: 200, data: r.data };
     }
     console.log(`[Reddit] All ${MAX_TRIES} proxy attempts failed: ${lastErr}`);
     return { status: 502, data: JSON.stringify({ error: `Reddit fetch failed after ${MAX_TRIES} proxy attempts (${lastErr}).` }) };
@@ -602,7 +599,7 @@ const server = http.createServer(async (req, res) => {
                     return s;
                 });
 
-            fs.writeFileSync(DATA_FILE, JSON.stringify(body, null, 2), 'utf8');
+            fs.writeFileSync(DATA_FILE, JSON.stringify(body), 'utf8');
             res.writeHead(200, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify({ success: true }));
         } catch (err) {
@@ -1195,7 +1192,7 @@ Return ONLY the JSON array, no other text.`;
         try {
             const afterParam = after ? `&after=${after}` : '';
             const url = `https://www.reddit.com/subreddits/search.json?q=${encodeURIComponent(keyword)}&limit=${limit || 25}${afterParam}&sort=relevance`;
-            const raw = httpsRequest(url).data;
+            const raw = (await httpsRequest(url)).data;
             if (!raw || raw.trim().startsWith('<')) {
                 // Reddit returned HTML — end of results or blocked
                 res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -1331,7 +1328,7 @@ Return ONLY the JSON array, no other text.`;
         const proxyHeaders = {};
         if (req.headers.authorization) proxyHeaders['Authorization'] = req.headers.authorization;
         try {
-            const result = httpsRequest(targetUrl, proxyHeaders);
+            const result = await httpsRequest(targetUrl, proxyHeaders);
             if (targetUrl.includes('ahrefs.com')) console.log(`[Ahrefs] → ${result.data.slice(0, 200)}`);
             // httpsRequest already retries dead proxy ports & the HTML bot wall for Reddit.
             // If it still failed on a bot wall, it's an auth (cookie) problem — give a clear hint.
@@ -1366,7 +1363,7 @@ Return ONLY the JSON array, no other text.`;
         try {
             // Step 1: Regular Google search
             const googleUrl = `https://serpapi.com/search.json?engine=google&q=${encodeURIComponent(keyword)}&gl=us&hl=en&location=United+States&google_domain=google.com&num=10&api_key=${apiKey}`;
-            const googleResult = JSON.parse(httpsRequest(googleUrl).data);
+            const googleResult = JSON.parse((await httpsRequest(googleUrl)).data);
 
             if (googleResult.error) throw new Error(googleResult.error);
 
@@ -1409,7 +1406,7 @@ Return ONLY the JSON array, no other text.`;
             console.log(`[SERP] Not on Google page 1, checking site:reddit.com (up to 3 pages)...`);
             const siteQuery = keyword + ' site:www.reddit.com';
             const redditUrl = `https://serpapi.com/search.json?engine=google&q=${encodeURIComponent(siteQuery)}&gl=us&hl=en&location=United+States&google_domain=google.com&num=10&api_key=${apiKey}`;
-            const redditResult = JSON.parse(httpsRequest(redditUrl).data);
+            const redditResult = JSON.parse((await httpsRequest(redditUrl)).data);
             if (redditResult.error) throw new Error(redditResult.error);
 
             const allRedditOrganic = (redditResult.organic_results || []).map((r, i) => ({ ...r, position: i + 1 }));
@@ -1470,12 +1467,12 @@ Return ONLY the JSON array, no other text.`;
                 if (!compPostId) continue;
 
                 // Fetch Reddit post data with comments
-                const postData = JSON.parse(httpsRequest(`https://www.reddit.com/comments/${compPostId}.json?limit=5`).data);
+                const postData = JSON.parse((await httpsRequest(`https://www.reddit.com/comments/${compPostId}.json?limit=5`)).data);
                 const post = postData?.[0]?.data?.children?.[0]?.data;
                 if (!post) continue;
 
                 // Fetch subreddit data
-                const subData = JSON.parse(httpsRequest(`https://www.reddit.com/r/${post.subreddit}/about.json`).data);
+                const subData = JSON.parse((await httpsRequest(`https://www.reddit.com/r/${post.subreddit}/about.json`)).data);
                 const sub = subData?.data;
 
                 // Extract top comments for analysis
@@ -1520,9 +1517,9 @@ Return ONLY the JSON array, no other text.`;
             try {
                 const ourPostId = ourPost.url.match(/comments\/([A-Za-z0-9]+)/i)?.[1];
                 if (ourPostId) {
-                    const pd = JSON.parse(httpsRequest(`https://www.reddit.com/comments/${ourPostId}.json`).data);
+                    const pd = JSON.parse((await httpsRequest(`https://www.reddit.com/comments/${ourPostId}.json`)).data);
                     const p = pd?.[0]?.data?.children?.[0]?.data;
-                    const sd = JSON.parse(httpsRequest(`https://www.reddit.com/r/${p.subreddit}/about.json`).data);
+                    const sd = JSON.parse((await httpsRequest(`https://www.reddit.com/r/${p.subreddit}/about.json`)).data);
                     ourData = {
                         title: p.title,
                         subreddit: p.subreddit,
@@ -1561,7 +1558,7 @@ Return ONLY the JSON array, no other text.`;
         console.log(`[Comments] Fetching top comments for ${postId}...`);
 
         try {
-            const data = JSON.parse(httpsRequest(`https://www.reddit.com/comments/${postId}.json?limit=10`).data);
+            const data = JSON.parse((await httpsRequest(`https://www.reddit.com/comments/${postId}.json?limit=10`)).data);
             const comments = (data?.[1]?.data?.children || [])
                 .filter(c => c.kind === 't1')
                 .slice(0, 7)
@@ -1606,7 +1603,7 @@ Return ONLY the JSON array, no other text.`;
 
         try {
             // Fetch post with comments sorted by best (default Reddit sort)
-            const data = JSON.parse(httpsRequest(`https://www.reddit.com/comments/${postId}.json?limit=25`).data);
+            const data = JSON.parse((await httpsRequest(`https://www.reddit.com/comments/${postId}.json?limit=25`)).data);
             const comments = data?.[1]?.data?.children || [];
 
             let position = null;
@@ -2305,7 +2302,7 @@ async function serverCheckMoneyComments() {
             if (!postId) continue;
 
             try {
-                const raw = httpsRequest(`https://www.reddit.com/comments/${postId}.json?limit=25`).data;
+                const raw = (await httpsRequest(`https://www.reddit.com/comments/${postId}.json?limit=25`)).data;
                 const jsonData = JSON.parse(raw);
                 const comments = jsonData?.[1]?.data?.children || [];
 
