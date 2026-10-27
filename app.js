@@ -541,6 +541,7 @@ const RC_BADGES = {
     suspended: ['#d93025', 'Suspended'], hidden_suspended: ['#e8590c', 'Hidden suspension'],
     login_failed: ['#8a1f8a', 'Login failed'],
     cookie_expired: ['#b06000', 'Cookie expired'], proxy_error: ['#8a6d00', 'Proxy error'],
+    blocked: ['#6d28d9', 'Blocked by Reddit'],
     no_proxy: ['#666', 'No proxy'], unchecked: ['#888', 'Unchecked'],
 };
 function rcBadge(s) {
@@ -579,7 +580,7 @@ function rcAgo(iso) {
     return 'just now';
 }
 
-const RC_STATUS_ORDER = { active: 0, reset_password: 1, login_failed: 2, cookie_expired: 3, hidden_suspended: 3.5, suspended: 4, proxy_error: 5, no_proxy: 6, unchecked: 7 };
+const RC_STATUS_ORDER = { active: 0, reset_password: 1, login_failed: 2, cookie_expired: 3, hidden_suspended: 3.5, suspended: 4, blocked: 4.5, proxy_error: 5, no_proxy: 6, unchecked: 7 };
 function rcSortRows(rows, sort) {
     const by = {
         status: (a, b) => (RC_STATUS_ORDER[a.status] ?? 9) - (RC_STATUS_ORDER[b.status] ?? 9),

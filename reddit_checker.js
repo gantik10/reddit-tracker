@@ -147,18 +147,30 @@ async function checkAccount(acc, s) {
     }
 
     // Retry the (dedicated) proxy a few times — residential IPs blip; one timeout isn't a failure.
+    // Fetch WITH the HTTP status code so we can tell a dead proxy (no response) apart from Reddit
+    // answering but blocking the request. A real connection failure comes back with code "000".
     let me = { ok: false, error: 'proxy/network error' };
     for (let attempt = 0; attempt < 4; attempt++) {
-        me = await runCurl(proxy, acc.cookieHeader, 'https://www.reddit.com/api/me.json');
-        if (me.ok) break;
+        me = await runCurl(proxy, acc.cookieHeader, 'https://www.reddit.com/api/me.json', 'application/json', true);
+        if (me.ok && me.code && me.code !== '000') break; // got a real HTTP response from Reddit
         await new Promise(r => setTimeout(r, 800)); // let a blipping proxy recover
     }
-    if (!me.ok) return { status: 'proxy_error', lastChecked: nowISO(), error: me.error || 'proxy/network error' };
+    // No HTTP response at all → the proxy/network really did fail (the retry + swap logic handles this).
+    if (!me.ok || !me.code || me.code === '000') {
+        return { status: 'proxy_error', lastChecked: nowISO(), error: me.error || 'proxy/network error (no response)' };
+    }
+    // Reddit answered. A 403/429/503 or an HTML page is Reddit blocking the REQUEST itself (bot
+    // detection) — it arrived through the working proxy, so it is NOT a proxy fault and the proxy
+    // must not be burned for it. It gets an honest status of its own, separate from proxy_error
+    // (dead proxy) and login_failed (Reddit returned JSON but rejected the cookie).
+    const code = me.code;
     const body = (me.body || '').trim();
-    if (!body || body[0] === '<') return { status: 'proxy_error', lastChecked: nowISO(), error: 'blocked/HTML (proxy IP flagged)' };
+    if (code === '403' || code === '429' || code === '503' || !body || body[0] === '<') {
+        return { status: 'blocked', lastChecked: nowISO(), error: `Reddit blocked the request (HTTP ${code}) — not the proxy` };
+    }
 
     let j;
-    try { j = JSON.parse(body); } catch { return { status: 'proxy_error', lastChecked: nowISO(), error: 'non-JSON response' }; }
+    try { j = JSON.parse(body); } catch { return { status: 'blocked', lastChecked: nowISO(), error: `non-JSON response (HTTP ${code})` }; }
     const d = (j && j.data) ? j.data : j;
     // Cookie present but Reddit won't authenticate it → can't log in via cookies.
     if (!d || !d.name) return { status: 'login_failed', lastChecked: nowISO(), error: 'cookie rejected — cannot log in' };
