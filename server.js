@@ -59,6 +59,16 @@ function getRedditCookie() {
     return '';
 }
 
+
+// Build the Cookie header for Reddit. Settings may hold either the bare reddit_session value
+// or the full cookie string copied from the browser (name=value; name=value ...), which also
+// carries token_v2/loid and passes Reddit's bot wall far more reliably than reddit_session alone.
+function redditCookieHeader(raw) {
+    const c = (raw || '').trim().replace(/^Cookie:\s*/i, '');
+    if (!c) return '';
+    return c.includes('=') ? c : `reddit_session=${c}`;
+}
+
 // --- HTTPS request via curl (reliable) ---
 // Runs curl without blocking the event loop (the old execSync version froze every other request for up to 75 s per Reddit call).
 function curlAsync(args, timeoutMs = 20000) {
@@ -80,7 +90,7 @@ async function httpsRequest(targetUrl, headers = {}) {
     let hasCookie = false;
     if (isReddit) {
         const cookie = getRedditCookie();
-        if (cookie) { baseHeaders['Cookie'] = `reddit_session=${cookie}`; hasCookie = true; }
+        if (cookie) { baseHeaders['Cookie'] = redditCookieHeader(cookie); hasCookie = true; }
     }
     const headerArgs = Object.entries({ ...baseHeaders, ...headers }).flatMap(([k, v]) => ['-H', `${k}: ${v}`]);
 
@@ -94,7 +104,7 @@ async function httpsRequest(targetUrl, headers = {}) {
     // Reddit goes through rotating SOCKS5 ports (VPS IP is banned by Reddit). Many ports
     // in the pool are dead at any moment, so retry on a fresh random port until one works.
     if (Date.now() < redditBotWallUntil) {
-        return { status: 502, data: JSON.stringify({ error: 'Reddit fetch skipped: bot wall cooldown (reddit_session cookie looks expired — update it in Settings).' }) };
+        return { status: 502, data: JSON.stringify({ error: 'Reddit fetch skipped: bot wall cooldown: Reddit blocked the proxy exits for the last 90 s; cookie may be fine.' }) };
     }
     const MAX_TRIES = 5;
     let lastErr = '';
@@ -1294,7 +1304,7 @@ Return ONLY the JSON array, no other text.`;
                         const child = spawn('curl', [
                             '-sL', '--proxy', proxyUrl, '--max-time', '10',
                             '-H', 'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-                            '-H', `Cookie: reddit_session=${redditCookie}`,
+                            '-H', `Cookie: ${redditCookieHeader(redditCookie)}`,
                             `https://www.reddit.com/r/${subName}/about/moderators.json`
                         ]);
                         let data = '';
@@ -1357,7 +1367,7 @@ Return ONLY the JSON array, no other text.`;
                 console.log(`[Proxy] Reddit bot wall after retries. cookie set: ${hasCookie}`);
                 res.writeHead(502, { 'Content-Type': 'application/json' });
                 res.end(JSON.stringify({ error: hasCookie
-                    ? 'Reddit blocked the request (anti-bot). Your reddit_session cookie looks expired — update it in Settings.'
+                    ? 'Reddit blocked the request (anti-bot) on every proxy exit. If the cookie in Settings is fresh (it opens reddit.com logged in), Reddit is blocking the proxy IPs, not the cookie.'
                     : 'Reddit requires authentication. Add your reddit_session cookie in Settings to fetch posts.' }));
                 return;
             }
@@ -2501,7 +2511,7 @@ async function runBackgroundSearch(searchId, keywords) {
             const proxyUrl = `socks5://${PROXY_BASE.login}:${PROXY_BASE.password}@${PROXY_BASE.host}:${proxyPort}`;
             let done = false;
             try {
-                const child = spawn('curl', ['-sL','--proxy',proxyUrl,'--max-time','20','-H','User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36','-H',`Cookie: reddit_session=${redditCookie}`, url]);
+                const child = spawn('curl', ['-sL','--proxy',proxyUrl,'--max-time','20','-H','User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36','-H',`Cookie: ${redditCookieHeader(redditCookie)}`, url]);
                 let data = '';
                 child.stdout.on('data', c => data += c);
                 child.on('close', () => {

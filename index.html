@@ -768,7 +768,7 @@
                 <div class="form-group">
                     <label>Reddit Session Cookie</label>
                     <div class="api-key-input-row">
-                        <input type="password" class="input" id="redditCookieInput" placeholder="Paste reddit_session cookie value">
+                        <input type="password" class="input" id="redditCookieInput" placeholder="Paste the full Reddit cookie string from DevTools (or just the reddit_session value)">
                         <button class="btn-icon" onclick="toggleKeyVisibility('redditCookieInput')" title="Show/hide">
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
                         </button>
@@ -820,6 +820,8 @@
                     </label>
                     <p class="settings-hint">When on, you get a Telegram alert if a tracked money comment drops out of the #1 spot. Turn off to stop these alerts.</p>
                 </div>
+                <!-- Dolphin Anty rank checking was removed (commit 0e86778: Chromium + SOCKS5 instead); the server has no /api/dolphin route, so these controls only produced "Not Found" errors. Hidden, not deleted. -->
+                <div hidden id="dolphinLegacy">
                 <div class="settings-divider-or"><span>or use Dolphin Anty (local only)</span></div>
                 <div class="form-group">
                     <label>Dolphin Anty API Token</label>
@@ -850,6 +852,7 @@
                     </div>
                     <p class="settings-hint">Each profile should use a different USA proxy. Rank is checked across all 3 and averaged for accuracy.</p>
                 </div>
+                </div><!-- /dolphinLegacy -->
                 <div class="api-key-status" id="settingsStatus"></div>
             </div>
             <div class="modal-footer">
