@@ -109,7 +109,13 @@ const S = {
         localStorage.setItem('lk_' + k, JSON.stringify(v));
         S._syncToServer();
     },
-    nextId(k) { const items = this.get(k); return items.length ? Math.max(...items.map(i => i.id)) + 1 : 1; },
+    nextId(k) {
+        const items = this.get(k);
+        // Never reuse an ID of a deleted subreddit: its tombstone would make sync drop the new one.
+        let tomb = [];
+        if (k === 'subreddits') { try { tomb = JSON.parse(localStorage.getItem('lk_deleted_subs') || '[]'); } catch {} }
+        return Math.max(0, ...items.map(i => Number(i.id) || 0), ...tomb.map(Number).filter(n => !isNaN(n))) + 1;
+    },
 
     // Debounced sync: read server → merge → write back
     _syncTimer: null,
