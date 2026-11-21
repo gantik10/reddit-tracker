@@ -476,8 +476,14 @@
                     <input type="file" id="rcZipInput" accept=".zip" style="display:none" onchange="rcImportAccounts(this)">
                     <button class="btn btn-ghost btn-sm" onclick="openModal('rcProxyModal')">Import Proxies</button>
                     <span style="width:1px;height:22px;background:var(--border);"></span>
+                    <select class="input" id="rcMethod" style="width:auto;padding:6px 10px;" title="Dolphin: each account opens in its own Dolphin Anty profile (its cookie + its proxy) — real browser, slower. Quick: plain requests through the proxy — fast, but Reddit often blocks them.">
+                        <option value="dolphin" selected>Check via Dolphin</option>
+                        <option value="curl">Quick check (no browser)</option>
+                    </select>
                     <button class="btn btn-primary btn-sm" onclick="rcCheck('all')" id="rcCheckAllBtn">Check All</button>
                     <button class="btn btn-ghost btn-sm" onclick="rcCheck('selected')">Check Selected</button>
+                    <button class="btn btn-ghost btn-sm hidden" onclick="rcStopCheck()" id="rcStopBtn" style="color:#d93025;">Stop</button>
+                    <span id="rcDolphinStatus" style="font-size:12px;color:var(--text-secondary);"></span>
                     <span style="width:1px;height:22px;background:var(--border);"></span>
                     <button class="btn btn-primary btn-sm" id="rcSaveBtn" onclick="rcSaveSelected(true)" title="Mark selected as Saved (keepers)">★ Save selected</button>
                     <button class="btn btn-ghost btn-sm" id="rcUnsaveBtn" onclick="rcSaveSelected(false)" style="display:none;">Unsave</button>
@@ -820,9 +826,6 @@
                     </label>
                     <p class="settings-hint">When on, you get a Telegram alert if a tracked money comment drops out of the #1 spot. Turn off to stop these alerts.</p>
                 </div>
-                <!-- Dolphin Anty rank checking was removed (commit 0e86778: Chromium + SOCKS5 instead); the server has no /api/dolphin route, so these controls only produced "Not Found" errors. Hidden, not deleted. -->
-                <div hidden id="dolphinLegacy">
-                <div class="settings-divider-or"><span>or use Dolphin Anty (local only)</span></div>
                 <div class="form-group">
                     <label>Dolphin Anty API Token</label>
                     <div class="api-key-input-row">
@@ -831,8 +834,10 @@
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
                         </button>
                     </div>
-                    <p class="settings-hint">For automated Google rank checking via your Dolphin profiles with USA proxies.</p>
+                    <p class="settings-hint">Used by the Reddit Checker: the Dolphin Anty app on the server opens each account in its own temporary profile (its cookie + its proxy), checks it, then deletes the profile.</p>
                 </div>
+                <!-- Dolphin Anty rank checking was removed (commit 0e86778: Chromium + SOCKS5 instead); the server has no /api/dolphin route, so these controls only produced "Not Found" errors. Hidden, not deleted. -->
+                <div hidden id="dolphinLegacy">
                 <div class="form-group">
                     <label>Dolphin Profiles for Rank Checking (3 profiles for reliable AVG)</label>
                     <button class="btn btn-sm btn-ghost" onclick="loadDolphinProfiles()" style="margin-bottom:8px;">Load Profiles</button>
@@ -1174,6 +1179,6 @@
         <div class="rank-panel-result hidden" id="rankPanelResult"></div>
     </div>
 
-    <script src="app.js?v=20261109a"></script>
+    <script src="app.js?v=20261122a"></script>
 </body>
 </html>

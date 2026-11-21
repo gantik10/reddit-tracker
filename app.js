@@ -102,9 +102,40 @@ function renderActivity() {
     }).join('');
 }
 
+// --- Rank-history compaction (same logic as server.js) ---
+// The 4-hourly auto-check logs a point even when the rank hasn't moved, and this whole
+// dataset is kept in localStorage (~5.24M-char cap per site). Collapse each run of identical
+// consecutive points to its first and last point: every rank change and the last-seen time
+// survive, the repeats go. Idempotent.
+const rankKey = h => (h && h.rankType || 'none') + '|' + (h && h.avgRank != null ? h.avgRank : '');
+function compactRuns(series, keyOf) {
+    if (!Array.isArray(series) || series.length < 3) return series;
+    return series.filter((cur, i) =>
+        !(i > 0 && i < series.length - 1 && keyOf(series[i - 1]) === keyOf(cur) && keyOf(series[i + 1]) === keyOf(cur)));
+}
+function compactSubsHistories(subs) {
+    for (const s of subs || [])
+        for (const mp of s.moneyPosts || [])
+            for (const kw of mp.googleKeywords || [])
+                if (Array.isArray(kw.history)) kw.history = compactRuns(kw.history, rankKey);
+    return subs;
+}
+
+// A browser that hasn't completed a sync for this long may hold an old copy. It takes the
+// server's version (keeping only its own local-only items) instead of overwriting teammates' edits.
+const SYNC_STALE_MS = 10 * 60 * 1000;
+
 // --- Storage (synced to server for team sharing) ---
 const S = {
     get(k) { try { return JSON.parse(localStorage.getItem('lk_' + k)) || []; } catch { return []; } },
+    _isStale() { const t = Number(localStorage.getItem('lk_last_sync_ok') || 0); return !t || Date.now() - t > SYNC_STALE_MS; },
+    _markSynced() { try { localStorage.setItem('lk_last_sync_ok', String(Date.now())); } catch {} },
+    _quotaWarned: false,
+    _quotaWarn(err) {
+        if (!err || err.name !== 'QuotaExceededError' || S._quotaWarned) return;
+        S._quotaWarned = true;
+        toast('error', 'Browser storage full', 'This browser can\'t store the tracker data, so it can\'t sync or show fresh numbers here.', 15000);
+    },
     set(k, v) {
         localStorage.setItem('lk_' + k, JSON.stringify(v));
         S._syncToServer();
@@ -134,21 +165,23 @@ const S = {
                 //     other devices are respected here (and we never re-add those items).
                 const delTomb = S._absorbTombstones(serverData);
 
-                // 2b. Merge: local wins for items we have, but keep server items we don't
+                // 2b. Merge: local wins for items we have, but keep server items we don't.
+                //     A stale browser lets the server win instead (see SYNC_STALE_MS).
+                const stale = S._isStale();
                 const localSubs = S.get('subreddits');
                 const serverSubs = serverData.subreddits || [];
-                const merged = S._mergeSubs(localSubs, serverSubs);
+                const merged = stale ? S._mergeSubs(serverSubs, localSubs) : S._mergeSubs(localSubs, serverSubs);
 
                 const localTeam = S.get('team');
                 const serverTeam = serverData.team || [];
-                const mergedTeam = S._mergeById(localTeam, serverTeam);
+                const mergedTeam = stale ? S._mergeById(serverTeam, localTeam) : S._mergeById(localTeam, serverTeam);
 
                 // Merge orders by ID
                 const localOrders = S.get('uv_orders');
                 const serverOrders = serverData.uv_orders || [];
                 const orderMap = new Map();
-                serverOrders.forEach(o => orderMap.set(o.id, o));
-                localOrders.forEach(o => orderMap.set(o.id, o));
+                (stale ? localOrders : serverOrders).forEach(o => orderMap.set(o.id, o));
+                (stale ? serverOrders : localOrders).forEach(o => orderMap.set(o.id, o));
                 const mergedOrders = Array.from(orderMap.values()).sort((a, b) => new Date(b.date) - new Date(a.date)).slice(0, 200);
                 localStorage.setItem('lk_uv_orders', JSON.stringify(mergedOrders));
 
@@ -164,14 +197,19 @@ const S = {
                     else if (serverData.keys?.[k]) keys[k] = serverData.keys[k]; // keep server key if local is empty
                 });
 
+                const mergedGt = stale ? S._mergeById(serverData.general_tasks || [], S.get('general_tasks')) : S.get('general_tasks');
+                if (stale) localStorage.setItem('lk_general_tasks', JSON.stringify(mergedGt));
+
                 // 5. Push merged result to server
-                await fetch(`${window.location.origin}/api/data`, {
+                const postRes = await fetch(`${window.location.origin}/api/data`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ subreddits: merged, team: mergedTeam, keys, uv_orders: mergedOrders, general_tasks: S.get('general_tasks'), cg_batches: S.get('cg_batches'), deletedSubs: delTomb.deletedSubs, deletedMoneyPosts: delTomb.deletedMoneyPosts })
+                    body: JSON.stringify({ subreddits: merged, team: mergedTeam, keys, uv_orders: mergedOrders, general_tasks: mergedGt, cg_batches: S.get('cg_batches'), deletedSubs: delTomb.deletedSubs, deletedMoneyPosts: delTomb.deletedMoneyPosts })
                 });
+                if (postRes.ok) S._markSynced();
             } catch (err) {
                 console.log('[Sync] Failed:', err.message);
+                S._quotaWarn(err);
             }
             S._syncing = false;
         }, 500);
@@ -251,9 +289,20 @@ const S = {
                 (serverSub.tasks || []).forEach(t => taskMap.set(t.id, t));
                 (localSub.tasks || []).forEach(t => taskMap.set(t.id, t));
                 localSub.tasks = Array.from(taskMap.values());
+
+                // Merge follower history: union by date, dedupe, sort. Without this the
+                // "local wins" overwrite above lets a device with stale local data revert
+                // a sub's follower growth (keyword histories are merged the same way).
+                {
+                    const allFh = [...(localSub.followerHistory || []), ...(serverSub.followerHistory || [])];
+                    const fhMap = new Map();
+                    allFh.forEach(h => { if (h && h.date) fhMap.set(h.date, h); });
+                    localSub.followerHistory = Array.from(fhMap.values()).sort((a, b) => new Date(a.date) - new Date(b.date));
+                }
             }
         }
-        return Array.from(byId.values());
+        // Union-merging re-adds repeat points an old copy still holds — collapse them again.
+        return compactSubsHistories(Array.from(byId.values()));
     },
 
     // Simple merge by ID: local wins
@@ -298,14 +347,16 @@ const S = {
             const data = await res.json();
             // Absorb server deletion tombstones so deletes from other devices stick here too.
             S._absorbTombstones(data);
+            const stale = S._isStale();
             if (data.subreddits?.length) {
                 const local = S.get('subreddits');
                 if (local.length) {
-                    // Merge: local wins (has freshest rank checks), tombstones drop deletes
-                    const merged = S._mergeSubs(local, data.subreddits);
+                    // Merge: local wins (has freshest rank checks), tombstones drop deletes.
+                    // A stale browser lets the server win so its old copy can't revert teammates' edits.
+                    const merged = stale ? S._mergeSubs(data.subreddits, local) : S._mergeSubs(local, data.subreddits);
                     localStorage.setItem('lk_subreddits', JSON.stringify(merged));
                 } else {
-                    localStorage.setItem('lk_subreddits', JSON.stringify(data.subreddits));
+                    localStorage.setItem('lk_subreddits', JSON.stringify(compactSubsHistories(data.subreddits)));
                 }
             }
             if (data.team?.length) {
@@ -314,8 +365,8 @@ const S = {
             if (data.general_tasks?.length) {
                 const localGt = S.get('general_tasks');
                 const gtMap = new Map();
-                data.general_tasks.forEach(t => gtMap.set(t.id, t));
-                localGt.forEach(t => gtMap.set(t.id, t));
+                (stale ? localGt : data.general_tasks).forEach(t => gtMap.set(t.id, t));
+                (stale ? data.general_tasks : localGt).forEach(t => gtMap.set(t.id, t));
                 localStorage.setItem('lk_general_tasks', JSON.stringify(Array.from(gtMap.values())));
             }
             if (data.cg_batches?.length) {
@@ -324,8 +375,8 @@ const S = {
             if (data.uv_orders?.length) {
                 const localOrders = S.get('uv_orders');
                 const orderMap = new Map();
-                data.uv_orders.forEach(o => orderMap.set(o.id, o));
-                localOrders.forEach(o => orderMap.set(o.id, o)); // local wins
+                (stale ? localOrders : data.uv_orders).forEach(o => orderMap.set(o.id, o));
+                (stale ? data.uv_orders : localOrders).forEach(o => orderMap.set(o.id, o)); // local wins unless stale
                 localStorage.setItem('lk_uv_orders', JSON.stringify(
                     Array.from(orderMap.values()).sort((a, b) => new Date(b.date) - new Date(a.date)).slice(0, 200)
                 ));
@@ -347,10 +398,12 @@ const S = {
                 }
             }
             console.log('[Sync] Pulled:', (data.subreddits || []).length, 'subs');
+            S._markSynced();
 
             return true;
         } catch (err) {
             console.log('[Sync] Pull failed, using local:', err.message);
+            S._quotaWarn(err);
             return false;
         }
     }
@@ -540,6 +593,18 @@ async function rcLoad() {
         rcRender();
         if (rcData.job && rcData.job.running) rcStartPolling();
     } catch (e) { toast('error', 'Load failed', e.message); }
+    rcLoadDolphinStatus();
+}
+
+// Small badge next to the Check buttons: is the Dolphin Anty app on the server up and logged in?
+async function rcLoadDolphinStatus() {
+    const el = document.getElementById('rcDolphinStatus');
+    try {
+        const j = await (await fetch(`${SERVER}/api/rc/dolphin-status`)).json();
+        el.innerHTML = j.ok
+            ? `<span style="color:#0f9d58;">● Dolphin ready</span> · ${j.concurrency} at a time`
+            : `<span style="color:#d93025;">● Dolphin not ready</span> — ${esc(j.error || '')}`;
+    } catch { el.textContent = ''; }
 }
 
 const RC_BADGES = {
@@ -668,7 +733,7 @@ function rcRender() {
             <td style="padding:7px 6px;">${a.accountCreated ? new Date(a.accountCreated).getFullYear() : (a.claimed?.year || '—')}</td>
             <td style="padding:7px 6px;color:var(--text-secondary);font-size:12px;">${esc(a.proxy || '—')}</td>
             <td style="padding:7px 6px;color:${expSoon ? '#d93025' : 'inherit'};">${cookieExp}</td>
-            <td style="padding:7px 6px;color:var(--text-secondary);font-size:12px;">${a.lastChecked ? fmtDate(a.lastChecked) : '—'}</td>
+            <td style="padding:7px 6px;color:var(--text-secondary);font-size:12px;"${a.checkedVia ? ` title="${a.checkedVia === 'dolphin' ? 'Checked in a Dolphin Anty profile' : 'Quick check (no browser)'}"` : ''}>${a.lastChecked ? fmtDate(a.lastChecked) : '—'}${a.checkedVia === 'dolphin' ? ' <span style="opacity:.7;">· Dolphin</span>' : ''}</td>
             <td style="padding:7px 6px;font-size:12px;">${a.resetDetectedAt
                 ? `${fmtDate(a.resetDetectedAt)}<br><span style="color:${a.firstStatus === 'active' ? '#d93025' : 'var(--text-secondary)'};">${a.firstStatus === 'reset_password' ? 'was locked on 1st check' : 'locked after ' + ((RC_BADGES[a.firstStatus] || [, a.firstStatus])[1])}</span>`
                 : '—'}</td>
@@ -790,28 +855,48 @@ async function rcSaveProxies() {
 async function rcCheck(which) {
     const ids = which === 'selected' ? rcSelectedIds() : 'all';
     if (which === 'selected' && !ids.length) return toast('warning', 'Nothing selected', 'Tick some rows first.');
+    const method = document.getElementById('rcMethod').value;
     try {
-        await fetch(`${SERVER}/api/rc/check`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ids }) });
+        const res = await fetch(`${SERVER}/api/rc/check`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ids, method }) });
+        const j = await res.json();
+        if (j.error && !j.running) { rcLoadDolphinStatus(); return toast('error', 'Check not started', j.error); }
         rcStartPolling();
     } catch (e) { toast('error', 'Check failed', e.message); }
 }
 
+async function rcStopCheck() {
+    try {
+        await fetch(`${SERVER}/api/rc/check-stop`, { method: 'POST' });
+        document.getElementById('rcProgress').textContent = 'Stopping — finishing the checks already in progress…';
+    } catch (e) { toast('error', 'Stop failed', e.message); }
+}
+
 function rcStartPolling() {
     const prog = document.getElementById('rcProgress');
+    const stopBtn = document.getElementById('rcStopBtn');
     prog.classList.remove('hidden');
+    stopBtn.classList.remove('hidden');
     if (rcPollTimer) clearInterval(rcPollTimer);
     rcPollTimer = setInterval(async () => {
         try {
             const j = await (await fetch(`${SERVER}/api/rc/check-status`)).json();
-            prog.textContent = `Checking… ${j.done}/${j.total}`;
-            if (!j.running) {
-                clearInterval(rcPollTimer); rcPollTimer = null;
-                prog.textContent = `Done — checked ${j.total}.`;
-                setTimeout(() => prog.classList.add('hidden'), 4000);
-                rcLoad();
+            const via = j.method === 'dolphin' ? 'via Dolphin' : 'quick check';
+            const issues = j.dolphinErrors ? ` · ${j.dolphinErrors} Dolphin error(s)` : '';
+            if (j.running) {
+                if (j.stopRequested) return;
+                // ETA from the pace so far (Dolphin checks take ~15–20 s each, a few in parallel).
+                const elapsed = (Date.now() - j.startedAt) / 1000;
+                const left = j.done ? Math.round(elapsed / j.done * (j.total - j.done) / 60) : null;
+                prog.textContent = `Checking ${via}… ${j.done}/${j.total}${left != null && j.done < j.total ? ` · ~${left < 60 ? left + ' min' : (left / 60).toFixed(1) + ' h'} left` : ''}${issues}`;
+                return;
             }
+            clearInterval(rcPollTimer); rcPollTimer = null;
+            stopBtn.classList.add('hidden');
+            prog.textContent = j.error ? j.error : `${j.stopRequested ? 'Stopped' : 'Done'} — checked ${j.done}/${j.total} ${via}${issues}.`;
+            if (!j.error) setTimeout(() => prog.classList.add('hidden'), 6000);
+            rcLoad();
         } catch { clearInterval(rcPollTimer); rcPollTimer = null; }
-    }, 1500);
+    }, 2000);
 }
 
 function rcExport() { window.location = `${SERVER}/api/rc/export`; }
@@ -1808,8 +1893,7 @@ function openSettings() {
     if (getDfLogin()) parts.push('DataForSEO');
     else if (getSerpApiKey()) parts.push('SerpAPI');
     if (getUpvoteShopKey()) parts.push('Upvote Shop');
-    const profiles = getDolphinProfiles();
-    if (getDolphinToken() && profiles.length) parts.push(`Dolphin (${profiles.length})`);
+    if (getDolphinToken()) parts.push('Dolphin');
     if (parts.length) {
         status.className = 'api-key-status connected';
         status.textContent = 'Connected: ' + parts.join(' | ');
@@ -1821,7 +1905,6 @@ function openSettings() {
     // Check Upvote Shop balance if key exists
     if (getUpvoteShopKey()) checkUpvoteBalance(document.getElementById('upvoteBalance'));
 
-    if (getDolphinToken()) loadDolphinProfiles();
     openModal('settingsModal');
 }
 

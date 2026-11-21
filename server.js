@@ -47,6 +47,50 @@ function getRandomProxyPort() {
     return PROXY_BASE.basePort + Math.floor(Math.random() * PROXY_BASE.maxPortOffset);
 }
 
+// Pool spec for the Dolphin Reddit reader (a random exit port is drawn per reader).
+const READER_PROXY = {
+    host: PROXY_BASE.host, user: PROXY_BASE.login, pass: PROXY_BASE.password,
+    portMin: PROXY_BASE.basePort, portMax: PROXY_BASE.basePort + PROXY_BASE.maxPortOffset - 1,
+};
+const rcDolphin = require('./rc_dolphin');
+
+// Read a Reddit URL through the warm Dolphin browser (real logged-in session + residential
+// proxy). Returns { status, data } like httpsRequest, or null if Dolphin could not answer
+// (not running / errored) so the caller can fall back to the curl path.
+async function redditViaDolphin(targetUrl) {
+    try {
+        const cookieHeader = redditCookieHeader(getRedditCookie());
+        const r = await rcDolphin.fetchReddit(targetUrl, { cookieHeader, proxy: READER_PROXY });
+        const body = (r.body || '').trimStart();
+        // Any JSON answer is a real answer (incl. a 404 for a missing subreddit) — hand it back.
+        // Only an HTML/empty body means the browser itself was blocked; fall back to curl then.
+        if (body && (body[0] === '{' || body[0] === '[')) return { status: r.code || 200, data: r.body };
+        return null;
+    } catch (e) {
+        console.log(`[Reddit/Dolphin] ${String(e.message || e).slice(0, 140)}`);
+        return null;
+    }
+}
+
+// --- Rank-history compaction ---
+// The 4-hourly auto-check logs a point even when the rank hasn't moved, and the whole
+// dataset lives in each browser's localStorage (~5.24M-char cap per site). Collapse each
+// run of identical consecutive points to its first and last point: every rank change and
+// the last-seen time survive, the interior repeats go. Idempotent; same logic in app.js.
+const rankKey = h => (h && h.rankType || 'none') + '|' + (h && h.avgRank != null ? h.avgRank : '');
+function compactRuns(series, keyOf) {
+    if (!Array.isArray(series) || series.length < 3) return series;
+    return series.filter((cur, i) =>
+        !(i > 0 && i < series.length - 1 && keyOf(series[i - 1]) === keyOf(cur) && keyOf(series[i + 1]) === keyOf(cur)));
+}
+function compactDataHistories(data) {
+    for (const s of (data && data.subreddits) || [])
+        for (const mp of s.moneyPosts || [])
+            for (const kw of mp.googleKeywords || [])
+                if (Array.isArray(kw.history)) kw.history = compactRuns(kw.history, rankKey);
+    return data;
+}
+
 // --- Load authenticated Reddit session cookie (required: Reddit now blocks
 //     unauthenticated .json with an anti-bot HTML interstitial). Set via
 //     data.json keys.lk_reddit_cookie or a reddit_cookie.txt file. ---
@@ -627,6 +671,9 @@ const server = http.createServer(async (req, res) => {
                     }
                     return s;
                 });
+
+            // Browsers with older code or stale copies re-send repeat points; collapse them on every save.
+            compactDataHistories(body);
 
             fs.writeFileSync(DATA_FILE, JSON.stringify(body), 'utf8');
             res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -1357,6 +1404,13 @@ Return ONLY the JSON array, no other text.`;
         const proxyHeaders = {};
         if (req.headers.authorization) proxyHeaders['Authorization'] = req.headers.authorization;
         try {
+            // Reddit bot-walls the VPS and every proxy IP for plain curl. Read it through the
+            // warm Dolphin browser first (real logged-in session); fall back to curl if Dolphin
+            // can't answer, so Ahrefs and any future unblocked curl path still work.
+            if (targetUrl.includes('reddit.com')) {
+                const viaDolphin = await redditViaDolphin(targetUrl);
+                if (viaDolphin) { res.writeHead(viaDolphin.status, { 'Content-Type': 'application/json' }); res.end(viaDolphin.data); return; }
+            }
             const result = await httpsRequest(targetUrl, proxyHeaders);
             if (targetUrl.includes('ahrefs.com')) console.log(`[Ahrefs] → ${result.data.slice(0, 200)}`);
             // httpsRequest already retries dead proxy ports & the HTML bot wall for Reddit.
@@ -2001,6 +2055,9 @@ server.listen(PORT, '0.0.0.0', () => {
     // Money comment check uses Reddit (no DataForSEO cost) — keep on its own hourly cadence.
     setTimeout(serverCheckMoneyComments, 3 * 60 * 1000);
     setInterval(serverCheckMoneyComments, 60 * 60 * 1000);
+    // A restart orphans any warm Reddit-reader profile (its idle timer died with the old process).
+    // Sweep rc-check leftovers once at startup — safe here because no check or reader is running yet.
+    setTimeout(() => { rcDolphin.sweepLeftovers().then(n => n && console.log(`[Startup] swept ${n} Dolphin leftover(s)`)).catch(() => {}); }, 8000);
 });
 
 // ==========================================
@@ -2103,6 +2160,7 @@ async function autoRankCheck() {
                 const prevType = kw.rankType;
                 if (!kw.history) kw.history = [];
                 if (kw.updatedAt) kw.history.push({ rankType: kw.rankType || 'none', avgRank: kw.avgRank, date: kw.updatedAt });
+                kw.history = compactRuns(kw.history, rankKey);
                 kw.rankType = 'google';
                 kw.avgRank = rank;
                 kw.rank = rank;
@@ -2137,6 +2195,7 @@ async function autoRankCheck() {
             } else if (searchType === 'reddit' && !kw._googleFoundThisCycle) {
                 if (!kw.history) kw.history = [];
                 if (kw.updatedAt) kw.history.push({ rankType: kw.rankType || 'none', avgRank: kw.avgRank, date: kw.updatedAt });
+                kw.history = compactRuns(kw.history, rankKey);
                 kw.rankType = rank ? 'reddit' : 'none';
                 kw.avgRank = rank;
                 kw.rank = rank;
