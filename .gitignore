@@ -9,3 +9,5 @@ search_job.json
 reddit_checker.json
 search_job_*_backup.json
 saved_communities.json
+reddit_checker.json.tmp
+data.json.bak*

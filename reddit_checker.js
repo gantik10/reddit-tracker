@@ -8,19 +8,37 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { execFile, execFileSync } = require('child_process');
+const rcDolphin = require('./rc_dolphin');
+const proxyseller = require('./proxyseller');
 
 const STORE = path.join(__dirname, 'reddit_checker.json');
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36';
-const CONCURRENCY = 12;
+const CONCURRENCY = 12; // curl checks; Dolphin checks use rcDolphin.CONCURRENCY (each one is a real browser)
 
 const nowISO = () => new Date().toISOString();
 
 // ---- Store (server-side only; cookies/proxy creds never sent to the browser) ----
+// One shared in-memory copy for every route AND the background check job. A Dolphin check
+// job runs for hours; with separate load()/save() copies its periodic saves would wipe out
+// imports, deletes and folder moves made meanwhile. (Edit the JSON on disk only while the
+// server is stopped.) A missing file starts empty; an unreadable one is an error, never an
+// empty store that the next save would write over the real data.
+let store = null;
 function load() {
-    try { return JSON.parse(fs.readFileSync(STORE, 'utf8')); }
-    catch { return { accounts: [], proxies: [], nextId: 1 }; }
+    if (!store) {
+        try { store = JSON.parse(fs.readFileSync(STORE, 'utf8')); }
+        catch (e) {
+            if (e.code !== 'ENOENT') throw e;
+            store = { accounts: [], proxies: [], nextId: 1 };
+        }
+    }
+    return store;
 }
-function save(s) { fs.writeFileSync(STORE, JSON.stringify(s), 'utf8'); }
+function save(s) {
+    store = s;
+    fs.writeFileSync(STORE + '.tmp', JSON.stringify(s), 'utf8');
+    fs.renameSync(STORE + '.tmp', STORE); // atomic: a crash mid-write can't leave a truncated store
+}
 
 // ---- Parsers ----
 // Netscape/Chrome cookies.txt (tab-separated) + "Simple Checker" header hints.
@@ -136,8 +154,8 @@ function runCurl(proxy, cookieHeader, url, accept = 'application/json', withCode
 // Id segment of the account-menu partial URL; refreshed from the home page when it stops working.
 let drawerPartialId = 'SZvQJM';
 
-// ---- Check one account (through its proxy) ----
-async function checkAccount(acc, s) {
+// ---- Check one account (through its proxy) — "Quick" mode: plain curl requests ----
+async function checkAccountCurl(acc, s) {
     const proxy = s.proxies.find(p => p.id === acc.proxyId);
     if (!proxy) return { status: 'no_proxy', lastChecked: nowISO(), error: 'No proxy assigned' };
 
@@ -241,18 +259,48 @@ async function checkAccount(acc, s) {
 }
 
 // ---- Background check job ----
+// method 'dolphin' (default): every account is opened in its own Dolphin Anty profile (real browser,
+// its cookie + its proxy). method 'curl': the old quick check with plain requests through the proxy.
 let job = { running: false, total: 0, done: 0 };
-function startCheck(ids) {
-    if (job.running) return job;
+async function checkAccount(acc, s, method) {
+    if (method !== 'dolphin') return { ...(await checkAccountCurl(acc, s)), checkedVia: 'curl' };
+    return rcDolphin.checkAccount(acc, s.proxies.find(p => p.id === acc.proxyId));
+}
+
+let starting = false;
+async function startCheck(ids, method) {
+    if (job.running || starting) return job;
+    method = method === 'curl' ? 'curl' : 'dolphin';
+    if (method === 'dolphin') {
+        starting = true;
+        try {
+            const ready = await rcDolphin.ensureReady({ relogin: true });
+            if (!ready.ok) return { ...job, running: false, error: ready.error };
+            try { await rcDolphin.closeReader(); } catch {} // the warm Add-Subreddit reader is an rc-check profile too — retire it before the sweep
+            try { await rcDolphin.sweepLeftovers(); } catch {}
+            rcDolphin.trimDolphinLogs();
+        } finally { starting = false; }
+    }
     const s = load();
     const targets = (ids === 'all' || !Array.isArray(ids))
         ? s.accounts
         : s.accounts.filter(a => ids.includes(a.id));
-    job = { running: true, total: targets.length, done: 0, startedAt: Date.now() };
+    job = { running: true, method, total: targets.length, done: 0, dolphinErrors: 0, startedAt: Date.now() };
+    const concurrency = method === 'dolphin' ? rcDolphin.CONCURRENCY : CONCURRENCY;
     (async () => {
         // Reset-password timeline: was it already locked when we first reached it, or did it
         // lock only after our checks? (firstStatus === 'reset_password' = locked on first contact.)
+        let dolphinErrorsInARow = 0;
         const applyResult = (acc, res) => {
+            // Dolphin itself failed (not running, API refused, browser crashed): say so on the row
+            // but keep the account's last real status — nothing was learned about the account.
+            if (res.infra) {
+                acc.error = res.error;
+                job.dolphinErrors++;
+                if (++dolphinErrorsInARow >= 8) { job.stopRequested = true; job.error = 'Stopped: Dolphin failed 8 checks in a row — ' + res.error; }
+                return;
+            }
+            dolphinErrorsInARow = 0;
             if (!acc.firstCheckedAt) { acc.firstCheckedAt = res.lastChecked; acc.firstStatus = res.status; }
             if (res.status === 'reset_password' && !acc.resetDetectedAt) {
                 acc.resetDetectedAt = res.lastChecked;
@@ -264,37 +312,49 @@ function startCheck(ids) {
         const runPool = async (list, countsToJob) => {
             let i = 0;
             const worker = async () => {
-                while (i < list.length) {
+                while (i < list.length && !job.stopRequested) {
                     const acc = list[i++];
                     let res;
-                    try { res = await checkAccount(acc, s); }
+                    try { res = await checkAccount(acc, s, method); }
                     catch (e) { res = { status: 'proxy_error', lastChecked: nowISO(), error: (e.message || 'error').slice(0, 120) }; }
                     applyResult(acc, res);
                     if (countsToJob) job.done++;
                     if (job.done % 10 === 0) save(s);
+                    if (method === 'dolphin' && job.done % 100 === 0) rcDolphin.trimDolphinLogs();
                 }
             };
-            await Promise.all(Array.from({ length: Math.min(CONCURRENCY, list.length || 1) }, worker));
+            await Promise.all(Array.from({ length: Math.min(concurrency, list.length || 1) }, worker));
             save(s);
         };
 
-        await runPool(targets, true);
-        // Proxy errors are transient (residential IP blips) — re-check the stuck ones a few
-        // more times. If a proxy is still dead after 2 checks, swap the account onto a fresh
-        // free proxy (burning the dead one) and try that instead.
-        for (let round = 0; round < 4; round++) {
-            const stuck = targets.filter(a => a.status === 'proxy_error');
-            if (!stuck.length) break;
-            let swapped = 0;
-            for (const acc of stuck) {
-                if ((acc.proxyFailCount || 0) >= 2 && swapToFreeProxy(s, acc)) swapped++;
+        try {
+            await runPool(targets, true);
+            // Proxy errors are transient (residential IP blips) — re-check the stuck ones a few
+            // more times. If a proxy is still dead after 2 checks, swap the account onto a fresh
+            // free proxy (burning the dead one) and try that instead.
+            for (let round = 0; round < 4 && !job.stopRequested; round++) {
+                const stuck = targets.filter(a => a.status === 'proxy_error');
+                if (!stuck.length) break;
+                let swapped = 0;
+                for (const acc of stuck) {
+                    if ((acc.proxyFailCount || 0) >= 2 && swapToFreeProxy(s, acc)) swapped++;
+                }
+                if (swapped) { save(s); job.swappedProxies = (job.swappedProxies || 0) + swapped; }
+                await new Promise(r => setTimeout(r, 3000));
+                await runPool(stuck, false);
             }
-            if (swapped) { save(s); job.swappedProxies = (job.swappedProxies || 0) + swapped; }
-            await new Promise(r => setTimeout(r, 3000));
-            await runPool(stuck, false);
+        } finally {
+            save(s);
+            if (method === 'dolphin') { try { job.leftoversRemoved = await rcDolphin.sweepLeftovers(); } catch {} }
+            job.running = false;
+            job.finishedAt = Date.now();
         }
-        job.running = false;
     })();
+    return job;
+}
+
+function stopCheck() {
+    if (job.running) job.stopRequested = true;
     return job;
 }
 
@@ -362,11 +422,82 @@ async function importAccountsZip(buf, batch) {
         });
         added++;
     }
-    const bound = bindFreeProxies(s);
+    let bound = bindFreeProxies(s);
     save(s);
     try { fs.rmSync(tmp, { recursive: true, force: true }); fs.rmSync(zip, { force: true }); } catch {}
-    const noProxy = s.accounts.filter(a => !a.proxyId).length;
-    return { added, duplicatesSkipped: dup, parseFailed: fail, boundToProxy: bound, accountsWithoutProxy: noProxy, totalAccounts: s.accounts.length };
+    // Auto-provision from the Proxy-Seller API so new accounts always get a proxy — no manual pasting.
+    let provisioned = null;
+    let noProxy = s.accounts.filter(a => !a.proxyId).length;
+    if (noProxy > 0 && proxyseller.apiKey()) {
+        try { provisioned = await provisionProxies(noProxy); bound += (provisioned.boundToWaitingAccounts || 0); }
+        catch (e) { provisioned = { error: e.message }; }
+        noProxy = s.accounts.filter(a => !a.proxyId).length;
+    }
+    return { added, duplicatesSkipped: dup, parseFailed: fail, boundToProxy: bound, accountsWithoutProxy: noProxy, provisioned, totalAccounts: s.accounts.length };
+}
+
+// ---- Self-provision proxies from the Proxy-Seller API (no manual pasting) ----
+// Each residential list = one login into res.proxy-seller.com:10000-10999, and each
+// (login, port) is a distinct sticky US exit IP — so N lists give up to N*1000 exits.
+// Pulls existing lists first (free), generating entries only for logins not already in
+// the store; creates new lists only if everything existing is exhausted. Generating and
+// binding spend ZERO proxy bandwidth — only the actual checks spend the metered GB.
+async function provisionProxies(need) {
+    const s = load();
+    const freeNow = () => s.proxies.filter(p => !p.boundAccountId).length;
+    need = Number(need) || s.accounts.filter(a => !a.proxyId).length;
+    if (need <= 0) return { added: 0, boundToWaitingAccounts: 0, freeProxies: freeNow(), note: 'nothing waiting' };
+    if (freeNow() >= need) { const b = bindFreeProxies(s); save(s); return { added: 0, boundToWaitingAccounts: b, freeProxies: freeNow(), note: 'had enough free' }; }
+
+    let lists;
+    try { lists = await proxyseller.getLists(); }
+    catch (e) { return { error: 'proxy-seller api: ' + e.message }; }
+
+    const haveLogins = new Set(s.proxies.map(p => p.user));
+    const seen = new Set(s.proxies.map(p => `${p.host}:${p.port}:${p.user}`));
+    const usable = lists.filter(l => l.login && l.password && Array.isArray(l.geo) && l.geo.some(g => g.country === 'US'));
+    const ordered = [...usable.filter(l => !haveLogins.has(l.login)), ...usable.filter(l => haveLogins.has(l.login))];
+
+    let added = 0, listsUsed = 0, created = 0;
+    const addFrom = (list) => {
+        let any = false;
+        for (const e of proxyseller.entriesForList(list)) {
+            if (freeNow() + added >= need) break;
+            const key = `${e.host}:${e.port}:${e.user}`;
+            if (seen.has(key)) continue;
+            seen.add(key);
+            s.proxies.push({ id: s.nextId++, ...e, boundAccountId: null });
+            added++; any = true;
+        }
+        if (any) listsUsed++;
+    };
+
+    for (const list of ordered) { if (freeNow() + added >= need) break; addFrom(list); }
+    // Fallback: create new lists only if every existing list is exhausted.
+    while (freeNow() + added < need && created < 30) {
+        let nl;
+        try { nl = await proxyseller.createList('rc-auto-' + Date.now().toString(36) + '-' + created, 'US'); }
+        catch (e) { break; }
+        if (!nl || !nl.login) break;
+        created++; addFrom(nl);
+    }
+
+    const bound = bindFreeProxies(s);
+    save(s);
+    return { added, listsUsed, listsCreated: created, boundToWaitingAccounts: bound, freeProxies: freeNow(), totalProxies: s.proxies.length };
+}
+
+async function proxyStatus() {
+    const s = load();
+    let pkg = null, apiError = null;
+    try { pkg = await proxyseller.getPackage(); } catch (e) { apiError = e.message; }
+    return {
+        package: pkg, apiError,
+        totalProxies: s.proxies.length,
+        boundProxies: s.proxies.filter(p => p.boundAccountId).length,
+        freeProxies: s.proxies.filter(p => !p.boundAccountId).length,
+        accountsWithoutProxy: s.accounts.filter(a => !a.proxyId).length,
+    };
 }
 
 // ---- Public (redacted) views ----
@@ -381,7 +512,7 @@ function listPublic() {
             lastActivity: a.lastActivity, accountCreated: a.accountCreated,
             cookieExpiry: a.cookieExpiry, claimed: a.claimed,
             proxy: p ? `${p.host}:${p.port}` : null,
-            lastChecked: a.lastChecked, error: a.error, drawerCheck: a.drawerCheck || null,
+            lastChecked: a.lastChecked, error: a.error, drawerCheck: a.drawerCheck || null, checkedVia: a.checkedVia || null,
             resetDetectedAt: a.resetDetectedAt || null, resetFirstStatus: a.resetFirstStatus || null,
             firstCheckedAt: a.firstCheckedAt || null, firstStatus: a.firstStatus || null,
             batch: a.batch || '', saved: !!a.saved,
@@ -557,8 +688,12 @@ async function handle(req, res, parsed) {
         if (p === '/api/rc/list' && req.method === 'GET') return send(200, listPublic());
         if (p === '/api/rc/check-status' && req.method === 'GET') return send(200, job);
         if (p === '/api/rc/import-proxies' && req.method === 'POST') return send(200, importProxies((await readJson(req)).text || ''));
+        if (p === '/api/rc/provision-proxies' && req.method === 'POST') { const b = await readJson(req).catch(() => ({})); return send(200, await provisionProxies(b && b.need)); }
+        if (p === '/api/rc/proxy-status' && req.method === 'GET') return send(200, await proxyStatus());
         if (p === '/api/rc/import-accounts' && req.method === 'POST') return send(200, await importAccountsZip(await readRaw(req), parsed.searchParams.get('batch')));
-        if (p === '/api/rc/check' && req.method === 'POST') return send(200, startCheck((await readJson(req)).ids || 'all'));
+        if (p === '/api/rc/check' && req.method === 'POST') { const b = await readJson(req); return send(200, await startCheck(b.ids || 'all', b.method)); }
+        if (p === '/api/rc/check-stop' && req.method === 'POST') return send(200, stopCheck());
+        if (p === '/api/rc/dolphin-status' && req.method === 'GET') return send(200, await rcDolphin.status());
         if (p === '/api/rc/delete' && req.method === 'POST') return send(200, deleteAccounts((await readJson(req)).ids || []));
         if (p === '/api/rc/save' && req.method === 'POST') { const b = await readJson(req); return send(200, saveAccounts(b.ids || [], b.saved)); }
         if (p === '/api/rc/move-folder' && req.method === 'POST') { const b = await readJson(req); return send(200, moveFolder(b.ids || [], b.folder)); }
